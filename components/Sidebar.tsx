@@ -1,5 +1,5 @@
-import React from 'react';
-import { Compass, LayoutDashboard, Users, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { LayoutDashboard, Users, LogOut, TrendingUp } from 'lucide-react';
 
 interface SidebarProps {
   currentView: string;
@@ -7,26 +7,45 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onLogout }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ 
+  currentView, 
+  onChangeView, 
+  onLogout
+}) => {
+  const [logoError, setLogoError] = useState(false);
+
   const menuItems = [
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'clients', label: 'Meus Clientes', icon: Users },
+    { id: 'forecast', label: 'Previsão', icon: TrendingUp },
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 text-white flex flex-col h-screen fixed left-0 top-0 z-40 border-r border-slate-800 shadow-2xl">
-      <div className="p-6 border-b border-slate-800/50">
+    <aside className="fixed top-0 left-0 z-40 h-screen w-64 bg-slate-900 text-white flex flex-col border-r border-slate-800 shadow-2xl">
+      {/* Logo Area */}
+      <div className="p-6 border-b border-slate-800/50 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/50">
-            <Compass className="w-6 h-6 text-white" />
+          {/* Logo Image */}
+          <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center overflow-hidden border border-white/10 shadow-inner">
+            {!logoError ? (
+              <img 
+                src="/logo.png" 
+                alt="Logo" 
+                className="w-full h-full object-contain p-1"
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <span className="text-xs font-bold text-blue-400">PCN</span>
+            )}
           </div>
           <div>
-            <h1 className="text-lg font-bold leading-none tracking-tight">Centro-Norte</h1>
+            <h1 className="text-lg font-bold leading-none tracking-tight text-slate-100">Centro-Norte</h1>
             <p className="text-[10px] text-blue-400 font-semibold mt-1 uppercase tracking-widest">Portal Rep</p>
           </div>
         </div>
       </div>
 
+      {/* Navigation Links */}
       <nav className="flex-1 p-4 space-y-2">
         {menuItems.map((item) => {
           const Icon = item.icon;
@@ -48,6 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onL
         })}
       </nav>
 
+      {/* Footer Actions */}
       <div className="p-4 border-t border-slate-800">
         <button 
           onClick={onLogout}

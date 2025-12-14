@@ -7,8 +7,6 @@ import { InactiveClientsModal } from './InactiveClientsModal';
 export const ClientsScreen: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  
-  // Estado para controlar qual modal de inatividade está aberto (3, 6 ou null)
   const [inactiveModalMonths, setInactiveModalMonths] = useState<number | null>(null);
 
   // Filtra clientes
@@ -17,10 +15,8 @@ export const ClientsScreen: React.FC = () => {
     c.city.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Calcular % da Carteira Global
   const totalCarteira = clients.reduce((acc, curr) => acc + curr.totalPurchase, 0);
 
-  // Helpers para contagem de inativos
   const getInactiveCount = (months: number) => {
     const thresholdDate = new Date();
     thresholdDate.setMonth(thresholdDate.getMonth() - months);
@@ -32,8 +28,9 @@ export const ClientsScreen: React.FC = () => {
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-12">
       
+      {/* Header e Busca */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-4">
-        <div>
+        <div className="w-full md:w-auto">
           <h2 className="text-2xl font-bold text-slate-900">Carteira de Clientes</h2>
           <p className="text-slate-500 text-sm mt-1">Gerencie seus clientes e acompanhe o desempenho individual.</p>
         </div>
@@ -44,7 +41,7 @@ export const ClientsScreen: React.FC = () => {
             placeholder="Buscar por nome ou cidade..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
           />
         </div>
       </div>
@@ -61,7 +58,6 @@ export const ClientsScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 3 Meses - Clickable */}
         <div 
           onClick={() => setInactiveModalMonths(3)}
           className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-amber-200 transition-all group"
@@ -75,7 +71,6 @@ export const ClientsScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 6 Meses - Clickable */}
         <div 
           onClick={() => setInactiveModalMonths(6)}
           className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-red-200 transition-all group"
@@ -90,9 +85,8 @@ export const ClientsScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Table Container - Fixed Height for Scrolling */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-        {/* Header fixo da tabela */}
+      {/* TABLE VIEW (Desktop Only) */}
+      <div className="flex bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex-col">
         <div className="overflow-x-auto bg-slate-50/50 border-b border-slate-200">
            <table className="w-full text-left border-collapse">
             <thead>
@@ -107,8 +101,7 @@ export const ClientsScreen: React.FC = () => {
            </table>
         </div>
 
-        {/* Corpo da tabela com scroll (aprox 5 itens visíveis, ~400px) */}
-        <div className="overflow-y-auto max-h-[400px]">
+        <div className="overflow-y-auto max-h-[500px]">
           <table className="w-full text-left border-collapse">
             <tbody className="divide-y divide-slate-100">
               {filteredClients.map((client, index) => {

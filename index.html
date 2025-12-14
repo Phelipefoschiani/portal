@@ -24,6 +24,28 @@
       .animate-gradient {
         animation: gradient-xy 15s ease infinite;
       }
+
+      /* Animations */
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .animate-fadeIn {
+        animation: fadeIn 0.5s ease-out forwards;
+      }
+      
+      @keyframes slideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-slideUp {
+        animation: slideUp 0.6s ease-out forwards;
+      }
+
+      @keyframes shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+      }
       
       /* Custom Scrollbar */
       ::-webkit-scrollbar {
@@ -52,7 +74,8 @@
     "jspdf": "https://esm.sh/jspdf@^3.0.4",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.87.1",
     "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
-    "vite": "https://esm.sh/vite@^7.2.7"
+    "vite": "https://esm.sh/vite@^7.2.7",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3"
   }
 }
 </script>

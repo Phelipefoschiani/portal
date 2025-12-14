@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Download, TrendingUp, Calendar, AlertCircle, Package, Target, History } from 'lucide-react';
 import { Button } from './Button';
 import { ClientProductsModal } from './ClientProductsModal';
@@ -88,82 +89,85 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
-  return (
+  // Usando Portal para renderizar fora da hierarquia DOM atual (que pode ter transform/opacity)
+  return createPortal(
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-        <div className="bg-white w-full max-w-6xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 md:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+        <div className="bg-white w-full max-w-6xl rounded-xl md:rounded-2xl shadow-2xl flex flex-col max-h-[95vh] md:max-h-[90vh]">
           
-          {/* Header */}
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-            <div>
-              <h2 className="text-2xl font-bold text-slate-800">{client.name}</h2>
-              <div className="flex gap-4 mt-1 text-sm text-slate-500">
+          {/* Header Responsivo */}
+          <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-start md:items-center bg-slate-50 rounded-t-xl md:rounded-t-2xl">
+            <div className="pr-8 md:pr-0">
+              {/* Removido line-clamp-1 para evitar corte de nome */}
+              <h2 className="text-lg md:text-2xl font-bold text-slate-800">{client.name}</h2>
+              <div className="flex flex-col md:flex-row md:gap-4 mt-1 text-xs md:text-sm text-slate-500">
                 <span>CNPJ: {client.cnpj}</span>
-                <span>•</span>
+                <span className="hidden md:inline">•</span>
                 <span>{client.city}</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
-               <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
+               <button onClick={onClose} className="p-2 -mr-2 md:mr-0 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
                 <X className="w-6 h-6" />
               </button>
             </div>
           </div>
 
-          {/* Controls Bar */}
-          <div className="p-4 bg-white border-b border-slate-100 flex flex-wrap justify-between items-center gap-4">
-             <div className="flex items-center gap-4">
-               <label className="text-sm font-medium text-slate-700">Ano de Referência:</label>
+          {/* Controls Bar Responsiva */}
+          <div className="p-4 bg-white border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+             <div className="flex items-center gap-3 w-full md:w-auto">
+               <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Ano Ref:</label>
                <select 
                  value={year} 
                  onChange={(e) => setYear(Number(e.target.value))}
-                 className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none"
+                 className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full md:w-auto p-2.5 outline-none"
                >
                  <option value={2023}>2023</option>
                  <option value={2024}>2024</option>
                </select>
              </div>
              
-             <div className="flex gap-3">
-               <Button variant="outline" onClick={() => setShowLastPurchase(true)} className="h-10 px-4 py-0 border-amber-200 hover:border-amber-500 hover:text-amber-600 text-slate-600">
+             {/* Botões em Grid no Mobile, Flex no Desktop */}
+             <div className="grid grid-cols-2 md:flex gap-2 md:gap-3 w-full md:w-auto">
+               <Button variant="outline" onClick={() => setShowLastPurchase(true)} className="h-10 px-3 text-xs md:text-sm justify-center border-amber-200 hover:border-amber-500 hover:text-amber-600 text-slate-600 col-span-2 md:col-span-1">
                   <History className="w-4 h-4 mr-2" />
                   Reposição
                </Button>
-               <Button variant="secondary" onClick={() => setShowProducts(true)} className="h-10 px-4 py-0">
+               <Button variant="secondary" onClick={() => setShowProducts(true)} className="h-10 px-3 text-xs md:text-sm justify-center">
                   <Package className="w-4 h-4 mr-2" />
-                  Ver Produtos
+                  Produtos
                </Button>
-               <Button variant="outline" onClick={handleDownloadImage} isLoading={isDownloading} className="h-10 px-4 py-0">
+               <Button variant="outline" onClick={handleDownloadImage} isLoading={isDownloading} className="h-10 px-3 text-xs md:text-sm justify-center">
                   <Download className="w-4 h-4 mr-2" />
-                  Imagem (Completa)
+                  Salvar
                </Button>
              </div>
           </div>
 
           {/* Scrollable Content */}
-          <div className="overflow-y-auto p-6 bg-slate-50 flex-1" ref={contentRef}>
+          <div className="overflow-y-auto p-4 md:p-6 bg-slate-50 flex-1" ref={contentRef}>
             
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Média Mensal</p>
-                  <p className="text-lg font-bold text-slate-800">{formatCurrency(averagePurchase)}</p>
+            {/* KPI Cards Grid Responsivo */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6 md:mb-8">
+               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 col-span-2 md:col-span-1">
+                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Média Mensal</p>
+                  <p className="text-base md:text-lg font-bold text-slate-800">{formatCurrency(averagePurchase)}</p>
                </div>
                
-               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Meta Total</p>
-                  <p className="text-lg font-bold text-slate-700">{formatCurrency(totalMeta)}</p>
+               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200">
+                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Meta Total</p>
+                  <p className="text-base md:text-lg font-bold text-slate-700">{formatCurrency(totalMeta)}</p>
                </div>
 
-               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Faturado Total</p>
-                  <p className="text-lg font-bold text-emerald-600">{formatCurrency(totalFaturado)}</p>
+               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200">
+                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Faturado</p>
+                  <p className="text-base md:text-lg font-bold text-emerald-600">{formatCurrency(totalFaturado)}</p>
                </div>
 
-               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Meta Alcançada</p>
+               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Alcançado</p>
                   <div className="flex items-end gap-2">
-                     <p className={`text-xl font-bold ${percentualAlcance >= 100 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                     <p className={`text-base md:text-xl font-bold ${percentualAlcance >= 100 ? 'text-emerald-500' : 'text-amber-500'}`}>
                        {percentualAlcance.toFixed(1)}%
                      </p>
                   </div>
@@ -172,9 +176,9 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
                   </div>
                </div>
 
-               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Positivação</p>
-                  <p className="text-lg font-bold text-blue-600">{monthsPositive} <span className="text-sm font-normal text-slate-400">/ {monthsPassed}</span></p>
+               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 col-span-2 md:col-span-1">
+                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Positivação</p>
+                  <p className="text-base md:text-lg font-bold text-blue-600">{monthsPositive} <span className="text-sm font-normal text-slate-400">/ {monthsPassed} meses</span></p>
                </div>
             </div>
 
@@ -257,6 +261,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
           onClose={() => setShowLastPurchase(false)}
         />
       )}
-    </>
+    </>,
+    document.body
   );
 };

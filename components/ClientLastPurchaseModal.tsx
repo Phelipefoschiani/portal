@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, FileDown, History, CalendarClock, CheckSquare, Square } from 'lucide-react';
 import { Button } from './Button';
 import { Client } from '../lib/mockData';
@@ -78,8 +79,9 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   // Produtos selecionados para exibição no relatório oculto
   const selectedProductsData = sortedProducts.filter(p => selectedProductIds.includes(p.id));
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+  return createPortal(
+    // Z-Index 110 para ficar acima do modal anterior
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
       <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
         
         {/* Header */}
@@ -215,6 +217,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
         </div>
       </div>
 
-    </div>
+    </div>,
+    document.body
   );
 };

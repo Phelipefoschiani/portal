@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   name: string;
@@ -27,6 +28,21 @@ export interface Client {
   products: Product[]; // Simplificado para demo, idealmente seria separado por mes/ano
 }
 
+// Interfaces para Previsão
+export interface ForecastItem {
+  clientId: string;
+  clientName: string;
+  forecastValue: number;
+  targetValue: number;
+}
+
+export interface ForecastEntry {
+  id: string;
+  date: string; // ISO string
+  totalValue: number;
+  items: ForecastItem[];
+}
+
 // Helper para gerar dados aleatórios
 const generateHistory = (years: number[]): MonthlyData[] => {
   const history: MonthlyData[] = [];
@@ -37,7 +53,7 @@ const generateHistory = (years: number[]): MonthlyData[] => {
         month: m,
         year: year,
         value: hasPurchase ? Math.floor(Math.random() * 5000) + 1000 : 0,
-        target: 3000,
+        target: 3000, // Meta fixa para exemplo
         positivou: hasPurchase
       });
     }
@@ -90,3 +106,13 @@ export const clients: Client[] = Array.from({ length: 25 }).map((_, i) => {
     products: generateProducts()
   };
 }).sort((a, b) => b.totalPurchase - a.totalPurchase);
+
+// Helper para pegar meta do mês atual
+export const getClientCurrentTarget = (client: Client): number => {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    
+    const data = client.history.find(h => h.month === currentMonth && h.year === currentYear);
+    return data ? data.target : 3000; // Retorna 3000 se não achar (fallback)
+};
