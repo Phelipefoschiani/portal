@@ -5,7 +5,7 @@ import { Input } from './Input';
 import { supabase, INTERNAL_DOMAIN, isSupabaseConfigured } from '../lib/supabase';
 
 interface LoginScreenProps {
-  onLogin: () => void;
+  onLogin: (name: string, role: 'admin' | 'rep') => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
@@ -24,6 +24,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     try {
       // 1. Tenta Login via Supabase se estiver configurado
       if (isSupabaseConfigured) {
+        // ... (Lógica Supabase existente mantida)
         // Se o usuário não digitou um email completo, adiciona o domínio interno
         const email = login.includes('@') ? login : `${login}${INTERNAL_DOMAIN}`;
         
@@ -34,20 +35,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
         if (!authError && data.user) {
           setIsLoading(false);
-          onLogin(); 
+          const name = data.user.user_metadata?.full_name || email.split('@')[0];
+          // Mockar role baseado no email ou metadata no futuro
+          onLogin(name, 'rep'); 
           return;
         }
-        
-        console.warn('Supabase Auth falhou, tentando fallback local...', authError?.message);
       }
 
-      // 2. Fallback: Login Local (Mock) para demonstração
+      // 2. Fallback: Login Local (Mock)
       setTimeout(() => {
         const normalizedLogin = login.trim().toLowerCase();
         
         if (normalizedLogin === 'repre' && password === '123') {
           setIsLoading(false);
-          onLogin();
+          onLogin('Ricardo Souza', 'rep');
+        } else if (normalizedLogin === 'admin' && password === '123') {
+          setIsLoading(false);
+          onLogin('Roberto Gerente', 'admin');
         } else {
           setIsLoading(false);
           setError('Usuário ou senha incorretos.');

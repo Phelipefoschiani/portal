@@ -1,28 +1,57 @@
-import React, { useState } from 'react';
-import { Plus, Save, Trash2, AlertTriangle, TrendingUp, Calendar, Search, X, ChevronRight, Eye } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Save, Trash2, AlertTriangle, TrendingUp, Calendar, Search, X, ChevronRight, Eye, CheckCircle2, XCircle, RefreshCw, PenTool } from 'lucide-react';
 import { Button } from './Button';
 import { Input } from './Input';
-import { clients, getClientCurrentTarget, ForecastItem, ForecastEntry, Client } from '../lib/mockData';
+import { clients, getClientCurrentTarget, ForecastItem, ForecastEntry, Client, addForecast, mockForecasts } from '../lib/mockData';
 import { createPortal } from 'react-dom';
 
-export const ForecastScreen: React.FC = () => {
+interface ForecastScreenProps {
+  initialForecastId?: string | null;
+  onDraftLoaded?: () => void;
+}
+
+export const ForecastScreen: React.FC<ForecastScreenProps> = ({ initialForecastId, onDraftLoaded }) => {
   // Estado do Formulário
   const [selectedClientId, setSelectedClientId] = useState('');
   const [forecastValue, setForecastValue] = useState('');
   
   // Estado dos Dados
   const [draftItems, setDraftItems] = useState<ForecastItem[]>([]);
-  const [history, setHistory] = useState<ForecastEntry[]>([]);
+  // Inicializa o histórico com dados globais do mock para o representante atual (rep-1)
+  const [history, setHistory] = useState<ForecastEntry[]>(() => 
+      mockForecasts
+        .filter(f => f.repId === 'rep-1')
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  );
   
   // Estado dos Modais
   const [warningModalOpen, setWarningModalOpen] = useState(false);
   const [pendingItem, setPendingItem] = useState<ForecastItem | null>(null);
   const [detailModalItem, setDetailModalItem] = useState<ForecastEntry | null>(null);
 
+  // Efeito para carregar rascunho automaticamente se vier de notificação
+  useEffect(() => {
+    if (initialForecastId) {
+        const target = mockForecasts.find(f => f.id === initialForecastId);
+        if (target) {
+            // Carrega itens no rascunho
+            setDraftItems(target.items);
+            // Avisa o pai que carregou (para limpar o ID)
+            if (onDraftLoaded) onDraftLoaded();
+        }
+    }
+  }, [initialForecastId, onDraftLoaded]);
+
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
-  // Calcula total do rascunho
+  // Calcula totais
   const draftTotal = draftItems.reduce((acc, curr) => acc + curr.forecastValue, 0);
+  
+  // Calcula cobertura da carteira
+  const totalClientsInPortfolio = clients.length;
+  const coveragePercent = totalClientsInPortfolio > 0 
+    ? (draftItems.length / totalClientsInPortfolio) * 100 
+    : 0;
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,11 +107,20 @@ export const ForecastScreen: React.FC = () => {
       id: Date.now().toString(),
       date: new Date().toISOString(),
       totalValue: draftTotal,
-      items: [...draftItems]
+      items: [...draftItems],
+      repId: 'rep-1', // Mock ID
+      repName: 'Ricardo Souza', // Mock Name
+      status: 'pending' // Novo status inicial
     };
 
+    // Atualiza o "Banco de Dados" global
+    addForecast(newEntry);
+
+    // Atualiza a visualização local
     setHistory(prev => [newEntry, ...prev]);
-    setDraftItems([]); // Limpa o rascunho
+    
+    // Limpa o rascunho
+    setDraftItems([]);
     setSelectedClientId('');
     setForecastValue('');
   };
@@ -94,6 +132,29 @@ export const ForecastScreen: React.FC = () => {
       setSelectedClientId('');
       setForecastValue('');
     }
+  };
+
+  // Função para carregar itens de uma previsão recusada para edição
+  const handleLoadDraftForCorrection = (entry: ForecastEntry) => {
+      if (draftItems.length > 0) {
+          if (!window.confirm('Você já tem itens no rascunho atual. Deseja substituí-los pela previsão selecionada para correção?')) {
+              return;
+          }
+      }
+      setDraftItems(entry.items);
+      // Opcional: Remover do histórico ou marcar como "em correção", aqui apenas copiamos
+      setDetailModalItem(null); // Fecha modal se aberto
+      
+      // Scroll para o topo para o usuário ver que carregou
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const getStatusIcon = (status: string) => {
+      switch(status) {
+          case 'approved': return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
+          case 'rejected': return <XCircle className="w-5 h-5 text-red-500" />;
+          default: return <div className="w-2 h-2 rounded-full bg-amber-400"></div>;
+      }
   };
 
   return (
@@ -159,9 +220,25 @@ export const ForecastScreen: React.FC = () => {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <h3 className="font-bold text-slate-800">Previsão em Construção</h3>
-              <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
-                {draftItems.length} Clientes
-              </span>
+              
+              <div className="flex items-center gap-3">
+                  {/* Barra de progresso da cobertura */}
+                  <div className="hidden sm:block w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                     <div 
+                        className="h-full bg-blue-500 transition-all duration-500" 
+                        style={{ width: `${Math.min(coveragePercent, 100)}%` }}
+                     ></div>
+                  </div>
+
+                  <div className="flex flex-col items-end">
+                    <span className="text-xs font-bold text-blue-700">
+                        {draftItems.length} Clientes
+                    </span>
+                    <span className="text-xs text-blue-500 font-medium">
+                        {coveragePercent.toFixed(1)}% da carteira
+                    </span>
+                  </div>
+              </div>
             </div>
             
             {/* Altura máxima definida aqui para forçar scroll se crescer muito, sem empurrar o footer */}
@@ -232,7 +309,7 @@ export const ForecastScreen: React.FC = () => {
                     className="h-10"
                   >
                     <Save className="w-4 h-4 mr-2" />
-                    Salvar Previsão
+                    Enviar Previsão
                   </Button>
                 </div>
               </div>
@@ -245,7 +322,7 @@ export const ForecastScreen: React.FC = () => {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full max-h-[800px]">
             <div className="p-4 border-b border-slate-100 bg-slate-50/50">
               <h3 className="font-bold text-slate-800">Histórico de Envios</h3>
-              <p className="text-xs text-slate-500 mt-1">Clique para ver detalhes</p>
+              <p className="text-xs text-slate-500 mt-1">Acompanhe o status</p>
             </div>
             
             <div className="flex-1 overflow-y-auto">
@@ -258,23 +335,36 @@ export const ForecastScreen: React.FC = () => {
                   {history.map(entry => (
                     <div 
                       key={entry.id} 
-                      onClick={() => setDetailModalItem(entry)}
-                      className="p-4 hover:bg-blue-50 cursor-pointer transition-colors group"
+                      className={`p-4 hover:bg-slate-50 transition-colors group border-l-4 ${entry.status === 'approved' ? 'border-emerald-500' : entry.status === 'rejected' ? 'border-red-500' : 'border-amber-400'}`}
                     >
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                      <div className="flex justify-between items-start mb-2" onClick={() => setDetailModalItem(entry)}>
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded cursor-pointer">
                           {new Date(entry.date).toLocaleDateString('pt-BR')}
                         </span>
-                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500" />
+                        {getStatusIcon(entry.status)}
                       </div>
+                      
                       <div className="flex justify-between items-end">
-                        <div>
+                        <div onClick={() => setDetailModalItem(entry)} className="cursor-pointer">
                           <p className="text-sm font-bold text-slate-800">{formatCurrency(entry.totalValue)}</p>
                           <p className="text-xs text-slate-500">{entry.items.length} clientes</p>
                         </div>
-                        <div className="p-2 bg-white rounded-full border border-slate-100 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                           <Eye className="w-4 h-4 text-blue-600" />
-                        </div>
+                        
+                        {/* Botão de Ação Direta se Recusado */}
+                        {entry.status === 'rejected' ? (
+                            <button 
+                                onClick={() => handleLoadDraftForCorrection(entry)}
+                                className="p-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 hover:shadow-sm transition-all flex items-center gap-1"
+                                title="Corrigir previsão"
+                            >
+                                <PenTool className="w-4 h-4" />
+                                <span className="text-[10px] font-bold">Corrigir</span>
+                            </button>
+                        ) : (
+                            <div className="p-2 bg-white rounded-full border border-slate-100 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => setDetailModalItem(entry)}>
+                                <Eye className="w-4 h-4 text-blue-600" />
+                            </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -335,7 +425,11 @@ export const ForecastScreen: React.FC = () => {
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
               <div>
-                <h3 className="text-xl font-bold text-slate-800">Detalhes da Previsão</h3>
+                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    Detalhes da Previsão
+                    {detailModalItem.status === 'approved' && <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded">Aprovada</span>}
+                    {detailModalItem.status === 'rejected' && <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded">Recusada</span>}
+                </h3>
                 <p className="text-sm text-slate-500">
                   Enviado em {new Date(detailModalItem.date).toLocaleString('pt-BR')}
                 </p>
@@ -344,6 +438,24 @@ export const ForecastScreen: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Aviso de Recusa se houver */}
+            {detailModalItem.status === 'rejected' && (
+                <div className="bg-red-50 p-4 border-b border-red-100">
+                    <p className="text-sm text-red-800 font-bold mb-1 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4"/> Atenção: Previsão Recusada
+                    </p>
+                    <p className="text-sm text-red-700 italic mb-3">"{detailModalItem.rejectionReason}"</p>
+                    <Button 
+                        size="sm" 
+                        className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto shadow-md shadow-red-200"
+                        onClick={() => handleLoadDraftForCorrection(detailModalItem)}
+                    >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Carregar itens para correção
+                    </Button>
+                </div>
+            )}
 
             <div className="overflow-y-auto p-0 flex-1">
               <table className="w-full text-left text-sm">
