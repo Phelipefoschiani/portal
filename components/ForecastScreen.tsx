@@ -447,7 +447,6 @@ export const ForecastScreen: React.FC<ForecastScreenProps> = ({ initialForecastI
                     </p>
                     <p className="text-sm text-red-700 italic mb-3">"{detailModalItem.rejectionReason}"</p>
                     <Button 
-                        size="sm" 
                         className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto shadow-md shadow-red-200"
                         onClick={() => handleLoadDraftForCorrection(detailModalItem)}
                     >

@@ -244,7 +244,7 @@ export const CampaignsScreen: React.FC = () => {
                 </div>
 
                 <div className="pt-4">
-                    <Button type="submit" fullWidth size="lg" className="h-12 text-base shadow-xl shadow-blue-200" disabled={totalInvestment <= 0}>
+                    <Button type="submit" fullWidth className="h-12 text-base shadow-xl shadow-blue-200" disabled={totalInvestment <= 0}>
                         <Save className="w-5 h-5 mr-2" />
                         Simular e Salvar Solicitação
                     </Button>

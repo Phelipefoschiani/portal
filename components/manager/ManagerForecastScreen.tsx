@@ -184,7 +184,7 @@ export const ManagerForecastScreen: React.FC = () => {
                     </div>
                 ) : (
                     filteredForecasts.map(forecast => (
-                        <div key={forecast.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-slideUp" ref={el => cardRefs.current[forecast.id] = el}>
+                        <div key={forecast.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-slideUp" ref={(el) => { cardRefs.current[forecast.id] = el; }}>
                             <div 
                                 onClick={() => setExpandedId(expandedId === forecast.id ? null : forecast.id)}
                                 className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
