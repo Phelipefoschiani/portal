@@ -295,6 +295,9 @@ export const mockForecasts: ForecastEntry[] = [
     }
 ];
 
+// Dados fake para download (base64 de arquivo texto simples)
+const DUMMY_FILE_URL = "data:text/plain;base64,RXN0ZSB1bSBhcnF1aXZvIGRlIHRlc3RlIHBhcmEgZG93bmxvYWQgbm8gUG9ydGFsIENlbnRyby1Ob3J0ZS4=";
+
 export let mockNotifications: Notification[] = [
   {
     id: 'not-1',
@@ -304,7 +307,7 @@ export let mockNotifications: Notification[] = [
     date: new Date().toISOString(),
     readBy: [], 
     deliveredTo: [],
-    attachments: [{ name: 'Tabela_Precos_Julho.pdf', url: '#', type: 'pdf', size: '2.4 MB' }]
+    attachments: [{ name: 'Tabela_Precos_Julho.txt', url: DUMMY_FILE_URL, type: 'pdf', size: '2.4 MB' }]
   },
   {
     id: 'not-2',
@@ -314,7 +317,7 @@ export let mockNotifications: Notification[] = [
     date: new Date(Date.now() - 86400000).toISOString(),
     readBy: ['rep-2'],
     deliveredTo: ['rep-1', 'rep-2', 'rep-3'],
-    attachments: [{ name: 'Regulamento.pdf', url: '#', type: 'pdf', size: '500 KB' }]
+    attachments: [{ name: 'Regulamento.txt', url: DUMMY_FILE_URL, type: 'pdf', size: '500 KB' }]
   }
 ];
 
