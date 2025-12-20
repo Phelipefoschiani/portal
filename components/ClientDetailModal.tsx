@@ -1,263 +1,359 @@
-import React, { useState, useRef } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, TrendingUp, Calendar, AlertCircle, Package, Target, History } from 'lucide-react';
+import { X, Download, Calendar, AlertCircle, Package, Target, History, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 import { ClientProductsModal } from './ClientProductsModal';
 import { ClientLastPurchaseModal } from './ClientLastPurchaseModal';
-import { Client } from '../lib/mockData';
+import { supabase } from '../lib/supabase';
 import html2canvas from 'html2canvas';
 
 interface ClientDetailModalProps {
-  client: Client;
+  client: any; 
   onClose: () => void;
 }
 
 export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, onClose }) => {
-  const [year, setYear] = useState(2024);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [showProducts, setShowProducts] = useState(false);
   const [showLastPurchase, setShowLastPurchase] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [productsData, setProductsData] = useState<any[]>([]);
+  const printRef = useRef<HTMLDivElement>(null);
 
-  // Filtra histórico pelo ano
-  const yearData = client.history.filter(h => h.year === year).sort((a, b) => a.month - b.month);
+  const cleanCnpj = (val: string) => String(val || '').replace(/\D/g, '');
 
-  // Cálculos do Resumo
-  const monthsPassed = yearData.length; // Assumindo dados populados
-  const monthsPositive = yearData.filter(d => d.value > 0).length;
-  const totalFaturado = yearData.reduce((acc, curr) => acc + curr.value, 0);
-  const totalMeta = yearData.reduce((acc, curr) => acc + curr.target, 0);
-  const percentualAlcance = totalMeta > 0 ? (totalFaturado / totalMeta) * 100 : 0;
-  const averagePurchase = monthsPositive > 0 ? totalFaturado / monthsPositive : 0;
+  useEffect(() => {
+    if (client) {
+      fetchClientFullData();
+    }
+  }, [client, year]);
 
-  const handleDownloadImage = async () => {
-    if (!contentRef.current) return;
-    setIsDownloading(true);
+  const fetchClientFullData = async () => {
+    setIsLoading(true);
+    const cleanedCnpj = cleanCnpj(client.cnpj);
     try {
-      // Técnica de Clonagem para capturar todo o conteúdo (scroll)
-      const element = contentRef.current;
-      const clone = element.cloneNode(true) as HTMLElement;
-      
-      // Ajusta estilos do clone
-      clone.style.width = `${element.offsetWidth}px`;
-      clone.style.height = 'auto'; // Altura automática para mostrar tudo
-      clone.style.overflow = 'visible'; // Remove barra de rolagem
-      clone.style.position = 'absolute';
-      clone.style.top = '-9999px';
-      clone.style.left = '-9999px';
-      clone.style.background = '#f8fafc'; // bg-slate-50
-      
-      // Criar cabeçalho para a imagem (já que o header original fica fora do scroll)
-      const headerDiv = document.createElement('div');
-      headerDiv.style.padding = '24px';
-      headerDiv.style.background = '#ffffff';
-      headerDiv.style.borderBottom = '1px solid #e2e8f0';
-      headerDiv.style.marginBottom = '0px';
-      headerDiv.innerHTML = `
-        <h1 style="font-size: 24px; font-weight: bold; color: #1e293b; margin-bottom: 4px;">${client.name}</h1>
-        <div style="display: flex; gap: 16px; font-size: 14px; color: #64748b;">
-          <span>CNPJ: ${client.cnpj}</span>
-          <span>•</span>
-          <span>${client.city}</span>
-          <span>•</span>
-          <span>Ano Ref: ${year}</span>
-        </div>
-      `;
-      
-      // Inserir header no topo do clone
-      clone.insertBefore(headerDiv, clone.firstChild);
+      // Busca todas as vendas do cliente no ano (com bypass de limite se necessário, mas para um cliente só 1000 costuma bastar)
+      const { data: sales } = await supabase
+        .from('dados_vendas')
+        .select('*')
+        .eq('cnpj', cleanedCnpj) // USANDO CNPJ LIMPO NA QUERY
+        .gte('data', `${year}-01-01`)
+        .lte('data', `${year}-12-31`)
+        .limit(5000);
 
-      document.body.appendChild(clone);
+      const { data: targets } = await supabase
+        .from('metas_clientes')
+        .select('*')
+        .eq('cliente_id', client.id)
+        .eq('ano', year);
 
-      const canvas = await html2canvas(clone, { 
-        scale: 2,
-        useCORS: true 
+      const monthlyHistory = Array.from({ length: 12 }, (_, i) => {
+        const monthNum = i + 1;
+        const monthSales = sales?.filter(s => new Date(s.data + 'T00:00:00').getUTCMonth() + 1 === monthNum) || [];
+        const monthTarget = targets?.find(t => t.mes === monthNum)?.valor || 0;
+        const totalFaturado = monthSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+        
+        return {
+          month: monthNum,
+          year: year,
+          value: totalFaturado,
+          target: monthTarget,
+          positivou: totalFaturado > 0
+        };
       });
 
-      document.body.removeChild(clone);
+      const productMap = new Map();
+      sales?.forEach(s => {
+        const key = s.codigo_produto || s.produto;
+        const current = productMap.get(key) || { 
+          id: key, 
+          name: s.produto, 
+          totalValue: 0, 
+          quantity: 0, 
+          lastPurchaseDate: s.data 
+        };
+        
+        productMap.set(key, {
+          ...current,
+          totalValue: current.totalValue + (Number(s.faturamento) || 0),
+          quantity: current.quantity + (Number(s.qtde_faturado) || 0),
+          lastPurchaseDate: new Date(s.data) > new Date(current.lastPurchaseDate) ? s.data : current.lastPurchaseDate
+        });
+      });
 
+      setHistoryData(monthlyHistory);
+      setProductsData(Array.from(productMap.values()).sort((a, b) => b.totalValue - a.totalValue));
+    } catch (error) {
+      console.error('Erro ao carregar detalhes do cliente:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownloadImage = async () => {
+    if (!printRef.current) return;
+    setIsDownloading(true);
+    try {
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: 1200
+      });
       const link = document.createElement('a');
-      link.download = `relatorio_${client.name.replace(/\s/g, '_')}_${year}_completo.png`;
-      link.href = canvas.toDataURL();
+      link.download = `performance_${client.nome_fantasia.replace(/\s/g, '_')}_${year}.png`;
+      link.href = canvas.toDataURL('image/png');
       link.click();
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error('Erro ao gerar imagem:', err);
     } finally {
       setIsDownloading(false);
     }
   };
 
-  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  const monthsPositive = historyData.filter(d => d.value > 0).length;
+  const totalFaturado = historyData.reduce((acc, curr) => acc + curr.value, 0);
+  const totalMeta = historyData.reduce((acc, curr) => acc + curr.target, 0);
+  const percentualAlcance = totalMeta > 0 ? (totalFaturado / totalMeta) * 100 : 0;
+  const averagePurchase = monthsPositive > 0 ? totalFaturado / monthsPositive : 0;
 
-  // Usando Portal para renderizar fora da hierarquia DOM atual (que pode ter transform/opacity)
+  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  const monthsNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
   return createPortal(
     <>
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 md:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-        <div className="bg-white w-full max-w-6xl rounded-xl md:rounded-2xl shadow-2xl flex flex-col max-h-[95vh] md:max-h-[90vh]">
+        <div className="bg-white w-full max-w-6xl rounded-2xl shadow-2xl flex flex-col max-h-[95vh] md:max-h-[90vh] overflow-hidden">
           
-          {/* Header Responsivo */}
-          <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-start md:items-center bg-slate-50 rounded-t-xl md:rounded-t-2xl">
-            <div className="pr-8 md:pr-0">
-              {/* Removido line-clamp-1 para evitar corte de nome */}
-              <h2 className="text-lg md:text-2xl font-bold text-slate-800">{client.name}</h2>
-              <div className="flex flex-col md:flex-row md:gap-4 mt-1 text-xs md:text-sm text-slate-500">
+          <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-start bg-white">
+            <div className="space-y-1">
+              <h2 className="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">{client.nome_fantasia}</h2>
+              <div className="flex flex-wrap gap-2 text-sm text-slate-500 font-medium">
                 <span>CNPJ: {client.cnpj}</span>
-                <span className="hidden md:inline">•</span>
-                <span>{client.city}</span>
+                <span>•</span>
+                <span>{client.city || 'Cidade não informada'}</span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                   Ano Ref: 
+                   <select 
+                     value={year} 
+                     onChange={(e) => setYear(Number(e.target.value))}
+                     className="bg-transparent border-none p-0 font-bold text-slate-700 focus:ring-0 cursor-pointer"
+                   >
+                     <option value={2023}>2023</option>
+                     <option value={2024}>2024</option>
+                     <option value={2025}>2025</option>
+                   </select>
+                </span>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-               <button onClick={onClose} className="p-2 -mr-2 md:mr-0 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-all text-slate-400">
+              <X className="w-6 h-6" />
+            </button>
           </div>
 
-          {/* Controls Bar Responsiva */}
-          <div className="p-4 bg-white border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-             <div className="flex items-center gap-3 w-full md:w-auto">
-               <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Ano Ref:</label>
-               <select 
-                 value={year} 
-                 onChange={(e) => setYear(Number(e.target.value))}
-                 className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full md:w-auto p-2.5 outline-none"
-               >
-                 <option value={2023}>2023</option>
-                 <option value={2024}>2024</option>
-               </select>
-             </div>
+          <div className="px-8 py-4 bg-white border-b border-slate-100 flex flex-col md:flex-row justify-end items-center gap-3">
+             <Button 
+                variant="outline" 
+                onClick={() => setShowLastPurchase(true)} 
+                className="h-10 px-4 text-sm font-medium border-amber-400 text-slate-600 hover:bg-amber-50 rounded-xl"
+                disabled={isLoading}
+             >
+                <History className="w-4 h-4 mr-2" />
+                Reposição
+             </Button>
              
-             {/* Botões em Grid no Mobile, Flex no Desktop */}
-             <div className="grid grid-cols-2 md:flex gap-2 md:gap-3 w-full md:w-auto">
-               <Button variant="outline" onClick={() => setShowLastPurchase(true)} className="h-10 px-3 text-xs md:text-sm justify-center border-amber-200 hover:border-amber-500 hover:text-amber-600 text-slate-600 col-span-2 md:col-span-1">
-                  <History className="w-4 h-4 mr-2" />
-                  Reposição
-               </Button>
-               <Button variant="secondary" onClick={() => setShowProducts(true)} className="h-10 px-3 text-xs md:text-sm justify-center">
-                  <Package className="w-4 h-4 mr-2" />
-                  Produtos
-               </Button>
-               <Button variant="outline" onClick={handleDownloadImage} isLoading={isDownloading} className="h-10 px-3 text-xs md:text-sm justify-center">
-                  <Download className="w-4 h-4 mr-2" />
-                  Salvar
-               </Button>
-             </div>
+             <Button 
+                variant="secondary" 
+                onClick={() => setShowProducts(true)} 
+                className="h-10 px-4 text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white shadow-md rounded-xl"
+                disabled={isLoading}
+             >
+                <Package className="w-4 h-4 mr-2" />
+                Produtos
+             </Button>
+
+             <Button 
+                variant="outline" 
+                onClick={handleDownloadImage} 
+                isLoading={isDownloading} 
+                className="h-10 px-4 text-sm font-medium border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl shadow-sm"
+             >
+                <Download className="w-4 h-4 mr-2" />
+                Salvar
+             </Button>
           </div>
 
-          {/* Scrollable Content */}
-          <div className="overflow-y-auto p-4 md:p-6 bg-slate-50 flex-1" ref={contentRef}>
-            
-            {/* KPI Cards Grid Responsivo */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6 md:mb-8">
-               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 col-span-2 md:col-span-1">
-                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Média Mensal</p>
-                  <p className="text-base md:text-lg font-bold text-slate-800">{formatCurrency(averagePurchase)}</p>
-               </div>
-               
-               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Meta Total</p>
-                  <p className="text-base md:text-lg font-bold text-slate-700">{formatCurrency(totalMeta)}</p>
-               </div>
-
-               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200">
-                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Faturado</p>
-                  <p className="text-base md:text-lg font-bold text-emerald-600">{formatCurrency(totalFaturado)}</p>
-               </div>
-
-               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Alcançado</p>
-                  <div className="flex items-end gap-2">
-                     <p className={`text-base md:text-xl font-bold ${percentualAlcance >= 100 ? 'text-emerald-500' : 'text-amber-500'}`}>
-                       {percentualAlcance.toFixed(1)}%
-                     </p>
-                  </div>
-                  <div className="w-full h-1 bg-slate-100 mt-2 rounded-full overflow-hidden">
-                     <div className={`h-full ${percentualAlcance >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(percentualAlcance, 100)}%` }}></div>
-                  </div>
-               </div>
-
-               <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 col-span-2 md:col-span-1">
-                  <p className="text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Positivação</p>
-                  <p className="text-base md:text-lg font-bold text-blue-600">{monthsPositive} <span className="text-sm font-normal text-slate-400">/ {monthsPassed} meses</span></p>
-               </div>
-            </div>
-
-            {/* Monthly Grid */}
-            <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-blue-500" />
-              Histórico Mensal
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {Array.from({ length: 12 }, (_, i) => {
-                const monthNum = i + 1;
-                const data = yearData.find(d => d.month === monthNum);
-                const hasData = data && data.value > 0;
-                
-                return (
-                  <div key={monthNum} className={`p-4 rounded-xl border transition-all ${hasData ? 'bg-white border-slate-200' : 'bg-slate-100/50 border-slate-100'}`}>
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="font-bold text-slate-700 capitalize">
-                        {new Date(0, i).toLocaleString('pt-BR', { month: 'long' })}
-                      </span>
-                      {hasData ? (
-                        <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full">POSITIVADO</span>
-                      ) : (
-                        <span className="bg-slate-200 text-slate-500 text-[10px] font-bold px-2 py-0.5 rounded-full">SEM COMPRA</span>
-                      )}
-                    </div>
-
-                    {hasData ? (
-                      <div className="space-y-2">
-                         <div className="flex justify-between text-sm">
-                           <span className="text-slate-500">Realizado:</span>
-                           <span className="font-bold text-slate-900">{formatCurrency(data.value)}</span>
-                         </div>
-                         <div className="flex justify-between text-sm">
-                           <span className="text-slate-500">Meta:</span>
-                           <span className="text-slate-600">{formatCurrency(data.target)}</span>
-                         </div>
-                         <div className="pt-2">
-                            <div className="flex justify-between text-xs mb-1">
-                               <span className="text-slate-400">Atingimento</span>
-                               <span className={`font-bold ${(data.value / data.target) >= 1 ? 'text-emerald-600' : 'text-blue-600'}`}>
-                                 {((data.value / data.target) * 100).toFixed(0)}%
-                               </span>
-                            </div>
-                            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                               <div 
-                                 className={`h-full rounded-full ${(data.value / data.target) >= 1 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                                 style={{ width: `${Math.min((data.value / data.target) * 100, 100)}%` }}
-                               ></div>
-                            </div>
-                         </div>
+          <div className="overflow-y-auto p-6 md:p-8 bg-white flex-1">
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-600" />
+                <p className="font-bold uppercase text-xs tracking-widest">Calculando performance...</p>
+              </div>
+            ) : (
+              <div className="animate-fadeIn">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                   <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-center min-h-[100px]">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Média Mensal</p>
+                      <p className="text-xl font-bold text-slate-800">{formatCurrency(averagePurchase)}</p>
+                   </div>
+                   <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-center min-h-[100px]">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Meta Total</p>
+                      <p className="text-xl font-bold text-slate-800">{formatCurrency(totalMeta)}</p>
+                   </div>
+                   <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-center min-h-[100px]">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Faturado</p>
+                      <p className="text-xl font-bold text-emerald-600">{formatCurrency(totalFaturado)}</p>
+                   </div>
+                   <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-center min-h-[100px] relative overflow-hidden">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Alcançado</p>
+                      <p className={`text-xl font-bold ${percentualAlcance >= 100 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                        {percentualAlcance.toFixed(1)}%
+                      </p>
+                      <div className="w-full h-1 bg-slate-50 mt-2 rounded-full overflow-hidden">
+                         <div className={`h-full ${percentualAlcance >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(percentualAlcance, 100)}%` }}></div>
                       </div>
-                    ) : (
-                      <div className="h-20 flex flex-col items-center justify-center text-slate-400">
-                        <AlertCircle className="w-6 h-6 mb-1 opacity-20" />
-                        <span className="text-xs">Nenhum registro</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                   </div>
+                   <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-center min-h-[100px]">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Positivação</p>
+                      <p className="text-xl font-bold text-blue-600">{monthsPositive} <span className="text-sm font-normal text-slate-400">/ 12 meses</span></p>
+                   </div>
+                </div>
 
+                <div className="flex items-center gap-2 mb-6">
+                    <Calendar className="w-5 h-5 text-blue-500" />
+                    <h3 className="text-lg font-bold text-slate-800">Histórico Mensal</h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {historyData.map((data, i) => {
+                    const hasData = data.value > 0;
+                    return (
+                      <div key={i} className={`p-5 rounded-2xl border transition-all ${hasData ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-100'}`}>
+                        <div className="flex justify-between items-center mb-4">
+                          <span className="font-bold text-slate-800">{monthsNames[i]}</span>
+                          {hasData ? (
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 uppercase">POSITIVADO</span>
+                          ) : (
+                            <span className="bg-slate-200 text-slate-500 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase">SEM COMPRA</span>
+                          )}
+                        </div>
+                        {hasData || data.target > 0 ? (
+                          <div className="space-y-2 text-xs">
+                             <div className="flex justify-between"><span className="text-slate-500">Realizado:</span><span className="font-bold text-slate-900">{formatCurrency(data.value)}</span></div>
+                             <div className="flex justify-between"><span className="text-slate-500">Meta:</span><span className="text-slate-600">{formatCurrency(data.target)}</span></div>
+                             {data.target > 0 && (
+                               <div className="pt-2">
+                                  <div className="flex justify-between text-[10px] mb-1">
+                                     <span className="text-slate-400 font-bold uppercase">Atingimento</span>
+                                     <span className={`font-bold ${(data.value / data.target) >= 1 ? 'text-emerald-600' : 'text-blue-600'}`}>{((data.value / data.target) * 100).toFixed(0)}%</span>
+                                  </div>
+                                  <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                     <div className={`h-full rounded-full ${(data.value / data.target) >= 1 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${Math.min((data.value / data.target) * 100, 100)}%` }}></div>
+                                  </div>
+                               </div>
+                             )}
+                          </div>
+                        ) : (
+                          <div className="h-20 flex flex-col items-center justify-center text-slate-300">
+                            <AlertCircle className="w-5 h-5 mb-1 opacity-10" />
+                            <span className="text-[10px] font-medium uppercase tracking-widest">Nenhum registro</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Nested Product Modal */}
+      <div ref={printRef} className="fixed top-0 left-[-9999px] w-[1200px] bg-white p-12 text-slate-900">
+        <div className="border-b-4 border-slate-900 pb-8 mb-10 flex justify-between items-end">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.3em] text-blue-600 mb-2">Relatório de Performance Comercial</p>
+              <h1 className="text-5xl font-black text-slate-900 tracking-tighter mb-2">{client.nome_fantasia}</h1>
+              <div className="flex gap-6 text-sm font-bold text-slate-400 uppercase tracking-widest">
+                <span>CNPJ: {client.cnpj}</span>
+                <span>•</span>
+                <span>{client.city || 'Cidade não informada'}</span>
+                <span>•</span>
+                <span>Ano Referência: {year}</span>
+              </div>
+            </div>
+            <div className="text-right">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Data de Geração</p>
+                <p className="text-xl font-black text-slate-800">{new Date().toLocaleDateString('pt-BR')}</p>
+            </div>
+        </div>
+        <div className="grid grid-cols-5 gap-6 mb-12">
+            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Média Mensal</p>
+                <p className="text-2xl font-black text-slate-900">{formatCurrency(averagePurchase)}</p>
+            </div>
+            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Meta Total</p>
+                <p className="text-2xl font-black text-slate-900">{formatCurrency(totalMeta)}</p>
+            </div>
+            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Faturado</p>
+                <p className="text-2xl font-black text-emerald-600">{formatCurrency(totalFaturado)}</p>
+            </div>
+            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Atingimento</p>
+                <p className="text-2xl font-black text-blue-600">{percentualAlcance.toFixed(1)}%</p>
+            </div>
+            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Positivação</p>
+                <p className="text-2xl font-black text-slate-800">{monthsPositive} / 12</p>
+            </div>
+        </div>
+        <div className="grid grid-cols-3 gap-6">
+            {historyData.map((data, i) => (
+                <div key={i} className={`p-6 rounded-3xl border-2 ${data.value > 0 ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                    <div className="flex justify-between items-center mb-6">
+                        <span className="text-lg font-black text-slate-800 uppercase tracking-tighter">{monthsNames[i]}</span>
+                        {data.value > 0 ? (
+                            <span className="text-[10px] font-black px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 uppercase tracking-widest">POSITIVADO</span>
+                        ) : (
+                            <span className="text-[10px] font-black px-3 py-1 rounded-full bg-slate-200 text-slate-500 uppercase tracking-widest">SEM COMPRA</span>
+                        )}
+                    </div>
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-end border-b border-slate-50 pb-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Realizado</span>
+                            <span className="text-xl font-black text-slate-900">{formatCurrency(data.value)}</span>
+                        </div>
+                        <div className="flex justify-between items-end border-b border-slate-50 pb-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Meta</span>
+                            <span className="text-lg font-bold text-slate-600">{formatCurrency(data.target)}</span>
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
+        <div className="mt-20 pt-10 border-t border-slate-100 flex justify-between items-center opacity-40">
+            <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">Portal Centro-Norte • Inteligência de Dados Comercial</p>
+            <div className="w-16 h-16 bg-slate-900 rounded-2xl"></div>
+        </div>
+      </div>
+
       {showProducts && (
         <ClientProductsModal 
-          client={client} 
+          client={{ ...client, name: client.nome_fantasia, products: productsData }} 
           onClose={() => setShowProducts(false)} 
         />
       )}
 
-      {/* Nested Last Purchase Modal */}
       {showLastPurchase && (
         <ClientLastPurchaseModal
-          client={client}
+          client={{ ...client, name: client.nome_fantasia, products: productsData }}
           onClose={() => setShowLastPurchase(false)}
         />
       )}

@@ -1,34 +1,34 @@
-import React, { useState, useRef } from 'react';
+
+import React, { useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, FileDown, Package, Filter } from 'lucide-react';
 import { Button } from './Button';
-import { Client, Product } from '../lib/mockData';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 interface ClientProductsModalProps {
-  client: Client;
+  client: {
+    id: string;
+    name: string;
+    products: any[];
+  };
   onClose: () => void;
 }
 
 export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client, onClose }) => {
-  // 0 representa "Todos"
-  const [selectedYear, setSelectedYear] = useState<number>(0); 
   const [selectedMonth, setSelectedMonth] = useState<number>(0); 
   const contentRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Filtragem
-  const filteredProducts = client.products.map(p => {
-    const modifier = (selectedYear === 0 && selectedMonth === 0) ? 1 : Math.random();
-    return {
-      ...p,
-      totalValue: p.totalValue * modifier,
-      quantity: Math.floor(p.quantity * modifier)
-    };
-  })
-  .filter(p => p.totalValue > 0)
-  .sort((a, b) => b.totalValue - a.totalValue);
+  // Agora usamos os produtos reais que vieram do banco (já filtrados por ano no modal pai)
+  // Se quiser filtrar por mês aqui, os dados de produtos precisariam conter o mês da venda.
+  // Como o productsData no pai já é um resumo anual, vamos exibir o Mix Anual ou permitir busca.
+  
+  const filteredProducts = useMemo(() => {
+    // Se no futuro passarmos a data da venda para os produtos, filtraríamos aqui.
+    // Por enquanto, exibimos o Mix consolidado que o banco retornou para o ano selecionado.
+    return client.products.sort((a, b) => b.totalValue - a.totalValue);
+  }, [client.products]);
 
   const totalFiltered = filteredProducts.reduce((acc, curr) => acc + curr.totalValue, 0);
 
@@ -38,57 +38,19 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
 
     try {
       const element = contentRef.current;
-      const clone = element.cloneNode(true) as HTMLElement;
-      
-      // FIX: Configurações específicas para impressão
-      clone.style.width = '1200px';  // Largura fixa generosa
-      clone.style.height = 'auto';
-      clone.style.overflow = 'visible';
-      clone.style.position = 'absolute';
-      clone.style.top = '-9999px';
-      clone.style.left = '-9999px';
-      clone.style.background = '#f8fafc';
-      clone.style.padding = '40px'; 
-      
-      // Ajustes de estilo para evitar cortes
-      const container = clone.querySelector('div.bg-white');
-      if (container) {
-          (container as HTMLElement).style.maxWidth = 'none';
-          (container as HTMLElement).style.boxShadow = 'none';
-      }
-
-      // Forçar quebra de linha nos nomes dos produtos dentro do clone
-      const productCells = clone.querySelectorAll('td.product-name-cell span.break-words');
-      productCells.forEach((cell: any) => {
-         cell.style.whiteSpace = 'normal';
-         cell.style.wordWrap = 'break-word';
-      });
-
-      document.body.appendChild(clone);
-
-      const canvas = await html2canvas(clone, { 
+      const canvas = await html2canvas(element, { 
         scale: 2,
         useCORS: true,
-        logging: false,
-        windowWidth: 1200 // Força o contexto de renderização
+        logging: false
       });
-
-      document.body.removeChild(clone);
 
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
-      if (pdfHeight > 297) {
-         const longPdf = new jsPDF('p', 'mm', [pdfWidth, pdfHeight + 20]);
-         longPdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-         longPdf.save(`mix_produtos_${client.name.replace(/\s/g, '_')}_completo.pdf`);
-      } else {
-         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-         pdf.save(`mix_produtos_${client.name.replace(/\s/g, '_')}.pdf`);
-      }
-
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`mix_produtos_${client.name.replace(/\s/g, '_')}.pdf`);
     } catch (err) {
       console.error(err);
     } finally {
@@ -97,115 +59,82 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
   };
 
   return createPortal(
-    // Z-Index 110 para garantir que fique acima do Modal de Detalhes (Z-100)
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white w-full max-w-4xl rounded-xl md:rounded-2xl shadow-2xl flex flex-col max-h-[95vh] md:max-h-[90vh]">
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         
-        {/* Header */}
-        <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl md:rounded-t-2xl">
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
-            <h3 className="text-lg md:text-xl font-bold text-slate-800 flex items-center gap-2">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <Package className="w-5 h-5 text-purple-600" />
               Mix de Produtos
             </h3>
-            <p className="text-xs md:text-sm text-slate-500 line-clamp-1">{client.name}</p>
+            <p className="text-sm text-slate-500">{client.name}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Filters - Stacked on Mobile */}
-        <div className="p-4 bg-white border-b border-slate-100 flex flex-col md:flex-row gap-3 md:gap-4 md:items-center">
-            <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                <div className="flex items-center gap-2 text-sm text-slate-600 w-full md:w-auto mb-1 md:mb-0">
-                    <Filter className="w-4 h-4" />
-                    Filtros:
-                </div>
-                <div className="flex gap-2 w-full md:w-auto">
-                  <select 
-                      value={selectedYear} 
-                      onChange={(e) => setSelectedYear(Number(e.target.value))}
-                      className="flex-1 md:flex-none px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                  >
-                      <option value={0}>Todos Anos</option>
-                      <option value={2023}>2023</option>
-                      <option value={2024}>2024</option>
-                  </select>
-                  <select 
-                      value={selectedMonth} 
-                      onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                      className="flex-[2] md:flex-none px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                  >
-                      <option value={0}>Todos Meses</option>
-                      {Array.from({length: 12}, (_, i) => (
-                          <option key={i+1} value={i+1}>{new Date(0, i).toLocaleString('pt-BR', {month: 'long'})}</option>
-                      ))}
-                  </select>
-                </div>
+        <div className="p-4 bg-white border-b border-slate-100 flex justify-between items-center">
+            <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+               <Filter className="w-4 h-4" />
+               Listando {filteredProducts.length} itens vendidos no ano
             </div>
             
-            <div className="md:ml-auto w-full md:w-auto">
-                <Button 
-                    variant="secondary" 
-                    onClick={handleDownloadPDF} 
-                    isLoading={isExporting}
-                    className="w-full md:w-auto py-2 h-10 md:h-9 text-sm md:text-xs justify-center"
-                >
-                    <FileDown className="w-4 h-4 mr-2" />
-                    Baixar PDF
-                </Button>
-            </div>
+            <Button 
+                variant="secondary" 
+                onClick={handleDownloadPDF} 
+                isLoading={isExporting}
+                className="h-10 text-sm"
+            >
+                <FileDown className="w-4 h-4 mr-2" />
+                Baixar PDF
+            </Button>
         </div>
 
-        {/* Content for PDF Capture */}
-        <div className="overflow-y-auto p-4 md:p-6 bg-slate-50 flex-1" ref={contentRef}>
-            <div className="bg-white p-4 md:p-8 rounded-xl shadow-sm border border-slate-200">
-                <div className="flex flex-col md:flex-row justify-between md:items-end mb-6 border-b border-slate-100 pb-4 gap-4">
+        <div className="overflow-y-auto p-6 bg-slate-50 flex-1">
+            <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200" ref={contentRef}>
+                <div className="flex justify-between items-end mb-8 border-b border-slate-100 pb-4">
                     <div>
-                        <h4 className="font-bold text-lg text-slate-900">Relatório de Compras</h4>
-                        <p className="text-sm text-slate-500">
-                            Período: {selectedMonth === 0 ? 'Geral' : selectedMonth.toString().padStart(2, '0')} / {selectedYear === 0 ? 'Geral' : selectedYear}
-                        </p>
+                        <h4 className="font-bold text-xl text-slate-900">Mix de Produtos Ativo</h4>
+                        <p className="text-sm text-slate-500">Análise de volume e faturamento por item</p>
                     </div>
-                    <div className="text-left md:text-right bg-purple-50 p-3 md:bg-transparent md:p-0 rounded-lg">
-                        <p className="text-xs text-slate-400 uppercase font-bold">Total no Período</p>
-                        <p className="text-xl md:text-2xl font-bold text-purple-600">
+                    <div className="text-right">
+                        <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Total Faturado</p>
+                        <p className="text-2xl font-black text-purple-600">
                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalFiltered)}
                         </p>
                     </div>
                 </div>
 
-                {/* Tabela Responsiva com Scroll Horizontal no Mobile */}
-                <div className="overflow-x-auto -mx-4 md:mx-0">
-                  <div className="min-w-[500px] px-4 md:px-0">
+                <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
                         <thead>
                             <tr className="border-b border-slate-200 text-slate-500">
-                                <th className="pb-3 font-medium w-[40%]">Produto</th>
-                                <th className="pb-3 font-medium text-center w-[15%]">Qtd.</th>
-                                <th className="pb-3 font-medium text-right w-[25%]">Valor Total</th>
-                                <th className="pb-3 font-medium text-right w-[20%]">% Mix</th>
+                                <th className="pb-3 font-bold uppercase tracking-wider text-[10px]">Produto</th>
+                                <th className="pb-3 font-bold uppercase tracking-wider text-[10px] text-center">Qtd.</th>
+                                <th className="pb-3 font-bold uppercase tracking-wider text-[10px] text-right">Valor Total</th>
+                                <th className="pb-3 font-bold uppercase tracking-wider text-[10px] text-right">Participação</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {filteredProducts.map((product, idx) => {
-                                const share = (product.totalValue / totalFiltered) * 100;
+                                const share = totalFiltered > 0 ? (product.totalValue / totalFiltered) * 100 : 0;
                                 return (
                                     <tr key={product.id} className="group hover:bg-slate-50">
-                                        <td className="py-3 pr-4 font-medium text-slate-700 product-name-cell">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs text-slate-400 w-4 flex-shrink-0">{idx + 1}.</span>
-                                                <span className="break-words">{product.name}</span>
+                                        <td className="py-4 pr-4 font-bold text-slate-700">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-[10px] text-slate-300 w-4">{idx + 1}.</span>
+                                                {product.name}
                                             </div>
                                         </td>
-                                        <td className="py-3 text-center text-slate-600">{product.quantity}</td>
-                                        <td className="py-3 text-right font-semibold text-slate-800">
+                                        <td className="py-4 text-center text-slate-600 font-medium">{product.quantity}</td>
+                                        <td className="py-4 text-right font-black text-slate-900">
                                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.totalValue)}
                                         </td>
-                                        <td className="py-3 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <span className="text-xs text-slate-500">{share.toFixed(1)}%</span>
+                                        <td className="py-4 text-right">
+                                            <div className="flex items-center justify-end gap-3">
+                                                <span className="text-[10px] font-black text-slate-400">{share.toFixed(1)}%</span>
                                                 <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                                     <div className="h-full bg-purple-500" style={{ width: `${share}%` }}></div>
                                                 </div>
@@ -216,11 +145,6 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
                             })}
                         </tbody>
                     </table>
-                  </div>
-                </div>
-                
-                <div className="mt-8 pt-4 border-t border-slate-100 text-center">
-                    <p className="text-xs text-slate-400">Documento gerado eletronicamente pelo Portal Centro-Norte.</p>
                 </div>
             </div>
         </div>

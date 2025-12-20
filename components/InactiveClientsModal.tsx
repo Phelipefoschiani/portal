@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X, Calendar, DollarSign, UserX } from 'lucide-react';
@@ -71,7 +72,8 @@ export const InactiveClientsModal: React.FC<InactiveClientsModalProps> = ({ clie
                     <tr key={client.id} className="hover:bg-slate-50 transition-colors">
                       <td className="py-4 px-6">
                         <div>
-                           <p className="font-semibold text-slate-800">{client.name}</p>
+                           {/* Fixed: changed client.name to client.nome_fantasia */}
+                           <p className="font-semibold text-slate-800">{client.nome_fantasia}</p>
                            <p className="text-xs text-slate-500">{client.city}</p>
                         </div>
                       </td>

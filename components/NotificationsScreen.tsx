@@ -1,200 +1,207 @@
-import React, { useState } from 'react';
-import { Bell, Clock, AlertOctagon, Info, MailOpen, ChevronRight, Paperclip, CheckCircle2, Check, CheckCheck } from 'lucide-react';
-import { mockNotifications, Notification } from '../lib/mockData';
-import { NotificationDetailModal } from './NotificationDetailModal';
 
+import React, { useState, useEffect } from 'react';
+import { Bell, Clock, AlertOctagon, Info, MailOpen, ChevronRight, CheckCircle2, RefreshCw, Loader2, Zap, Paperclip, Download, FileText, Image as ImageIcon } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { Button } from './Button';
+
+// Added interface to support onFixForecast prop passed from App.tsx
 interface NotificationsScreenProps {
   onFixForecast?: (id: string) => void;
 }
 
 export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixForecast }) => {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
-  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const stats = {
-    urgent: notifications.filter(n => n.priority === 'urgent').length,
-    medium: notifications.filter(n => n.priority === 'medium').length,
-    info: notifications.filter(n => n.priority === 'info').length,
-    unread: notifications.filter(n => !n.isRead).length
-  };
+  const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+  const userId = session.id;
 
-  const handleUpdate = () => {
-    // Recarrega do mock (simulando fetch)
-    setNotifications([...mockNotifications]);
-  };
+  useEffect(() => {
+    if (userId) fetchNotifications();
+  }, [userId]);
 
-  const filteredList = notifications
-    .filter(n => filter === 'all' ? true : !n.isRead)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  const getPriorityIcon = (p: string) => {
-    switch(p) {
-        case 'urgent': return <AlertOctagon className="w-5 h-5 text-red-500" />;
-        case 'medium': return <Clock className="w-5 h-5 text-amber-500" />;
-        default: return <Info className="w-5 h-5 text-blue-500" />;
+  const fetchNotifications = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('notificacoes')
+        .select('*, notificacao_anexos(*)')
+        .eq('para_usuario_id', userId)
+        .order('lida', { ascending: true }) 
+        .order('criada_em', { ascending: false });
+      
+      if (error) throw error;
+      setNotifications(data || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Lógica visual dos "Ticks" (Estilo WhatsApp)
-  const getDeliveryStatusIcon = (n: Notification) => {
-    if (n.isRead) {
-        // Azul/Verde: Lido e Confirmado
-        return (
-            <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-xs font-medium border border-emerald-100" title="Leitura Confirmada">
-                <CheckCheck className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Lido</span>
-            </div>
-        );
+  const markAsRead = async (id: string) => {
+    try {
+      await supabase.from('notificacoes').update({ lida: true }).eq('id', id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, lida: true } : n));
+    } catch (e) {
+      console.error(e);
     }
-    if (n.firstSeenAt) {
-        // Dois Ticks Cinza: Entregue no Portal (Usuário logou, mas não confirmou)
-        return (
-            <div className="flex items-center gap-1 text-slate-500 bg-slate-100 px-2 py-0.5 rounded text-xs font-medium border border-slate-200" title="Entregue no Sistema (Pendente Confirmação)">
-                <CheckCheck className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Entregue</span>
-            </div>
-        );
-    }
-    // Um Tick Cinza: Apenas Enviado (Usuário não logou ainda desde o envio)
-    return (
-        <div className="flex items-center gap-1 text-slate-400" title="Enviado (Aguardando acesso)">
-            <Check className="w-3.5 h-3.5" />
-        </div>
-    );
   };
+
+  const handleDownload = (file: any) => {
+    if (!file.arquivo_url || file.arquivo_url === '#') {
+      alert('Arquivo indisponível para download.');
+      return;
+    }
+    
+    // Criar link temporário e simular clique para baixar
+    const link = document.createElement('a');
+    link.href = file.arquivo_url;
+    link.download = file.arquivo_nome;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const parseMessage = (msg: string) => {
+    if (msg.startsWith('[')) {
+      const parts = msg.split(']');
+      const title = parts[0].replace('[', '');
+      const content = parts.slice(1).join(']').trim();
+      return { title, content };
+    }
+    return { title: 'COMUNICADO', content: msg };
+  };
+
+  if (isLoading) return (
+    <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+      <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-4" />
+      <p className="text-[10px] font-black uppercase tracking-widest animate-pulse">Sincronizando mural...</p>
+    </div>
+  );
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-8 animate-fadeIn pb-12">
-      
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="w-full max-w-4xl mx-auto space-y-6 animate-fadeIn pb-12">
+      <div className="flex justify-between items-center bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Bell className="w-6 h-6 text-blue-600" />
-            Central de Notificações
+          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            <Bell className="w-6 h-6 text-blue-600" /> Mural de Avisos
           </h2>
-          <p className="text-slate-500 text-sm mt-1">
-            Clique em uma notificação para ver detalhes, anexos e confirmar leitura.
-          </p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Informações da Gerência Comercial</p>
+        </div>
+        <div className="flex gap-2">
+            <span className="bg-blue-50 text-blue-600 text-[10px] font-black px-4 py-1.5 rounded-full border border-blue-100 uppercase tracking-widest">
+               {notifications.filter(n => !n.lida).length} Pendentes
+            </span>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-            <div className="p-2 bg-red-100 text-red-600 rounded-lg">
-                <AlertOctagon className="w-6 h-6" />
-            </div>
-            <div>
-                <p className="text-2xl font-bold text-slate-800">{stats.urgent}</p>
-                <p className="text-xs text-slate-500 uppercase font-bold">Urgentes</p>
-            </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-            <div className="p-2 bg-amber-100 text-amber-600 rounded-lg">
-                <Clock className="w-6 h-6" />
-            </div>
-            <div>
-                <p className="text-2xl font-bold text-slate-800">{stats.medium}</p>
-                <p className="text-xs text-slate-500 uppercase font-bold">Média Prio.</p>
-            </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-            <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
-                <Info className="w-6 h-6" />
-            </div>
-            <div>
-                <p className="text-2xl font-bold text-slate-800">{stats.info}</p>
-                <p className="text-xs text-slate-500 uppercase font-bold">Informativos</p>
-            </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-            <div className="p-2 bg-slate-100 text-slate-600 rounded-lg">
-                <MailOpen className="w-6 h-6" />
-            </div>
-            <div>
-                <p className="text-2xl font-bold text-slate-800">{stats.unread}</p>
-                <p className="text-xs text-slate-500 uppercase font-bold">Não Lidos</p>
-            </div>
-        </div>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 pb-1">
-        <button 
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${filter === 'all' ? 'bg-white text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-        >
-            Todos
-        </button>
-        <button 
-             onClick={() => setFilter('unread')}
-             className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${filter === 'unread' ? 'bg-white text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-        >
-            Apenas Não Lidos
-        </button>
-      </div>
-
-      {/* Notification List (Summary View) */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-        {filteredList.length === 0 ? (
-            <div className="py-12 text-center">
-                <Bell className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-500 font-medium">Nenhuma notificação encontrada.</p>
-            </div>
+      <div className="space-y-4">
+        {notifications.length === 0 ? (
+          <div className="bg-white rounded-[32px] p-20 text-center border border-dashed border-slate-200">
+             <MailOpen className="w-12 h-12 text-slate-100 mx-auto mb-4" />
+             <p className="text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">Nenhum aviso recebido</p>
+          </div>
         ) : (
-            <div className="divide-y divide-slate-100">
-                {filteredList.map(item => (
-                    <div 
-                        key={item.id} 
-                        onClick={() => setSelectedNotification(item)}
-                        className={`p-5 flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors group relative ${!item.isRead ? 'bg-blue-50/10' : ''}`}
-                    >
-                        {/* Status Indicator Bar */}
-                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${item.priority === 'urgent' ? 'bg-red-500' : item.priority === 'medium' ? 'bg-amber-500' : item.priority === 'info' ? 'bg-blue-500' : 'bg-slate-300'}`}></div>
-                        
-                        {/* Icon */}
-                        <div className="flex-shrink-0">
-                            {getPriorityIcon(item.priority)}
-                        </div>
+          <div className="space-y-4">
+            {notifications.map(notif => {
+              const { title, content } = parseMessage(notif.mensagem);
+              return (
+                <div 
+                  key={notif.id} 
+                  className={`bg-white rounded-[32px] border transition-all p-6 relative overflow-hidden group ${
+                      !notif.lida 
+                      ? (notif.prioridade === 'urgent' ? 'border-red-500 ring-4 ring-red-50' : notif.prioridade === 'medium' ? 'border-amber-400' : 'border-blue-400')
+                      : 'border-slate-200 opacity-80 shadow-sm'
+                  }`}
+                >
+                  {!notif.lida && (
+                      <div className={`absolute top-0 right-0 px-4 py-1 rounded-bl-2xl text-[8px] font-black uppercase tracking-widest text-white ${
+                          notif.prioridade === 'urgent' ? 'bg-red-500' :
+                          notif.prioridade === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
+                      }`}>
+                         Novo
+                      </div>
+                  )}
 
-                        {/* Summary Content */}
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                                <h3 className={`text-base font-semibold truncate ${!item.isRead ? 'text-slate-900' : 'text-slate-600'}`}>
-                                    {item.title}
-                                </h3>
-                                {!item.isRead && (
-                                    <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
-                                )}
-                                {item.attachments && item.attachments.length > 0 && (
-                                    <Paperclip className="w-3 h-3 text-slate-400" />
-                                )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 mt-1">
-                                <span>{new Date(item.date).toLocaleDateString('pt-BR')}</span>
-                                {getDeliveryStatusIcon(item)}
-                            </div>
-                        </div>
+                  <div className="flex items-start gap-5">
+                      <div className={`p-4 rounded-2xl shrink-0 shadow-sm border ${
+                          notif.prioridade === 'urgent' ? 'bg-red-50 border-red-100 text-red-600' :
+                          notif.prioridade === 'medium' ? 'bg-amber-50 border-amber-100 text-amber-600' :
+                          'bg-blue-50 border-blue-100 text-blue-600'
+                      }`}>
+                          {notif.prioridade === 'urgent' ? <AlertOctagon className="w-7 h-7 animate-pulse"/> : <Info className="w-7 h-7"/>}
+                      </div>
 
-                        {/* Arrow */}
-                        <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors" />
-                    </div>
-                ))}
-            </div>
+                      <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-2">
+                              <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight leading-tight">
+                                  {title}
+                              </h3>
+                              <span className="text-[9px] font-black text-slate-400 uppercase tabular-nums">
+                                  {new Date(notif.criada_em).toLocaleDateString()}
+                              </span>
+                          </div>
+                          
+                          <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap">
+                              {content}
+                          </p>
+
+                          {notif.notificacao_anexos?.length > 0 && (
+                              <div className="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                      <Paperclip className="w-3 h-3" /> Arquivos vinculados ({notif.notificacao_anexos.length})
+                                  </p>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      {notif.notificacao_anexos.map((file: any) => (
+                                          <div 
+                                            key={file.id} 
+                                            onClick={() => handleDownload(file)}
+                                            className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-xl hover:border-blue-300 transition-colors cursor-pointer group/file"
+                                          >
+                                              <div className="flex items-center gap-2 truncate">
+                                                  {file.tipo_mime.includes('image') ? <ImageIcon className="w-3.5 h-3.5 text-blue-500" /> : <FileText className="w-3.5 h-3.5 text-slate-400" />}
+                                                  <span className="text-[10px] font-bold text-slate-700 truncate">{file.arquivo_nome}</span>
+                                              </div>
+                                              <Download className="w-3.5 h-3.5 text-slate-300 group-hover/file:text-blue-500 transition-colors" />
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          )}
+                          
+                          <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-50">
+                              {!notif.lida ? (
+                                  <Button 
+                                      size="sm"
+                                      onClick={() => {
+                                          // Added logic to handle forecast corrections directly from mural
+                                          if (notif.metadata?.type === 'forecast_rejected' && notif.metadata?.relatedId && onFixForecast) {
+                                              onFixForecast(notif.metadata.relatedId);
+                                          }
+                                          markAsRead(notif.id);
+                                      }}
+                                      className={`rounded-xl px-8 font-black uppercase text-[10px] tracking-widest ${
+                                          notif.prioridade === 'urgent' ? 'bg-red-600 shadow-red-100' : 'bg-blue-600 shadow-blue-100'
+                                      }`}
+                                  >
+                                      {notif.metadata?.type === 'forecast_rejected' ? 'Corrigir Previsão' : 'Ciente da Informação'} 
+                                      {notif.metadata?.type === 'forecast_rejected' ? <RefreshCw className="w-4 h-4 ml-2" /> : <CheckCircle2 className="w-4 h-4 ml-2" />}
+                                  </Button>
+                              ) : (
+                                  <div className="flex items-center gap-2 text-[9px] font-black text-emerald-600 uppercase bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">
+                                      <CheckCircle2 className="w-3.5 h-3.5" /> Lida e confirmada
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
-
-      {selectedNotification && (
-        <NotificationDetailModal 
-            notification={selectedNotification}
-            onClose={() => setSelectedNotification(null)}
-            onUpdate={handleUpdate}
-            onFixForecast={onFixForecast}
-        />
-      )}
-
     </div>
   );
 };

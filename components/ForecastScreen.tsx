@@ -1,79 +1,119 @@
+
 import React, { useState, useEffect } from 'react';
-import { Plus, Save, Trash2, AlertTriangle, TrendingUp, Calendar, Search, X, ChevronRight, Eye, CheckCircle2, XCircle, RefreshCw, PenTool } from 'lucide-react';
+import { Plus, Save, Trash2, AlertTriangle, TrendingUp, Calendar, CheckCircle2, XCircle, RefreshCw, PenTool, Loader2, ChevronRight, X, Clock } from 'lucide-react';
 import { Button } from './Button';
-import { Input } from './Input';
-import { clients, getClientCurrentTarget, ForecastItem, ForecastEntry, Client, addForecast, mockForecasts } from '../lib/mockData';
+import { supabase } from '../lib/supabase';
 import { createPortal } from 'react-dom';
 
-interface ForecastScreenProps {
-  initialForecastId?: string | null;
-  onDraftLoaded?: () => void;
-}
-
-export const ForecastScreen: React.FC<ForecastScreenProps> = ({ initialForecastId, onDraftLoaded }) => {
-  // Estado do Formulário
+export const ForecastScreen: React.FC = () => {
+  const [clients, setClients] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState('');
   const [forecastValue, setForecastValue] = useState('');
+  const [draftItems, setDraftItems] = useState<any[]>([]);
+  const [historyByMonth, setHistoryByMonth] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [selectedMonthDetail, setSelectedMonthDetail] = useState<any | null>(null);
   
-  // Estado dos Dados
-  const [draftItems, setDraftItems] = useState<ForecastItem[]>([]);
-  // Inicializa o histórico com dados globais do mock para o representante atual (rep-1)
-  const [history, setHistory] = useState<ForecastEntry[]>(() => 
-      mockForecasts
-        .filter(f => f.repId === 'rep-1')
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  );
-  
-  // Estado dos Modais
   const [warningModalOpen, setWarningModalOpen] = useState(false);
-  const [pendingItem, setPendingItem] = useState<ForecastItem | null>(null);
-  const [detailModalItem, setDetailModalItem] = useState<ForecastEntry | null>(null);
+  const [pendingItem, setPendingItem] = useState<any | null>(null);
 
-  // Efeito para carregar rascunho automaticamente se vier de notificação
+  const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+  const userId = session.id;
+
   useEffect(() => {
-    if (initialForecastId) {
-        const target = mockForecasts.find(f => f.id === initialForecastId);
-        if (target) {
-            // Carrega itens no rascunho
-            setDraftItems(target.items);
-            // Avisa o pai que carregou (para limpar o ID)
-            if (onDraftLoaded) onDraftLoaded();
-        }
+    if (userId) {
+      fetchInitialData();
+      loadAllRejectedItems();
     }
-  }, [initialForecastId, onDraftLoaded]);
+  }, [userId]);
 
-  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  const fetchInitialData = async () => {
+    setIsLoading(true);
+    try {
+      const { data: clientsData } = await supabase.from('clientes').select('id, nome_fantasia, cnpj').eq('usuario_id', userId).order('nome_fantasia');
+      setClients(clientsData || []);
 
-  // Calcula totais
-  const draftTotal = draftItems.reduce((acc, curr) => acc + curr.forecastValue, 0);
-  
-  // Calcula cobertura da carteira
-  const totalClientsInPortfolio = clients.length;
-  const coveragePercent = totalClientsInPortfolio > 0 
-    ? (draftItems.length / totalClientsInPortfolio) * 100 
-    : 0;
+      // Agrupa previsões por mês para o histórico
+      const { data: allItems } = await supabase
+        .from('previsao_clientes')
+        .select('*, previsoes!inner(id, data, usuario_id), clientes(nome_fantasia)')
+        .eq('previsoes.usuario_id', userId);
 
-  const handleAddItem = (e: React.FormEvent) => {
+      // Organizar por Mês/Ano
+      const months: any = {};
+      allItems?.forEach(item => {
+        const date = new Date(item.previsoes.data);
+        const monthKey = `${date.getMonth() + 1}/${date.getFullYear()}`;
+        if (!months[monthKey]) {
+          months[monthKey] = {
+            key: monthKey,
+            total: 0,
+            items: [],
+            monthName: date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
+          };
+        }
+        months[monthKey].items.push(item);
+        months[monthKey].total += item.valor_previsto_cliente;
+      });
+
+      setHistoryByMonth(Object.values(months).sort((a: any, b: any) => b.key.localeCompare(a.key)));
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadAllRejectedItems = async () => {
+    try {
+      const { data: items } = await supabase
+        .from('previsao_clientes')
+        .select('*, clientes(nome_fantasia), previsoes!inner(usuario_id)')
+        .eq('status', 'rejected')
+        .eq('previsoes.usuario_id', userId);
+
+      if (items && items.length > 0) {
+        setDraftItems(items.map(i => ({
+          dbId: i.id,
+          clientId: i.cliente_id,
+          clientName: i.clientes?.nome_fantasia || 'Cliente',
+          forecastValue: i.valor_previsto_cliente,
+          motivo_recusa: i.motivo_recusa,
+          isCorrection: true
+        })));
+      }
+    } catch (error) {
+      console.error('Erro ao carregar itens recusados:', error);
+    }
+  };
+
+  const handleUpdateDraftValue = (idx: number, newVal: string) => {
+    const val = parseFloat(newVal) || 0;
+    setDraftItems(prev => prev.map((item, i) => i === idx ? { ...item, forecastValue: val } : item));
+  };
+
+  const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClientId || !forecastValue) return;
 
     const client = clients.find(c => c.id === selectedClientId);
     if (!client) return;
 
-    const numValue = parseFloat(forecastValue.replace(/\./g, '').replace(',', '.')); // Ajuste simples para conversão
-    if (isNaN(numValue)) return;
+    const numValue = parseFloat(forecastValue);
+    const now = new Date();
+    const { data: meta } = await supabase
+      .from('metas_clientes')
+      .select('valor')
+      .eq('cliente_id', client.id)
+      .eq('mes', now.getMonth() + 1)
+      .eq('ano', now.getFullYear())
+      .maybeSingle();
 
-    const currentTarget = getClientCurrentTarget(client);
+    const targetVal = meta?.valor || 0;
+    const newItem = { clientId: client.id, clientName: client.nome_fantasia, forecastValue: numValue, targetValue: targetVal };
 
-    const newItem: ForecastItem = {
-      clientId: client.id,
-      clientName: client.name,
-      forecastValue: numValue,
-      targetValue: currentTarget
-    };
-
-    // Validação: Valor menor que a meta?
-    if (numValue < currentTarget) {
+    if (numValue < targetVal && targetVal > 0) {
       setPendingItem(newItem);
       setWarningModalOpen(true);
     } else {
@@ -81,289 +121,171 @@ export const ForecastScreen: React.FC<ForecastScreenProps> = ({ initialForecastI
     }
   };
 
-  const confirmAddItem = (item: ForecastItem) => {
-    // Adiciona ou Atualiza se já existir o cliente na lista
+  const confirmAddItem = (item: any) => {
     setDraftItems(prev => {
       const exists = prev.findIndex(i => i.clientId === item.clientId);
       if (exists >= 0) {
         const updated = [...prev];
-        updated[exists] = item;
+        updated[exists] = { ...updated[exists], ...item };
         return updated;
       }
       return [...prev, item];
     });
-
-    // Reset form
     setSelectedClientId('');
     setForecastValue('');
-    setPendingItem(null);
     setWarningModalOpen(false);
   };
 
-  const handleSaveForecast = () => {
+  const handleSaveForecast = async () => {
     if (draftItems.length === 0) return;
+    setIsSaving(true);
+    try {
+      const now = new Date();
+      const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
-    const newEntry: ForecastEntry = {
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
-      totalValue: draftTotal,
-      items: [...draftItems],
-      repId: 'rep-1', // Mock ID
-      repName: 'Ricardo Souza', // Mock Name
-      status: 'pending' // Novo status inicial
-    };
+      // 1. Verificar se já existe cabeçalho para este mês
+      let { data: existingForecast } = await supabase
+        .from('previsoes')
+        .select('id')
+        .eq('usuario_id', userId)
+        .eq('data', firstDayStr(now))
+        .maybeSingle();
 
-    // Atualiza o "Banco de Dados" global
-    addForecast(newEntry);
+      if (!existingForecast) {
+        const { data: newF, error: fErr } = await supabase.from('previsoes').insert({
+          usuario_id: userId,
+          data: firstDayStr(now),
+          previsao_total: 0
+        }).select().single();
+        if (fErr) throw fErr;
+        existingForecast = newF;
+      }
 
-    // Atualiza a visualização local
-    setHistory(prev => [newEntry, ...prev]);
-    
-    // Limpa o rascunho
-    setDraftItems([]);
-    setSelectedClientId('');
-    setForecastValue('');
-  };
+      // 2. Salvar Itens
+      for (const item of draftItems) {
+        if (item.dbId) {
+          // Se era correção, atualiza o existente e volta para pendente
+          await supabase.from('previsao_clientes').update({
+            valor_previsto_cliente: item.forecastValue,
+            status: 'pending',
+            motivo_recusa: null
+          }).eq('id', item.dbId);
+        } else {
+          // Se for novo, insere
+          await supabase.from('previsao_clientes').insert({
+            previsao_id: existingForecast.id,
+            cliente_id: item.clientId,
+            valor_previsto_cliente: item.forecastValue,
+            status: 'pending'
+          });
+        }
+      }
 
-  const handleDiscardForecast = () => {
-    // Uso explícito de window.confirm para evitar ambiguidades
-    if (window.confirm('Tem certeza que deseja descartar todos os itens da previsão atual?')) {
+      // 3. Atualizar total do cabeçalho
+      const { data: allItems } = await supabase.from('previsao_clientes').select('valor_previsto_cliente').eq('previsao_id', existingForecast.id);
+      const newTotal = allItems?.reduce((acc, curr) => acc + curr.valor_previsto_cliente, 0) || 0;
+      await supabase.from('previsoes').update({ previsao_total: newTotal }).eq('id', existingForecast.id);
+
+      alert('Previsão mensal atualizada!');
       setDraftItems([]);
-      setSelectedClientId('');
-      setForecastValue('');
+      fetchInitialData();
+    } catch (error: any) {
+      alert('Erro ao salvar: ' + error.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  // Função para carregar itens de uma previsão recusada para edição
-  const handleLoadDraftForCorrection = (entry: ForecastEntry) => {
-      if (draftItems.length > 0) {
-          if (!window.confirm('Você já tem itens no rascunho atual. Deseja substituí-los pela previsão selecionada para correção?')) {
-              return;
-          }
-      }
-      setDraftItems(entry.items);
-      // Opcional: Remover do histórico ou marcar como "em correção", aqui apenas copiamos
-      setDetailModalItem(null); // Fecha modal se aberto
-      
-      // Scroll para o topo para o usuário ver que carregou
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const getStatusIcon = (status: string) => {
-      switch(status) {
-          case 'approved': return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
-          case 'rejected': return <XCircle className="w-5 h-5 text-red-500" />;
-          default: return <div className="w-2 h-2 rounded-full bg-amber-400"></div>;
-      }
-  };
+  const firstDayStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-12">
-      
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <TrendingUp className="w-7 h-7 text-blue-600" />
-            Previsão de Fechamento
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 flex items-center gap-2">
-            <Calendar className="w-4 h-4" />
-            Referência: {new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
-          </p>
-        </div>
+    <div className="w-full max-w-6xl mx-auto space-y-6 animate-fadeIn pb-12">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+          <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                <TrendingUp className="w-6 h-6 text-blue-600" /> Previsão de Fechamento
+              </h2>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alimentação Mensal Consolidada</p>
+          </div>
+          <div className="bg-slate-900 px-4 py-2 rounded-xl border border-white/10 text-right">
+              <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Sincronização</p>
+              <p className="text-xs font-black text-white">{draftItems.length > 0 ? 'DADOS PENDENTES' : 'CONCLUÍDO'}</p>
+          </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* COLUNA 1: Formulário e Rascunho Atual */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          
-          {/* Card de Input */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="font-bold text-slate-800 mb-4">Adicionar Cliente na Previsão</h3>
-            <form onSubmit={handleAddItem} className="flex flex-col md:flex-row gap-4 items-end">
-              <div className="flex-1 w-full">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Cliente</label>
-                <select
+          <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+              <Plus className="w-4 h-4 text-blue-600" /> Adicionar / Atualizar Valor
+            </h3>
+            <form onSubmit={handleAddItem} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+              <div className="md:col-span-6">
+                <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Cliente</label>
+                <select 
                   value={selectedClientId}
                   onChange={(e) => setSelectedClientId(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-100"
                 >
-                  <option value="">Selecione um cliente...</option>
-                  {clients.map(client => (
-                    <option key={client.id} value={client.id}>{client.name}</option>
-                  ))}
+                  <option value="">Selecione...</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
                 </select>
               </div>
-              <div className="w-full md:w-48">
-                 <label className="block text-sm font-medium text-slate-700 mb-1">Valor Previsto (R$)</label>
-                 <Input 
-                    type="number" 
-                    placeholder="0.00" 
-                    value={forecastValue}
-                    onChange={(e) => setForecastValue(e.target.value)}
-                    required
-                    step="0.01"
-                    min="0"
-                 />
+              <div className="md:col-span-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Valor Planejado (R$)</label>
+                <input 
+                  type="number"
+                  value={forecastValue}
+                  onChange={(e) => setForecastValue(e.target.value)}
+                  placeholder="0,00"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-100"
+                />
               </div>
-              <Button type="submit" className="w-full md:w-auto h-[46px]">
-                <Plus className="w-5 h-5 md:mr-2" />
-                <span className="hidden md:inline">Adicionar</span>
-              </Button>
+              <div className="md:col-span-2">
+                <Button fullWidth className="h-[46px] rounded-xl font-black">SALVAR</Button>
+              </div>
             </form>
           </div>
 
-          {/* Lista de Rascunho (Previsão Atual) - Removido h-full, adicionado max-h no content */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800">Previsão em Construção</h3>
-              
-              <div className="flex items-center gap-3">
-                  {/* Barra de progresso da cobertura */}
-                  <div className="hidden sm:block w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                     <div 
-                        className="h-full bg-blue-500 transition-all duration-500" 
-                        style={{ width: `${Math.min(coveragePercent, 100)}%` }}
-                     ></div>
-                  </div>
-
-                  <div className="flex flex-col items-end">
-                    <span className="text-xs font-bold text-blue-700">
-                        {draftItems.length} Clientes
-                    </span>
-                    <span className="text-xs text-blue-500 font-medium">
-                        {coveragePercent.toFixed(1)}% da carteira
-                    </span>
-                  </div>
-              </div>
+          <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Lançamentos em Rascunho</h3>
+              <span className="bg-slate-900 text-white text-[10px] font-black px-3 py-1 rounded-lg uppercase tracking-widest">
+                {draftItems.length} Clientes
+              </span>
             </div>
             
-            {/* Altura máxima definida aqui para forçar scroll se crescer muito, sem empurrar o footer */}
-            <div className="overflow-y-auto max-h-[350px]">
+            <div className="overflow-y-auto max-h-[450px]">
               {draftItems.length === 0 ? (
-                <div className="py-12 flex flex-col items-center justify-center text-slate-400">
-                  <TrendingUp className="w-12 h-12 mb-3 opacity-20" />
-                  <p>Adicione clientes para montar sua previsão.</p>
-                </div>
-              ) : (
-                <table className="w-full text-left text-sm relative">
-                  <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
-                    <tr className="text-slate-500">
-                      <th className="py-3 px-6 font-medium bg-slate-50">Cliente</th>
-                      <th className="py-3 px-6 font-medium text-right bg-slate-50">Meta</th>
-                      <th className="py-3 px-6 font-medium text-right bg-slate-50">Previsão</th>
-                      <th className="py-3 px-6 font-medium w-10 bg-slate-50"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {draftItems.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50 group">
-                        <td className="py-3 px-6 font-medium text-slate-700">{item.clientName}</td>
-                        <td className="py-3 px-6 text-right text-slate-500">{formatCurrency(item.targetValue)}</td>
-                        <td className={`py-3 px-6 text-right font-bold ${item.forecastValue < item.targetValue ? 'text-amber-600' : 'text-emerald-600'}`}>
-                          {formatCurrency(item.forecastValue)}
-                          {item.forecastValue < item.targetValue && (
-                            <AlertTriangle className="w-3 h-3 inline ml-1 mb-0.5" />
-                          )}
-                        </td>
-                        <td className="py-3 px-6 text-right">
-                          <button 
-                            type="button"
-                            onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}
-                            className="text-slate-300 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {/* Footer com Total e Ações */}
-            {draftItems.length > 0 && (
-              <div className="p-4 bg-slate-50 border-t border-slate-200 animate-slideUp">
-                <div className="flex justify-between items-center mb-4">
-                  <span className="text-slate-500 font-medium text-sm">Total Previsto</span>
-                  <span className="text-xl font-bold text-blue-700">{formatCurrency(draftTotal)}</span>
-                </div>
-                <div className="flex gap-3">
-                  <Button 
-                    type="button" // Importante: Previne submissão acidental
-                    variant="outline" 
-                    fullWidth 
-                    onClick={handleDiscardForecast}
-                    className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 h-10"
-                  >
-                    Descartar
-                  </Button>
-                  <Button 
-                    type="button" // Importante: Previne submissão acidental
-                    fullWidth 
-                    onClick={handleSaveForecast}
-                    className="h-10"
-                  >
-                    <Save className="w-4 h-4 mr-2" />
-                    Enviar Previsão
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* COLUNA 2: Histórico */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full max-h-[800px]">
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-              <h3 className="font-bold text-slate-800">Histórico de Envios</h3>
-              <p className="text-xs text-slate-500 mt-1">Acompanhe o status</p>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto">
-              {history.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-sm">
-                  Nenhuma previsão salva ainda.
+                <div className="p-20 text-center">
+                  <TrendingUp className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Nenhum dado novo para enviar</p>
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {history.map(entry => (
-                    <div 
-                      key={entry.id} 
-                      className={`p-4 hover:bg-slate-50 transition-colors group border-l-4 ${entry.status === 'approved' ? 'border-emerald-500' : entry.status === 'rejected' ? 'border-red-500' : 'border-amber-400'}`}
-                    >
-                      <div className="flex justify-between items-start mb-2" onClick={() => setDetailModalItem(entry)}>
-                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded cursor-pointer">
-                          {new Date(entry.date).toLocaleDateString('pt-BR')}
-                        </span>
-                        {getStatusIcon(entry.status)}
+                  {draftItems.map((item, idx) => (
+                    <div key={idx} className={`p-6 flex items-center justify-between group hover:bg-slate-50 transition-colors ${item.isCorrection ? 'bg-red-50/20 border-l-4 border-red-500' : ''}`}>
+                      <div className="flex-1">
+                        <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm">{item.clientName}</h4>
+                        {item.motivo_recusa && (
+                          <p className="text-[10px] font-bold text-red-700 mt-1 uppercase underline tracking-tight">Motivo: {item.motivo_recusa}</p>
+                        )}
                       </div>
-                      
-                      <div className="flex justify-between items-end">
-                        <div onClick={() => setDetailModalItem(entry)} className="cursor-pointer">
-                          <p className="text-sm font-bold text-slate-800">{formatCurrency(entry.totalValue)}</p>
-                          <p className="text-xs text-slate-500">{entry.items.length} clientes</p>
+                      <div className="flex items-center gap-6 ml-4">
+                        <div className="text-right">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Previsão</p>
+                          <input 
+                            type="number"
+                            value={item.forecastValue}
+                            onChange={(e) => handleUpdateDraftValue(idx, e.target.value)}
+                            className="w-24 bg-white border border-slate-200 rounded-lg px-2 py-1 text-sm font-black text-slate-900 text-right"
+                          />
                         </div>
-                        
-                        {/* Botão de Ação Direta se Recusado */}
-                        {entry.status === 'rejected' ? (
-                            <button 
-                                onClick={() => handleLoadDraftForCorrection(entry)}
-                                className="p-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 hover:shadow-sm transition-all flex items-center gap-1"
-                                title="Corrigir previsão"
-                            >
-                                <PenTool className="w-4 h-4" />
-                                <span className="text-[10px] font-bold">Corrigir</span>
-                            </button>
-                        ) : (
-                            <div className="p-2 bg-white rounded-full border border-slate-100 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => setDetailModalItem(entry)}>
-                                <Eye className="w-4 h-4 text-blue-600" />
-                            </div>
+                        {!item.isCorrection && (
+                          <button onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-2">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
                         )}
                       </div>
                     </div>
@@ -371,123 +293,82 @@ export const ForecastScreen: React.FC<ForecastScreenProps> = ({ initialForecastI
                 </div>
               )}
             </div>
+
+            {draftItems.length > 0 && (
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                <div>
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total do Lote</p>
+                   <p className="text-xl font-black text-slate-900 tabular-nums">{formatCurrency(draftItems.reduce((acc, curr) => acc + curr.forecastValue, 0))}</p>
+                </div>
+                <Button onClick={handleSaveForecast} isLoading={isSaving} className="h-12 px-8 font-black text-xs uppercase tracking-widest">
+                   Enviar Atualização <Save className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
+        <div className="lg:col-span-1 space-y-6">
+          <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-blue-600" /> Resumo Mensal
+            </h3>
+            <div className="space-y-3">
+              {historyByMonth.map(m => (
+                <div 
+                  key={m.key} 
+                  onClick={() => setSelectedMonthDetail(m)}
+                  className="p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-blue-300 transition-all cursor-pointer group"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-[10px] font-black text-slate-400 uppercase">{m.monthName}</span>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500" />
+                  </div>
+                  <p className="text-sm font-black text-slate-800 tabular-nums">{formatCurrency(m.total)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* --- MODAIS --- */}
-
-      {/* Modal de Aviso (Meta) */}
-      {warningModalOpen && pendingItem && createPortal(
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 border-t-4 border-amber-500">
-            <div className="flex items-start gap-4 mb-4">
-              <div className="p-3 bg-amber-100 text-amber-600 rounded-full shrink-0">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">Atenção: Abaixo da Meta</h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  O valor inserido <strong>({formatCurrency(pendingItem.forecastValue)})</strong> é inferior à meta estipulada para o cliente <strong>{pendingItem.clientName}</strong> ({formatCurrency(pendingItem.targetValue)}).
-                </p>
-              </div>
-            </div>
-            <p className="text-sm font-medium text-slate-800 mb-6 text-center">
-              Deseja confirmar essa previsão abaixo da meta?
-            </p>
-            <div className="flex gap-3">
-              <Button 
-                variant="outline" 
-                fullWidth 
-                type="button"
-                onClick={() => setWarningModalOpen(false)}
-              >
-                Não, quero editar
-              </Button>
-              <Button 
-                fullWidth 
-                type="button"
-                className="bg-amber-500 hover:bg-amber-600 text-white"
-                onClick={() => confirmAddItem(pendingItem)}
-              >
-                Sim, confirmar
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Modal de Detalhes do Histórico */}
-      {detailModalItem && createPortal(
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-              <div>
-                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    Detalhes da Previsão
-                    {detailModalItem.status === 'approved' && <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded">Aprovada</span>}
-                    {detailModalItem.status === 'rejected' && <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded">Recusada</span>}
-                </h3>
-                <p className="text-sm text-slate-500">
-                  Enviado em {new Date(detailModalItem.date).toLocaleString('pt-BR')}
-                </p>
-              </div>
-              <button onClick={() => setDetailModalItem(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Aviso de Recusa se houver */}
-            {detailModalItem.status === 'rejected' && (
-                <div className="bg-red-50 p-4 border-b border-red-100">
-                    <p className="text-sm text-red-800 font-bold mb-1 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4"/> Atenção: Previsão Recusada
-                    </p>
-                    <p className="text-sm text-red-700 italic mb-3">"{detailModalItem.rejectionReason}"</p>
-                    <Button 
-                        className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto shadow-md shadow-red-200"
-                        onClick={() => handleLoadDraftForCorrection(detailModalItem)}
-                    >
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Carregar itens para correção
-                    </Button>
+      {selectedMonthDetail && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white w-full max-w-xl rounded-[32px] shadow-2xl overflow-hidden animate-slideUp">
+            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div>
+                   <h3 className="text-xl font-black text-slate-900 uppercase">{selectedMonthDetail.monthName}</h3>
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Situação de todos os clientes</p>
                 </div>
-            )}
-
-            <div className="overflow-y-auto p-0 flex-1">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 sticky top-0 shadow-sm">
-                  <tr className="text-slate-500">
-                    <th className="py-3 px-6 font-medium">Cliente</th>
-                    <th className="py-3 px-6 font-medium text-right">Meta</th>
-                    <th className="py-3 px-6 font-medium text-right">Valor Previsto</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {detailModalItem.items.map((item, idx) => (
-                    <tr key={idx}>
-                      <td className="py-3 px-6 font-medium text-slate-700">{item.clientName}</td>
-                      <td className="py-3 px-6 text-right text-slate-500">{formatCurrency(item.targetValue)}</td>
-                      <td className={`py-3 px-6 text-right font-bold ${item.forecastValue < item.targetValue ? 'text-amber-600' : 'text-emerald-600'}`}>
-                        {formatCurrency(item.forecastValue)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                <button onClick={() => setSelectedMonthDetail(null)} className="p-2 hover:bg-slate-200 rounded-full">
+                   <X className="w-6 h-6 text-slate-400" />
+                </button>
             </div>
-
-            <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl text-right">
-              <span className="text-sm text-slate-500 mr-2">Total desta previsão:</span>
-              <strong className="text-xl text-slate-800">{formatCurrency(detailModalItem.totalValue)}</strong>
+            <div className="p-6 max-h-[60vh] overflow-y-auto divide-y divide-slate-100">
+                {selectedMonthDetail.items.map((item: any) => (
+                    <div key={item.id} className="py-4 flex justify-between items-center">
+                        <div>
+                            <p className="font-black text-slate-800 text-sm uppercase">{item.clientes?.nome_fantasia}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                                {item.status === 'approved' ? (
+                                    <span className="bg-emerald-100 text-emerald-700 text-[8px] font-black px-2 py-0.5 rounded uppercase">Aceito</span>
+                                ) : item.status === 'rejected' ? (
+                                    <span className="bg-red-100 text-red-700 text-[8px] font-black px-2 py-0.5 rounded uppercase">Recusado</span>
+                                ) : (
+                                    <span className="bg-blue-100 text-blue-700 text-[8px] font-black px-2 py-0.5 rounded uppercase">Em Análise</span>
+                                )}
+                            </div>
+                        </div>
+                        <p className={`font-black ${item.status === 'approved' ? 'text-emerald-600' : item.status === 'rejected' ? 'text-red-600' : 'text-slate-900'}`}>
+                            {formatCurrency(item.valor_previsto_cliente)}
+                        </p>
+                    </div>
+                ))}
             </div>
           </div>
         </div>,
         document.body
       )}
-
     </div>
   );
 };

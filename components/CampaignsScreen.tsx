@@ -1,369 +1,159 @@
-import React, { useState } from 'react';
-import { Megaphone, Save, Wallet, CheckCircle2, CreditCard, Package, Banknote, Percent, FileText } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { Megaphone, Save, CheckCircle2, TrendingUp, DollarSign, Percent, AlertCircle } from 'lucide-react';
 import { Button } from './Button';
-import { clients, addInvestment, getAvailableBudget, InvestmentChannel } from '../lib/mockData';
-import { createPortal } from 'react-dom';
+import { supabase } from '../lib/supabase';
 
-export const CampaignsScreen: React.FC = () => {
-  // Estado do Formulário
+interface CampaignsScreenProps {
+  onNavigateToInvestments: () => void;
+}
+
+export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToInvestments }) => {
+  const [clients, setClients] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState('');
-  const [description, setDescription] = useState(''); // Estado para Descrição
+  const [description, setDescription] = useState('');
   const [orderValue, setOrderValue] = useState('');
-  
-  // Estado do Investimento (Múltiplos Canais)
-  const [cajuValue, setCajuValue] = useState('');
-  const [productValue, setProductValue] = useState('');
-  const [moneyValue, setMoneyValue] = useState('');
+  const [caju, setCaju] = useState('');
+  const [dinheiro, setDinheiro] = useState('');
+  const [produto, setProduto] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [msg, setMsg] = useState('');
 
-  // Estado do Modal
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
+  const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+  const userId = session.id;
+
+  useEffect(() => {
+    if (userId) fetchClients();
+  }, [userId]);
+
+  const fetchClients = async () => {
+    const { data } = await supabase.from('clientes').select('id, nome_fantasia').eq('usuario_id', userId).order('nome_fantasia');
+    setClients(data || []);
+  };
+
+  const valCaju = parseFloat(caju) || 0;
+  const valDinheiro = parseFloat(dinheiro) || 0;
+  const valProduto = parseFloat(produto) || 0;
+  const valOrder = parseFloat(orderValue) || 0;
+  const totalInvestment = valCaju + valDinheiro + valProduto;
+  const investmentPercent = valOrder > 0 ? (totalInvestment / valOrder) * 100 : 0;
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClientId || totalInvestment === 0 || valOrder === 0) return;
+    
+    setIsSaving(true);
+    try {
+      const { error } = await supabase.from('investimentos').insert({
+        usuario_id: userId,
+        cliente_id: selectedClientId,
+        data: new Date().toISOString().split('T')[0],
+        valor_total_investimento: totalInvestment,
+        valor_caju: valCaju,
+        valor_dinheiro: valDinheiro,
+        valor_produto: valProduto,
+        observacao: `[PEDIDO ESTIMADO: R$ ${valOrder.toLocaleString('pt-BR')}] - ${description}`,
+        status: 'pendente'
+      });
+
+      if (error) throw error;
+
+      setMsg('Solicitação enviada! Redirecionando...');
+      setTimeout(() => {
+        onNavigateToInvestments();
+      }, 1500);
+    } catch (err: any) {
+        alert('Erro ao enviar: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
-  // Helper para converter string formatada em número
-  const parseCurrencyInput = (val: string) => parseFloat(val.replace(/\./g, '').replace(',', '.')) || 0;
-
-  // Lógica de Cálculo
-  const getCalculatedValues = () => {
-    const orderNum = parseCurrencyInput(orderValue);
-    const cajuNum = parseCurrencyInput(cajuValue);
-    const productNum = parseCurrencyInput(productValue);
-    const moneyNum = parseCurrencyInput(moneyValue);
-
-    const totalInvestment = cajuNum + productNum + moneyNum;
-    const finalPercentage = orderNum > 0 ? (totalInvestment / orderNum) * 100 : 0;
-
-    return { orderNum, cajuNum, productNum, moneyNum, totalInvestment, finalPercentage };
-  };
-
-  const { orderNum, cajuNum, productNum, moneyNum, totalInvestment, finalPercentage } = getCalculatedValues();
-
-  const handlePreSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedClientId || orderNum <= 0 || totalInvestment <= 0 || !description.trim()) return;
-    setIsConfirmModalOpen(true);
-  };
-
-  const handleConfirm = () => {
-    const client = clients.find(c => c.id === selectedClientId);
-    if (!client) return;
-
-    // Constrói os canais
-    const channels: InvestmentChannel[] = [];
-    if (cajuNum > 0) channels.push({ type: 'Caju', value: cajuNum });
-    if (productNum > 0) channels.push({ type: 'Produto', value: productNum });
-    if (moneyNum > 0) channels.push({ type: 'Dinheiro', value: moneyNum });
-
-    // Adiciona aos investimentos (Mock)
-    addInvestment({
-        clientId: client.id,
-        clientName: client.name,
-        description: description, // Usa a descrição digitada
-        channels: channels,
-        approvedBy: undefined // Pendente
-    });
-
-    // Feedback e Reset
-    setIsConfirmModalOpen(false);
-    setSuccessMessage('Solicitação de campanha enviada com sucesso!');
-    
-    // Reset form
-    setTimeout(() => {
-        setSuccessMessage('');
-        setSelectedClientId('');
-        setDescription('');
-        setOrderValue('');
-        setCajuValue('');
-        setProductValue('');
-        setMoneyValue('');
-    }, 3000);
-  };
-
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6 animate-fadeIn pb-12">
-      
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <Megaphone className="w-7 h-7 text-blue-600" />
-          Lançamento de Campanha
-        </h2>
-        <p className="text-slate-500 text-sm mt-1">
-          Solicite verbas comerciais vinculadas a um pedido específico. Você pode combinar formas de pagamento.
-        </p>
+    <div className="w-full max-w-5xl mx-auto space-y-6 animate-fadeIn pb-12">
+      <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+          <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                <Megaphone className="w-6 h-6 text-blue-600" /> Nova Campanha
+              </h2>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Planejamento Comercial</p>
+          </div>
+          <div className="bg-slate-900 px-6 py-2 rounded-xl border border-white/10 text-right">
+              <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">ROI Estimado</p>
+              <p className="text-xs font-black text-white">{investmentPercent.toFixed(1)}% DO PEDIDO</p>
+          </div>
       </div>
 
-      {successMessage && (
-         <div className="bg-emerald-50 text-emerald-700 p-4 rounded-xl border border-emerald-200 flex items-center gap-3 animate-slideUp">
-             <CheckCircle2 className="w-6 h-6" />
-             <span className="font-medium">{successMessage}</span>
-         </div>
-      )}
-
-      {/* Main Form Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-6 md:p-8 space-y-8">
-            
-            <form onSubmit={handlePreSubmit} className="space-y-6">
-                
-                {/* 1. Seleção de Cliente */}
-                <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">1. Selecione o Cliente</label>
-                    <select
-                        value={selectedClientId}
-                        onChange={(e) => setSelectedClientId(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                        required
-                    >
-                        <option value="">Buscar cliente...</option>
-                        {clients.map(client => (
-                            <option key={client.id} value={client.id}>{client.name} - {client.city}</option>
-                        ))}
-                    </select>
-                </div>
-
-                 {/* 2. Descrição (ALTERADO) */}
-                 <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">2. Descrição da Campanha</label>
-                    <textarea 
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Descreva o investimento (Ex: Bonificação em Cimento, Desconto Comercial...)"
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
-                        rows={2}
-                        required
-                    />
-                </div>
-
-                {/* 3. Valor do Pedido */}
-                <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">3. Valor Total do Pedido (R$)</label>
-                    <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                            <span className="text-slate-400 font-bold">R$</span>
-                        </div>
-                        <input 
-                            type="number"
-                            placeholder="0,00"
-                            value={orderValue}
-                            onChange={(e) => setOrderValue(e.target.value)}
-                            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-medium text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
-                            required
-                            min="0.01"
-                            step="0.01"
-                        />
-                    </div>
-                </div>
-
-                {/* 4. Investimento por Canais */}
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center border-t border-slate-100 pt-4">
-                        <label className="text-sm font-semibold text-slate-700">4. Composição do Investimento</label>
-                        <span className="text-xs text-slate-400">Preencha os canais desejados</span>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Cartão Caju */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-slate-500 flex items-center gap-1">
-                                <CreditCard className="w-3 h-3 text-pink-500" /> Cartão Caju
-                            </label>
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs">R$</div>
-                                <input 
-                                    type="number"
-                                    placeholder="0,00"
-                                    value={cajuValue}
-                                    onChange={(e) => setCajuValue(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-pink-200 focus:border-pink-400 outline-none"
-                                    min="0"
-                                    step="0.01"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Produto */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-slate-500 flex items-center gap-1">
-                                <Package className="w-3 h-3 text-blue-500" /> Produto
-                            </label>
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs">R$</div>
-                                <input 
-                                    type="number"
-                                    placeholder="0,00"
-                                    value={productValue}
-                                    onChange={(e) => setProductValue(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none"
-                                    min="0"
-                                    step="0.01"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Dinheiro */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-medium text-slate-500 flex items-center gap-1">
-                                <Banknote className="w-3 h-3 text-emerald-500" /> Dinheiro
-                            </label>
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs">R$</div>
-                                <input 
-                                    type="number"
-                                    placeholder="0,00"
-                                    value={moneyValue}
-                                    onChange={(e) => setMoneyValue(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none"
-                                    min="0"
-                                    step="0.01"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Totalizador */}
-                    <div className="bg-slate-50 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 border border-slate-200">
-                        <div className="text-center sm:text-left">
-                            <p className="text-xs text-slate-500 uppercase font-bold">Total do Investimento</p>
-                            <p className="text-2xl font-bold text-blue-700">{formatCurrency(totalInvestment)}</p>
-                        </div>
-                        
-                        {orderNum > 0 && totalInvestment > 0 && (
-                            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200 shadow-sm">
-                                <div className="p-1.5 bg-blue-100 rounded-full text-blue-600">
-                                    <Percent className="w-4 h-4" />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] text-slate-500 uppercase font-bold">Representatividade</p>
-                                    <p className="text-sm font-bold text-slate-800">{finalPercentage.toFixed(2)}% do Pedido</p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="pt-4">
-                    <Button type="submit" fullWidth className="h-12 text-base shadow-xl shadow-blue-200" disabled={totalInvestment <= 0}>
-                        <Save className="w-5 h-5 mr-2" />
-                        Simular e Salvar Solicitação
-                    </Button>
-                </div>
-            </form>
-        </div>
-        <div className="bg-slate-50 p-4 text-center text-xs text-slate-400 border-t border-slate-100">
-            A solicitação ficará pendente de aprovação gerencial na aba Investimentos.
-        </div>
+      {/* Resumo da Proposta - NO TOPO */}
+      <div className="bg-slate-900 p-8 rounded-[32px] text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-8">
+          <div className="absolute top-0 right-0 p-8 opacity-5"><TrendingUp className="w-32 h-32" /></div>
+          <div className="text-center md:text-left">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Total do Investimento</p>
+              <p className="text-4xl font-black text-white tabular-nums">{formatCurrency(totalInvestment)}</p>
+          </div>
+          <div className="flex-1 max-w-xs w-full">
+              <div className="flex justify-between items-center mb-2">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Viabilidade (ROI)</span>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded ${investmentPercent > 10 ? 'bg-red-500' : 'bg-emerald-500'}`}>
+                      {investmentPercent.toFixed(1)}%
+                  </span>
+              </div>
+              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div className={`h-full transition-all duration-700 ${investmentPercent > 10 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(investmentPercent * 5, 100)}%` }}></div>
+              </div>
+          </div>
       </div>
 
-      {/* --- MODAL DE CONFIRMAÇÃO --- */}
-      {isConfirmModalOpen && (
-        createPortal(
-            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-                <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                    
-                    <div className="bg-slate-50 p-6 border-b border-slate-100 text-center">
-                        <h3 className="text-xl font-bold text-slate-800">Resumo da Solicitação</h3>
-                        <p className="text-sm text-slate-500 mt-1">Confira os dados antes de enviar</p>
-                    </div>
+      <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
+          <form onSubmit={handleSave} className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="md:col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-[0.2em]">Cliente Alvo</label>
+                      <select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-[20px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-100 transition-all" required>
+                          <option value="">Buscar na carteira...</option>
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
+                      </select>
+                  </div>
 
-                    <div className="p-6 space-y-4">
-                        {/* Cliente */}
-                        <div className="flex justify-between items-center pb-4 border-b border-slate-50">
-                            <span className="text-sm text-slate-500">Cliente</span>
-                            <span className="font-semibold text-slate-800 text-right max-w-[200px] truncate">
-                                {clients.find(c => c.id === selectedClientId)?.name}
-                            </span>
-                        </div>
+                  <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-[0.2em]">Valor do Pedido (Faturamento)</label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input type="number" value={orderValue} onChange={e => setOrderValue(e.target.value)} className="w-full p-4 pl-12 bg-slate-50 border border-slate-200 rounded-[20px] font-black text-slate-900 outline-none focus:ring-4 focus:ring-blue-100 transition-all" placeholder="0,00" required />
+                      </div>
+                  </div>
 
-                         {/* Pedido */}
-                         <div className="flex justify-between items-center pb-4 border-b border-slate-50">
-                            <span className="text-sm text-slate-500">Valor do Pedido</span>
-                            <span className="font-bold text-slate-800 text-lg">
-                                {formatCurrency(orderNum)}
-                            </span>
-                        </div>
+                  <div className="md:col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-[0.2em]">Descrição e Justificativa</label>
+                      <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[24px] font-medium text-slate-600 outline-none focus:ring-4 focus:ring-blue-100 transition-all" rows={4} required placeholder="Explique a necessidade do investimento..."></textarea>
+                  </div>
+              </div>
 
-                        {/* Descrição */}
-                        <div className="pb-4 border-b border-slate-50">
-                            <span className="text-xs text-slate-500 uppercase font-bold mb-1 block">Descrição</span>
-                            <p className="text-sm text-slate-700 italic bg-slate-50 p-2 rounded">"{description}"</p>
-                        </div>
+              <div className="pt-8 border-t border-slate-100">
+                  <p className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-[0.2em]">Distribuição (Canais)</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="p-6 bg-pink-50/50 rounded-3xl border border-pink-100 text-center">
+                          <label className="text-[9px] font-black text-pink-600 uppercase block mb-3">Caju</label>
+                          <input type="number" value={caju} onChange={e => setCaju(e.target.value)} className="w-full p-3 bg-white border border-pink-200 rounded-xl font-black text-center text-pink-700" placeholder="0"/>
+                      </div>
+                      <div className="p-6 bg-emerald-50/50 rounded-3xl border border-emerald-100 text-center">
+                          <label className="text-[9px] font-black text-emerald-600 uppercase block mb-3">Dinheiro</label>
+                          <input type="number" value={dinheiro} onChange={e => setDinheiro(e.target.value)} className="w-full p-3 bg-white border border-emerald-200 rounded-xl font-black text-center text-emerald-700" placeholder="0"/>
+                      </div>
+                      <div className="p-6 bg-blue-50/50 rounded-3xl border border-blue-100 text-center">
+                          <label className="text-[9px] font-black text-blue-600 uppercase block mb-3">Produto</label>
+                          <input type="number" value={produto} onChange={e => setProduto(e.target.value)} className="w-full p-3 bg-white border border-blue-200 rounded-xl font-black text-center text-blue-700" placeholder="0"/>
+                      </div>
+                  </div>
+              </div>
 
-                        {/* Investimento Breakdown */}
-                        <div className="bg-blue-50 p-4 rounded-xl space-y-3">
-                             <div className="flex justify-between items-center text-blue-800 mb-2">
-                                <span className="font-medium">Total Solicitado</span>
-                                <span className="font-bold text-xl">{formatCurrency(totalInvestment)}</span>
-                             </div>
-                             
-                             {/* Breakdown Items */}
-                             <div className="space-y-1 pl-2 border-l-2 border-blue-200">
-                                {cajuNum > 0 && (
-                                    <div className="flex justify-between text-xs text-slate-600">
-                                        <span>• Cartão Caju</span>
-                                        <span className="font-medium">{formatCurrency(cajuNum)}</span>
-                                    </div>
-                                )}
-                                {productNum > 0 && (
-                                    <div className="flex justify-between text-xs text-slate-600">
-                                        <span>• Produto</span>
-                                        <span className="font-medium">{formatCurrency(productNum)}</span>
-                                    </div>
-                                )}
-                                {moneyNum > 0 && (
-                                    <div className="flex justify-between text-xs text-slate-600">
-                                        <span>• Dinheiro</span>
-                                        <span className="font-medium">{formatCurrency(moneyNum)}</span>
-                                    </div>
-                                )}
-                             </div>
-
-                             <div className="flex justify-between items-center text-xs text-blue-600 pt-2 border-t border-blue-100/50">
-                                <span>Representatividade</span>
-                                <span className="font-bold bg-white px-2 py-0.5 rounded-full border border-blue-100">
-                                    {finalPercentage.toFixed(2)}% do pedido
-                                </span>
-                             </div>
-                        </div>
-
-                        {/* Saldo Atual (Verificação) */}
-                        <div className="flex items-center gap-3 pt-2">
-                            <div className="p-2 bg-slate-100 rounded-lg text-slate-400">
-                                <Wallet className="w-5 h-5" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-400">Saldo Atual da Carteira (Sem este débito)</p>
-                                <p className={`font-bold ${getAvailableBudget() >= totalInvestment ? 'text-emerald-600' : 'text-amber-500'}`}>
-                                    {formatCurrency(getAvailableBudget())}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
-                        <Button 
-                            variant="outline" 
-                            fullWidth 
-                            onClick={() => setIsConfirmModalOpen(false)}
-                        >
-                            Voltar
-                        </Button>
-                        <Button 
-                            fullWidth 
-                            onClick={handleConfirm}
-                            className="bg-blue-600 hover:bg-blue-700"
-                        >
-                            Confirmar Envio
-                        </Button>
-                    </div>
-
-                </div>
-            </div>,
-            document.body
-        )
-      )}
-
+              <Button type="submit" fullWidth isLoading={isSaving} disabled={!selectedClientId || totalInvestment === 0 || valOrder === 0} className="h-16 rounded-[24px] font-black text-sm uppercase tracking-[0.2em] shadow-2xl shadow-blue-500/30">
+                {msg || 'Enviar Campanha para Análise'}
+              </Button>
+          </form>
+      </div>
     </div>
   );
 };

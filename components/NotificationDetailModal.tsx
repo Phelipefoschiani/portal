@@ -1,6 +1,8 @@
+
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X, Calendar, Download, FileText, Image as ImageIcon, CheckCircle2, MessageSquareWarning, Eye, AlertOctagon, Info, Clock, Paperclip, RefreshCw } from 'lucide-react';
+// Corrigido: Importando funções de ação de mockData
 import { Notification, markNotificationAsRead, requestRevision } from '../lib/mockData';
 import { Button } from './Button';
 
@@ -55,7 +57,8 @@ export const NotificationDetailModal: React.FC<NotificationDetailModalProps> = (
     }
   };
 
-  const labelStyle = getPriorityLabel(notification.priority);
+  // Corrigido: notification.prioridade fallback
+  const labelStyle = getPriorityLabel(notification.prioridade || 'info');
   const isForecastRejected = notification.metadata?.type === 'forecast_rejected';
 
   return createPortal(
@@ -65,14 +68,15 @@ export const NotificationDetailModal: React.FC<NotificationDetailModalProps> = (
         {/* Header */}
         <div className="p-6 border-b border-slate-100 flex justify-between items-start">
            <div className="flex gap-4">
-              <div className={`p-3 rounded-xl h-fit ${notification.priority === 'urgent' ? 'bg-red-100' : notification.priority === 'medium' ? 'bg-amber-100' : 'bg-blue-100'}`}>
-                {getPriorityIcon(notification.priority)}
+              <div className={`p-3 rounded-xl h-fit ${notification.prioridade === 'urgent' ? 'bg-red-100' : notification.prioridade === 'medium' ? 'bg-amber-100' : 'bg-blue-100'}`}>
+                {getPriorityIcon(notification.prioridade || 'info')}
               </div>
               <div>
                  <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border mb-2 ${labelStyle.color}`}>
                     {labelStyle.text}
                  </div>
-                 <h2 className="text-xl font-bold text-slate-900 leading-snug">{notification.title}</h2>
+                 {/* Corrigido: notification.titulo */}
+                 <h2 className="text-xl font-bold text-slate-900 leading-snug">{notification.titulo || 'Notificação'}</h2>
               </div>
            </div>
            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
@@ -87,7 +91,8 @@ export const NotificationDetailModal: React.FC<NotificationDetailModalProps> = (
             <div>
                 <h3 className="text-sm font-bold text-slate-900 mb-2 uppercase tracking-wide">Mensagem</h3>
                 <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 text-slate-700 leading-relaxed text-base">
-                    {notification.content}
+                    {/* Corrigido: notification.mensagem */}
+                    {notification.mensagem}
                 </div>
             </div>
 
@@ -126,7 +131,8 @@ export const NotificationDetailModal: React.FC<NotificationDetailModalProps> = (
                         <p className="text-xs text-slate-500 font-semibold uppercase mb-1">Enviado pelo Gerente</p>
                         <p className="text-sm text-slate-800 flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-slate-400" />
-                            {new Date(notification.date).toLocaleString('pt-BR')}
+                            {/* Corrigido: creada_em */}
+                            {new Date(notification.criada_em).toLocaleString('pt-BR')}
                         </p>
                     </div>
 
@@ -146,9 +152,9 @@ export const NotificationDetailModal: React.FC<NotificationDetailModalProps> = (
 
                     {/* Evento: Lido/Aceite */}
                     <div className="relative">
-                        <div className={`absolute -left-[21px] top-0 w-3 h-3 rounded-full ring-4 ring-white ${notification.isRead ? 'bg-emerald-500' : 'bg-slate-200'}`}></div>
+                        <div className={`absolute -left-[21px] top-0 w-3 h-3 rounded-full ring-4 ring-white ${notification.lida ? 'bg-emerald-500' : 'bg-slate-200'}`}></div>
                         <p className="text-xs text-slate-500 font-semibold uppercase mb-1">Confirmação de Leitura</p>
-                        {notification.isRead ? (
+                        {notification.lida ? (
                             <p className="text-sm text-slate-800 flex items-center gap-2">
                                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                                 Confirmado em {notification.readAt ? new Date(notification.readAt).toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR')}
@@ -177,7 +183,7 @@ export const NotificationDetailModal: React.FC<NotificationDetailModalProps> = (
                 </Button>
             )}
 
-            {!notification.isRead ? (
+            {!notification.lida ? (
                 <>
                     {!isForecastRejected && (
                         <Button 
