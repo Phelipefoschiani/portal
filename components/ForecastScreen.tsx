@@ -136,30 +136,34 @@ export const ForecastScreen: React.FC = () => {
     setWarningModalOpen(false);
   };
 
+  const firstDayStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+
   const handleSaveForecast = async () => {
     if (draftItems.length === 0) return;
     setIsSaving(true);
     try {
       const now = new Date();
-      const firstDayOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const fDay = firstDayStr(now);
 
       // 1. Verificar se já existe cabeçalho para este mês
       let { data: existingForecast } = await supabase
         .from('previsoes')
         .select('id')
         .eq('usuario_id', userId)
-        .eq('data', firstDayStr(now))
+        .eq('data', fDay)
         .maybeSingle();
 
       if (!existingForecast) {
         const { data: newF, error: fErr } = await supabase.from('previsoes').insert({
           usuario_id: userId,
-          data: firstDayStr(now),
+          data: fDay,
           previsao_total: 0
         }).select().single();
         if (fErr) throw fErr;
         existingForecast = newF;
       }
+
+      if (!existingForecast) throw new Error("Erro ao carregar/criar cabeçalho de previsão.");
 
       // 2. Salvar Itens
       for (const item of draftItems) {
@@ -196,7 +200,6 @@ export const ForecastScreen: React.FC = () => {
     }
   };
 
-  const firstDayStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
   return (

@@ -55,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             if (userRole === 'rep') {
                 const { data: rejForecast } = await supabase.from('previsao_clientes').select('id, previsoes!inner(usuario_id)').eq('status', 'rejected').eq('previsoes.usuario_id', userId);
-                setForecastAlert(rejForecast && rejForecast.length > 0);
+                setForecastAlert(!!(rejForecast && rejForecast.length > 0));
                 const { data: rejInv } = await supabase.from('investimentos').select('id').eq('status', 'rejected').eq('usuario_id', userId);
                 if (rejInv && rejInv.length > 0) {
                     const seenIds = JSON.parse(localStorage.getItem('pcn_seen_inv_rejections') || '[]');
@@ -66,9 +66,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }
             } else if (userRole === 'admin') {
                 const { data: penForecast } = await supabase.from('previsao_clientes').select('id').eq('status', 'pending');
-                setForecastAlert(penForecast && penForecast.length > 0);
+                setForecastAlert(!!(penForecast && penForecast.length > 0));
                 const { data: penInv } = await supabase.from('investimentos').select('id').eq('status', 'pendente');
-                setInvestmentAlert(penInv && penInv.length > 0);
+                setInvestmentAlert(!!(penInv && penInv.length > 0));
             }
         };
         fetchStatus();
@@ -216,7 +216,7 @@ const ChangePasswordModal: React.FC<{ onClose: () => void, userId: string }> = (
 
     return createPortal(
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-            <div className="bg-white w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border border-white/20">
+            <div className="bg-white w-full max-sm rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border border-white/20">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-blue-100 text-blue-600 rounded-xl"><Lock className="w-5 h-5" /></div>

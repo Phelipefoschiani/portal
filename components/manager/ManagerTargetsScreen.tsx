@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Target, Users, Calendar, TrendingUp, ChevronRight, Loader2, Calculator, Percent, Save, CheckCircle2, AlertCircle, BarChart3, ChevronDown, ListTodo, Database, CloudCheck, RefreshCw, ArrowRightLeft, Wand2, Building2, Search, Zap, CheckCircle } from 'lucide-react';
+import { Target, Users, Calendar, TrendingUp, ChevronRight, Loader2, Calculator, Percent, Save, CheckCircle2, AlertCircle, BarChart3, ChevronDown, ListTodo, Database, RefreshCw, ArrowRightLeft, Wand2, Building2, Search, Zap, CheckCircle, Cloud } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 
@@ -217,7 +217,6 @@ export const ManagerTargetsScreen: React.FC = () => {
     const totalRepShare: number = (Object.values(repShares) as number[]).reduce((a: number, b: number) => (a || 0) + (b || 0), 0);
     const totalClientShare: number = (Object.values(clientShares) as number[]).reduce((a: number, b: number) => (a || 0) + (b || 0), 0);
 
-    const configuredClients = clientData.filter(c => c.isConfigured && c.nome_fantasia.toLowerCase().includes(clientSearch.toLowerCase()));
     const pendingClients = clientData.filter(c => !c.isConfigured && c.nome_fantasia.toLowerCase().includes(clientSearch.toLowerCase()));
 
     return (
