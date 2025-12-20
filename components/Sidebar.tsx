@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Menu } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { createPortal } from 'react-dom';
 import { Button } from './Button';
@@ -11,6 +11,8 @@ interface SidebarProps {
   onLogout: () => void;
   userName: string;
   userRole: 'admin' | 'rep';
+  isOpen: boolean;
+  onToggle: (state: boolean) => void;
 }
 
 interface MenuItem {
@@ -26,7 +28,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeView, 
   onLogout,
   userName,
-  userRole
+  userRole,
+  isOpen,
+  onToggle
 }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [forecastAlert, setForecastAlert] = useState(false);
@@ -36,7 +40,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
 
-  // Formata o nome para a primeira letra de cada palavra em maiúscula
   const formattedName = userName
     .toLowerCase()
     .split(' ')
@@ -99,9 +102,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const menuItems = userRole === 'admin' ? adminMenuItems : repMenuItems;
 
+  const handleMenuClick = (id: string) => {
+    onChangeView(id);
+    if (window.innerWidth < 1024) {
+      onToggle(false);
+    }
+  };
+
   return (
     <>
-      <aside className="fixed top-0 left-0 z-40 h-screen w-64 bg-slate-900 text-white flex flex-col border-r border-slate-800 shadow-2xl">
+      {/* Overlay para mobile */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[45] lg:hidden animate-fadeIn"
+          onClick={() => onToggle(false)}
+        />
+      )}
+
+      <aside className={`fixed top-0 left-0 z-50 h-full w-64 bg-slate-900 text-white flex flex-col border-r border-slate-800 shadow-2xl transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="p-6 border-b border-slate-800/50 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-bold text-white shadow-inner shrink-0">CN</div>
@@ -112,15 +130,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </p>
             </div>
           </div>
+          <button onClick={() => onToggle(false)} className="lg:hidden p-2 hover:bg-slate-800 rounded-full text-slate-400">
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
             return (
               <button
                 key={item.id}
-                onClick={() => onChangeView(item.id)}
+                onClick={() => handleMenuClick(item.id)}
                 className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group relative ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
               >
                 <div className="flex items-center gap-3">
@@ -137,7 +158,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
         <div className="p-4 border-t border-slate-800">
           <div 
-            onClick={() => setShowPasswordModal(true)}
+            onClick={() => { setShowPasswordModal(true); if(window.innerWidth < 1024) onToggle(false); }}
             className="flex items-center gap-3 px-4 py-3 mb-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl cursor-pointer transition-all group"
           >
              <UserCircle className="w-5 h-5 group-hover:text-blue-400" />
@@ -183,7 +204,6 @@ const ChangePasswordModal: React.FC<{ onClose: () => void, userId: string }> = (
 
         setIsLoading(true);
         try {
-            // Verifica a senha antiga primeiro
             const { data: user, error: checkError } = await supabase
                 .from('usuarios')
                 .select('id')
@@ -197,7 +217,6 @@ const ChangePasswordModal: React.FC<{ onClose: () => void, userId: string }> = (
                 return;
             }
 
-            // Atualiza para a nova
             const { error: updateError } = await supabase
                 .from('usuarios')
                 .update({ senha_hash: newPassword })
@@ -216,7 +235,7 @@ const ChangePasswordModal: React.FC<{ onClose: () => void, userId: string }> = (
 
     return createPortal(
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-            <div className="bg-white w-full max-sm rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border border-white/20">
+            <div className="bg-white w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border border-white/20">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-blue-100 text-blue-600 rounded-xl"><Lock className="w-5 h-5" /></div>
