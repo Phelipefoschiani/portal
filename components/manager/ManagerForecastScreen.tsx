@@ -28,13 +28,14 @@ export const ManagerForecastScreen: React.FC = () => {
                     .eq('status', 'pending');
                 setPendingItems(data || []);
             } else {
+                // Correção: Usando o filtro padronizado que não falha por causa de letras maiúsculas ou termos exatos
                 const { data: reps } = await supabase
                     .from('usuarios')
-                    .select('id, nome')
-                    .eq('nivel_acesso', 'representante')
+                    .select('id, nome, nivel_acesso')
+                    .not('nivel_acesso', 'ilike', 'admin')
+                    .not('nivel_acesso', 'ilike', 'gerente')
                     .order('nome');
                 
-                // Para cada rep, buscar se tem pendências (para o ponto vermelho interno)
                 const repsWithStatus = await Promise.all((reps || []).map(async (r) => {
                     const { count } = await supabase
                         .from('previsao_clientes')
@@ -215,7 +216,7 @@ export const ManagerForecastScreen: React.FC = () => {
                         </div>
                         <div className="p-6 max-h-[70vh] overflow-y-auto space-y-6">
                             {isRepLoading ? (
-                                <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                                <div className="flex items-center justify-center py-10 text-slate-400">
                                     <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
                                     <p className="text-[10px] font-black uppercase">Consolidando dados...</p>
                                 </div>

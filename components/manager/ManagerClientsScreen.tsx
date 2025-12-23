@@ -1,11 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw } from 'lucide-react';
+import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ClientDetailModal } from '../ClientDetailModal';
 
 export const ManagerClientsScreen: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
+    const [loadingProgress, setLoadingProgress] = useState(0);
+    const [loadingStatus, setLoadingStatus] = useState('');
     const [selectedRep, setSelectedRep] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedClient, setSelectedClient] = useState<any | null>(null);
@@ -14,7 +16,7 @@ export const ManagerClientsScreen: React.FC = () => {
     const [totalSalesGlobal, setTotalSalesGlobal] = useState(0);
 
     const CACHE_KEY = 'pcn_manager_clients_cache';
-    const CACHE_TIME = 5 * 60 * 1000;
+    const CACHE_TIME = 4 * 60 * 60 * 1000; // Alterado para 4 horas
 
     useEffect(() => {
         const cached = sessionStorage.getItem(CACHE_KEY);
@@ -43,11 +45,15 @@ export const ManagerClientsScreen: React.FC = () => {
                 .gte('data', `${year}-01-01`)
                 .lte('data', `${year}-12-31`)
                 .range(from, to);
+            
             if (error) throw error;
             if (data && data.length > 0) {
                 allData = [...allData, ...data];
                 from += 1000;
                 to += 1000;
+                // Progresso simulado entre 40% e 90%
+                const progressVal = Math.min(90, 40 + (allData.length / 10000) * 20);
+                setLoadingProgress(Math.round(progressVal));
                 if (data.length < 1000) hasMore = false;
             } else { hasMore = false; }
         }
@@ -56,7 +62,12 @@ export const ManagerClientsScreen: React.FC = () => {
 
     const fetchInitialData = async () => {
         setIsLoading(true);
+        setLoadingProgress(5);
+        setLoadingStatus('Iniciando Sincronização...');
+        
         try {
+            setLoadingStatus('Buscando Equipe...');
+            setLoadingProgress(15);
             const { data: repsData } = await supabase
                 .from('usuarios')
                 .select('id, nome, nivel_acesso')
@@ -64,10 +75,17 @@ export const ManagerClientsScreen: React.FC = () => {
                 .not('nivel_acesso', 'ilike', 'gerente')
                 .order('nome');
             
+            setLoadingStatus('Carregando Carteira Global...');
+            setLoadingProgress(25);
             const { data: clientsData } = await supabase.from('clientes').select('*, usuarios(nome, id)').order('nome_fantasia');
+            
+            setLoadingStatus('Auditando Vendas...');
+            setLoadingProgress(40);
             const currentYear = new Date().getFullYear();
             const salesData = await fetchAllSalesForClients(currentYear);
 
+            setLoadingStatus('Vinculando Bases...');
+            setLoadingProgress(92);
             const salesMap = new Map();
             let totalFaturadoReal = 0;
 
@@ -90,6 +108,7 @@ export const ManagerClientsScreen: React.FC = () => {
             setReps(repsData || []);
             setClients(enriched);
             setTotalSalesGlobal(totalFaturadoReal);
+            setLoadingProgress(100);
             
             sessionStorage.setItem(CACHE_KEY, JSON.stringify({ 
                 timestamp: Date.now(), 
@@ -97,9 +116,10 @@ export const ManagerClientsScreen: React.FC = () => {
                 clients: enriched, 
                 totalSales: totalFaturadoReal 
             }));
+
+            setTimeout(() => setIsLoading(false), 500);
         } catch (error) {
             console.error('Erro ao carregar carteira global:', error);
-        } finally {
             setIsLoading(false);
         }
     };
@@ -115,9 +135,26 @@ export const ManagerClientsScreen: React.FC = () => {
 
     if (isLoading) {
         return (
-            <div className="flex flex-col items-center justify-center h-96 text-slate-400">
-                <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-600" />
-                <p className="font-bold uppercase text-[10px] tracking-widest animate-pulse text-center">Consolidando Carteira Global...</p>
+            <div className="flex flex-col items-center justify-center h-[70vh] text-slate-400 space-y-8 animate-fadeIn">
+                <div className="relative">
+                    <Loader2 className="w-16 h-16 animate-spin text-blue-600 opacity-20" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <Users className="w-6 h-6 text-blue-600 animate-pulse" />
+                    </div>
+                </div>
+                
+                <div className="w-full max-w-xs space-y-3">
+                    <div className="flex justify-between items-end">
+                        <p className="font-black uppercase text-[10px] tracking-widest text-slate-500">{loadingStatus}</p>
+                        <span className="text-sm font-black text-blue-600 tabular-nums">{loadingProgress}%</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200/50 p-0.5 shadow-inner">
+                        <div 
+                            className="h-full bg-blue-600 rounded-full transition-all duration-300 ease-out shadow-[0_0_10px_rgba(37,99,235,0.4)]"
+                            style={{ width: `${loadingProgress}%` }}
+                        />
+                    </div>
+                </div>
             </div>
         );
     }

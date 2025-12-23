@@ -239,7 +239,16 @@ export const ManagerTargetsScreen: React.FC = () => {
                             <div className="p-2.5 bg-blue-600 text-white rounded-xl"><BarChart3 className="w-5 h-5" /></div>
                             <div>
                                 <h2 className="text-lg font-black tracking-tight uppercase leading-none">EQUIPE</h2>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Sincronização do Ano {selectedYear}</p>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 flex items-center">
+                                    Ano de Lançamento: 
+                                    <select 
+                                        value={selectedYear} 
+                                        onChange={(e) => setSelectedYear(Number(e.target.value))} 
+                                        className="ml-2 bg-blue-50 text-blue-600 px-2 py-0.5 rounded border-none font-black outline-none cursor-pointer text-[10px]"
+                                    >
+                                        {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                                    </select>
+                                </p>
                             </div>
                         </div>
 

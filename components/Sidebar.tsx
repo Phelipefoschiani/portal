@@ -82,6 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const repMenuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
+    { id: 'rep-analysis', label: 'Análise de Metas', icon: BarChart3 },
     { id: 'clients', label: 'Meus Clientes', icon: Users },
     { id: 'campaigns', label: 'Campanhas', icon: Megaphone },
     { id: 'forecast', label: 'Previsão', icon: TrendingUp, hasAlert: forecastAlert },
@@ -125,8 +126,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-bold text-white shadow-inner shrink-0">CN</div>
             <div className="min-w-0">
               <h1 className="text-lg font-bold leading-none tracking-tight text-slate-100 truncate">Centro-Norte</h1>
-              <p className="text-[10px] text-blue-400 font-semibold mt-0.5 uppercase tracking-widest">
-                  {userRole === 'admin' ? 'Gerência' : 'Portal'}
+              <p className="text-[10px] text-blue-400 font-semibold mt-1 uppercase tracking-widest leading-tight">
+                  {userRole === 'admin' ? 'Gerência Regional' : 'Portal do Representante'}
               </p>
             </div>
           </div>
@@ -167,6 +168,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-500 group-hover:text-blue-500/70">Alterar Senha</span>
              </div>
           </div>
+          {/* Fix: changed 'onLogout' to 'onClick' to match standard DOM element property */}
           <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200">
             <LogOut className="w-5 h-5" />
             <span className="font-medium text-sm">Sair</span>

@@ -33,7 +33,13 @@ export const ManagerNotificationsScreen: React.FC = () => {
     }, [activeTab]);
 
     const fetchReps = async () => {
-        const { data } = await supabase.from('usuarios').select('id, nome').eq('nivel_acesso', 'representante').order('nome');
+        // Correção: Filtro mais abrangente para incluir todos os representantes independente de caixa alta/baixa
+        const { data } = await supabase
+            .from('usuarios')
+            .select('id, nome, nivel_acesso')
+            .not('nivel_acesso', 'ilike', 'admin')
+            .not('nivel_acesso', 'ilike', 'gerente')
+            .order('nome');
         setReps(data || []);
     };
 

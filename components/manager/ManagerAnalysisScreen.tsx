@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-// Added RefreshCw to the imports from lucide-react
-import { Target, TrendingUp, Users, Calendar, DollarSign, Wallet, Loader2, ChevronRight, BarChart3, Filter, Award, RefreshCw } from 'lucide-react';
+import { Target, TrendingUp, Users, Calendar, DollarSign, Wallet, Loader2, ChevronRight, BarChart3, Filter, Award, RefreshCw, BarChart, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { RepPerformanceModal } from './RepPerformanceModal';
 
 export const ManagerAnalysisScreen: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
+    const [loadingProgress, setLoadingProgress] = useState(0);
+    const [loadingStatus, setLoadingStatus] = useState('');
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [selectedRep, setSelectedRep] = useState<any | null>(null);
     const [stats, setStats] = useState<any>({
@@ -15,7 +16,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
     });
 
     const CACHE_KEY = `pcn_analysis_cache_${selectedYear}`;
-    const CACHE_TIME = 5 * 60 * 1000;
+    const CACHE_TIME = 4 * 60 * 60 * 1000;
 
     useEffect(() => {
         const cached = sessionStorage.getItem(CACHE_KEY);
@@ -33,7 +34,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
     const fetchAllSalesYear = async (year: number) => {
         let allData: any[] = [];
         let from = 0;
-        let to = 999;
+        let pageSize = 1000;
         let hasMore = true;
         while (hasMore) {
             const { data, error } = await supabase
@@ -41,13 +42,15 @@ export const ManagerAnalysisScreen: React.FC = () => {
                 .select('faturamento, data, usuario_id')
                 .gte('data', `${year}-01-01`)
                 .lte('data', `${year}-12-31`)
-                .range(from, to);
+                .range(from, from + pageSize - 1);
+            
             if (error) throw error;
             if (data && data.length > 0) {
                 allData = [...allData, ...data];
-                from += 1000;
-                to += 1000;
-                if (data.length < 1000) hasMore = false;
+                from += pageSize;
+                const p = Math.min(80, 30 + (allData.length / 15000) * 40);
+                setLoadingProgress(Math.round(p));
+                if (data.length < pageSize) hasMore = false;
             } else { hasMore = false; }
         }
         return allData;
@@ -55,6 +58,9 @@ export const ManagerAnalysisScreen: React.FC = () => {
 
     const fetchAnalysisData = async () => {
         setIsLoading(true);
+        setLoadingProgress(5);
+        setLoadingStatus('Iniciando BI...');
+        
         try {
             const { data: reps } = await supabase
                 .from('usuarios')
@@ -84,16 +90,34 @@ export const ManagerAnalysisScreen: React.FC = () => {
 
             const newStats = { globalPerformance: performance, repData: repAnalysis };
             setStats(newStats);
+            setLoadingProgress(100);
             sessionStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), stats: newStats }));
-        } catch (e) { console.error(e); } finally { setIsLoading(false); }
+            setTimeout(() => setIsLoading(false), 500);
+        } catch (e) { 
+            console.error(e); 
+            setIsLoading(false);
+        }
     };
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
     if (isLoading) return (
-        <div className="flex flex-col items-center justify-center h-96 text-slate-400">
-            <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-600" />
-            <p className="font-black uppercase text-[10px] tracking-widest animate-pulse text-center">Cruzando faturamentos anuais...</p>
+        <div className="flex flex-col items-center justify-center h-[70vh] text-slate-400 space-y-8 animate-fadeIn">
+            <div className="relative">
+                <Loader2 className="w-16 h-16 animate-spin text-blue-600 opacity-20" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <BarChart className="w-6 h-6 text-blue-600 animate-pulse" />
+                </div>
+            </div>
+            <div className="w-full max-w-xs space-y-3">
+                <div className="flex justify-between items-end">
+                    <p className="font-black uppercase text-[10px] tracking-widest text-slate-500">{loadingStatus}</p>
+                    <span className="text-sm font-black text-blue-600 tabular-nums">{loadingProgress}%</span>
+                </div>
+                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200/50 p-0.5 shadow-inner">
+                    <div className="h-full bg-blue-600 rounded-full transition-all duration-300 ease-out" style={{ width: `${loadingProgress}%` }} />
+                </div>
+            </div>
         </div>
     );
 
@@ -105,7 +129,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
                     <p className="text-xs font-bold text-slate-400 mt-1 flex items-center gap-2"><Filter className="w-3.5 h-3.5 text-blue-500" /> Consolidado Global Anual</p>
                 </div>
                 <div className="flex gap-4">
-                    <button onClick={() => fetchAnalysisData()} className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50">
+                    <button onClick={() => fetchAnalysisData()} className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-sm transition-all">
                         <RefreshCw className="w-4 h-4 text-slate-400" />
                     </button>
                     <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="bg-white border border-slate-200 rounded-xl px-6 py-2.5 text-xs font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer">
@@ -115,44 +139,83 @@ export const ManagerAnalysisScreen: React.FC = () => {
                 </div>
             </header>
 
-            <div className="bg-white p-10 rounded-[48px] border border-slate-200 shadow-sm">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-12">Performance Mensal Equipe</h3>
-                <div className="h-[300px] w-full relative flex items-end justify-between gap-4 px-4">
+            <div className="bg-white p-8 md:p-12 rounded-[48px] border border-slate-200 shadow-sm relative overflow-hidden">
+                <div className="flex justify-between items-center mb-16">
+                    <div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atingimento de Objetivos</h3>
+                        <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Comparativo Realizado vs Planejado</p>
+                    </div>
+                    <div className="flex gap-6">
+                        <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Meta Superada</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Abaixo da Meta</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="h-[350px] w-full flex items-end justify-between gap-3 md:gap-6 px-2">
                     {stats.globalPerformance.map((item: any, idx: number) => {
-                        const maxVal = Math.max(...stats.globalPerformance.flatMap((d: any) => [d.sales, d.target])) * 1.2 || 1;
-                        const salesHeight = (item.sales / maxVal) * 100;
-                        const targetHeight = (item.target / maxVal) * 100;
+                        const maxInChart = Math.max(...stats.globalPerformance.flatMap((d: any) => [d.sales, d.target])) * 1.1 || 1;
+                        const salesHeight = (item.sales / maxInChart) * 100;
+                        const targetHeight = (item.target / maxInChart) * 100;
                         const achievement = item.target > 0 ? (item.sales / item.target) * 100 : 0;
                         const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                        const isSuccess = achievement >= 100;
+                        const gap = item.target - item.sales;
 
                         return (
                             <div key={idx} className="flex-1 flex flex-col items-center group h-full relative">
-                                <div className="absolute top-[-35px] opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100 z-20 pointer-events-none">
-                                    <div className={`flex flex-col items-center text-[9px] font-black px-3 py-1.5 rounded-lg shadow-xl ${achievement >= 100 ? 'bg-emerald-50 text-white' : 'bg-red-50 text-white'}`}>
-                                        <span>{achievement.toFixed(1)}%</span>
-                                        <span className="opacity-70 mt-0.5">{formatBRL(item.sales)}</span>
+                                <div className="absolute top-[-90px] opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100 z-30 pointer-events-none w-[160px]">
+                                    <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-2xl text-center relative">
+                                        <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">{achievement.toFixed(1)}%</p>
+                                        <div className="space-y-0.5 mb-2">
+                                            <p className="text-[11px] font-black leading-none">{formatBRL(item.sales)}</p>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase">Meta: {formatBRL(item.target)}</p>
+                                        </div>
+                                        <div className="mt-1 pt-2 border-t border-white/10">
+                                            <p className="text-[8px] font-black text-blue-300 uppercase">
+                                                {gap > 0 ? `Faltam ${formatBRL(gap)}` : `Superou ${formatBRL(Math.abs(gap))}`}
+                                            </p>
+                                        </div>
+                                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-900 rotate-45"></div>
                                     </div>
                                 </div>
-                                
-                                <div className="absolute w-full border-t-2 border-slate-300 border-dashed z-10 transition-all pointer-events-none" style={{ bottom: `${Math.min(targetHeight, 100)}%` }} />
-                                
-                                <div className={`w-full rounded-t-xl transition-all duration-1000 relative z-0 ${achievement >= 100 ? 'bg-blue-600' : 'bg-red-400'}`} style={{ height: `${Math.max(salesHeight, 2)}%` }}>
-                                    {achievement >= 100 && (
-                                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 animate-bounce">
-                                            <TrendingUp className="w-4 h-4 text-emerald-500" />
+
+                                <div className="relative w-full flex-1 flex flex-col justify-end">
+                                    <div 
+                                        className="w-full bg-slate-100 rounded-2xl border border-slate-200/50 absolute bottom-0 transition-all duration-700"
+                                        style={{ height: `${Math.max(targetHeight, 2)}%` }}
+                                    >
+                                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="text-[8px] font-black text-slate-400 uppercase">Meta</span>
                                         </div>
-                                    )}
+                                    </div>
+
+                                    <div 
+                                        className={`w-full rounded-2xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-emerald-500 shadow-emerald-200' : 'bg-red-500 shadow-red-100'}`}
+                                        style={{ height: `${Math.max(salesHeight, 2)}%` }}
+                                    >
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent rounded-2xl"></div>
+                                        {isSuccess && (
+                                            <div className="absolute -top-7 left-1/2 -translate-x-1/2">
+                                                <div className="p-1 bg-emerald-100 rounded-full">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                
-                                <span className="mt-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">{months[idx]}</span>
+
+                                <span className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-900 transition-colors">
+                                    {months[idx]}
+                                </span>
                             </div>
                         );
                     })}
-                </div>
-                <div className="mt-12 pt-8 border-t border-slate-50 flex gap-8 justify-center">
-                    <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 bg-blue-600 rounded-md"></div><span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Atingiu Meta</span></div>
-                    <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 bg-red-400 rounded-md"></div><span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Abaixo da Meta</span></div>
-                    <div className="flex items-center gap-2"><div className="w-10 border-t-2 border-slate-400 border-dashed"></div><span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Linha de Meta</span></div>
                 </div>
             </div>
 

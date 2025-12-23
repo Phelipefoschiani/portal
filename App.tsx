@@ -13,6 +13,9 @@ import { supabase } from './lib/supabase';
 import { checkAndMarkDeliveredNotifications } from './lib/mockData';
 import { Menu } from 'lucide-react';
 
+// Rep Screens
+import { RepAnalysisScreen } from './components/rep/RepAnalysisScreen';
+
 // Manager Screens
 import { ManagerDashboard } from './components/manager/ManagerDashboard';
 import { ManagerCampaignsScreen } from './components/manager/ManagerCampaignsScreen';
@@ -109,6 +112,7 @@ const App: React.FC = () => {
            {userRole === 'rep' && (
                <>
                 {currentView === 'dashboard' && <Dashboard />}
+                {currentView === 'rep-analysis' && <RepAnalysisScreen />}
                 {currentView === 'clients' && <ClientsScreen />}
                 {currentView === 'campaigns' && <CampaignsScreen onNavigateToInvestments={() => setCurrentView('investments')} />}
                 {currentView === 'forecast' && <ForecastScreen />}
