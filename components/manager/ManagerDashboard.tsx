@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
@@ -30,15 +30,12 @@ const KpiDetailModal: React.FC<{
         if (!exportRef.current) return;
         setIsExporting(true);
         try {
-            // Pequeno delay para garantir que o DOM está pronto
             await new Promise(r => setTimeout(r, 100));
-
             const canvas = await html2canvas(exportRef.current, {
                 scale: 2,
                 useCORS: true,
                 backgroundColor: '#ffffff',
                 logging: false,
-                // Esta é a chave: no clone, removemos as restrições de altura e scroll
                 onclone: (clonedDoc) => {
                     const el = clonedDoc.getElementById('modal-export-area');
                     if (el) {
@@ -54,7 +51,7 @@ const KpiDetailModal: React.FC<{
             link.click();
         } catch (e) {
             console.error('Erro ao exportar imagem:', e);
-            alert('Não foi possível gerar a imagem. Tente novamente.');
+            alert('Não foi possível gerar a imagem.');
         } finally {
             setIsExporting(false);
         }
@@ -162,7 +159,6 @@ const KpiDetailModal: React.FC<{
                             </div>
                         )}
                         
-                        {/* Rodapé exclusivo para o print */}
                         <div className="hidden print-only mt-12 pt-8 border-t border-slate-100 flex justify-between items-center opacity-30">
                             <p className="text-[9px] font-black uppercase tracking-[0.4em] text-slate-400 italic">Portal Centro-Norte • Inteligência Comercial</p>
                             <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black text-[10px]">CN</div>
@@ -194,24 +190,40 @@ export const ManagerDashboard: React.FC = () => {
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     
-    // Filtros de Período
+    // Filtros
+    const [selectedRepId, setSelectedRepId] = useState<string>('all');
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
-    const [data, setData] = useState({
-        totalMeta: 0,
-        totalFaturado: 0,
-        totalClientes: 0,
-        clientesPositivados: 0,
-        investimentoMes: 0
-    });
-
-    const CACHE_KEY_PREFIX = 'pcn_manager_dashboard_cache_v3';
+    const CACHE_KEY_PREFIX = 'pcn_manager_dashboard_cache_v4';
     const CACHE_TIME = 2 * 60 * 60 * 1000;
 
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const monthShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+    // Dados Computados baseados no filtro de representante
+    const displayData = useMemo(() => {
+        if (selectedRepId === 'all') {
+            return teamDetails.reduce((acc, curr) => ({
+                totalMeta: acc.totalMeta + curr.meta,
+                totalFaturado: acc.totalFaturado + curr.faturado,
+                totalClientes: acc.totalClientes + curr.totalClientes,
+                clientesPositivados: acc.clientesPositivados + curr.positivacao,
+                investimentoMes: acc.investimentoMes + curr.verba
+            }), { totalMeta: 0, totalFaturado: 0, totalClientes: 0, clientesPositivados: 0, investimentoMes: 0 });
+        } else {
+            const rep = teamDetails.find(r => r.id === selectedRepId);
+            if (!rep) return { totalMeta: 0, totalFaturado: 0, totalClientes: 0, clientesPositivados: 0, investimentoMes: 0 };
+            return {
+                totalMeta: rep.meta,
+                totalFaturado: rep.faturado,
+                totalClientes: rep.totalClientes,
+                clientesPositivados: rep.positivacao,
+                investimentoMes: rep.verba
+            };
+        }
+    }, [teamDetails, selectedRepId]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -223,13 +235,29 @@ export const ManagerDashboard: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // FIX: Added missing toggleTempMonth function
+    const toggleTempMonth = (m: number) => {
+        setTempSelectedMonths(prev => 
+            prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
+        );
+    };
+
+    // FIX: Added missing handleApplyFilter function
+    const handleApplyFilter = () => {
+        if (tempSelectedMonths.length === 0) {
+            alert("Selecione ao menos um mês.");
+            return;
+        }
+        setSelectedMonths([...tempSelectedMonths]);
+        setShowMonthDropdown(false);
+    };
+
     useEffect(() => {
         const cacheKey = `${CACHE_KEY_PREFIX}_${selectedMonths.sort((a,b)=>a-b).join('_')}_${selectedYear}`;
         const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
-            const { timestamp, data: cachedData, teamDetails: cachedTeam } = JSON.parse(cached);
+            const { timestamp, teamDetails: cachedTeam } = JSON.parse(cached);
             if (Date.now() - timestamp < CACHE_TIME) {
-                setData(cachedData);
                 setTeamDetails(cachedTeam);
                 setIsLoading(false);
                 return;
@@ -242,7 +270,6 @@ export const ManagerDashboard: React.FC = () => {
         let allData: any[] = [];
         let from = 0;
         let hasMore = true;
-        
         const firstMonth = Math.min(...months);
         const lastMonth = Math.max(...months);
         const start = `${year}-${String(firstMonth).padStart(2, '0')}-01`;
@@ -264,8 +291,7 @@ export const ManagerDashboard: React.FC = () => {
                 });
                 allData = [...allData, ...filteredBatch];
                 from += 1000;
-                const currentBatchProgress = Math.min(80, 40 + (allData.length / 5000) * 10);
-                setLoadingProgress(Math.round(currentBatchProgress));
+                setLoadingProgress(Math.round(Math.min(80, 40 + (allData.length / 5000) * 10)));
                 if (data.length < 1000) hasMore = false;
             } else { hasMore = false; }
         }
@@ -280,58 +306,31 @@ export const ManagerDashboard: React.FC = () => {
         
         try {
             setLoadingStatus('Buscando Equipe...');
-            setLoadingProgress(15);
-            const { data: reps } = await supabase
-                .from('usuarios')
-                .select('id, nome, nivel_acesso')
-                .not('nivel_acesso', 'ilike', 'admin')
-                .not('nivel_acesso', 'ilike', 'gerente');
+            const { data: reps } = await supabase.from('usuarios').select('id, nome, nivel_acesso').not('nivel_acesso', 'ilike', 'admin').not('nivel_acesso', 'ilike', 'gerente');
 
             setLoadingStatus('Sincronizando Metas...');
-            setLoadingProgress(30);
-            const { data: metas } = await supabase.from('metas_usuarios')
-                .select('*')
-                .in('mes', selectedMonths)
-                .eq('ano', selectedYear);
+            const { data: metas } = await supabase.from('metas_usuarios').select('*').in('mes', selectedMonths).eq('ano', selectedYear);
             
             setLoadingStatus('Processando Faturamentos...');
-            setLoadingProgress(40);
             const sales = await fetchAllSalesPeriod(selectedYear, selectedMonths);
             
             setLoadingStatus('Mapeando Carteira Global...');
-            setLoadingProgress(85);
-            const { count: totalClientes } = await supabase.from('clientes').select('*', { count: 'exact', head: true });
             const { data: clientPortfolio } = await supabase.from('clientes').select('cnpj, usuario_id');
             
             setLoadingStatus('Consolidando Verbas...');
-            setLoadingProgress(95);
             const firstMonth = Math.min(...selectedMonths);
             const lastMonth = Math.max(...selectedMonths);
             const startStr = `${selectedYear}-${String(firstMonth).padStart(2, '0')}-01`;
             const endStr = new Date(selectedYear, lastMonth, 0).toISOString().split('T')[0];
 
-            const { data: invs } = await supabase.from('investimentos')
-                .select('*')
-                .eq('status', 'approved')
-                .gte('data', startStr)
-                .lte('data', endStr);
-
-            const filteredInvs = invs?.filter(inv => {
-                const m = new Date(inv.data + 'T00:00:00').getUTCMonth() + 1;
-                return selectedMonths.includes(m);
-            }) || [];
-
-            const totalMeta = metas?.reduce((acc, curr) => acc + Number(curr.valor), 0) || 0;
-            const totalFaturado = sales?.reduce((acc, curr) => acc + Number(curr.faturamento), 0) || 0;
-            const uniquePositivadosGlobal = new Set(sales?.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
-            const totalInv = filteredInvs.reduce((acc, curr) => acc + Number(curr.valor_total_investimento), 0) || 0;
+            const { data: invs } = await supabase.from('investimentos').select('*').eq('status', 'approved').gte('data', startStr).lte('data', endStr);
+            const filteredInvs = invs?.filter(inv => selectedMonths.includes(new Date(inv.data + 'T00:00:00').getUTCMonth() + 1)) || [];
 
             const details = reps?.map(rep => {
                 const repMeta = metas?.filter(m => m.usuario_id === rep.id).reduce((a, b) => a + Number(b.valor), 0) || 0;
                 const repSalesList = sales?.filter(s => s.usuario_id === rep.id) || [];
                 const repSales = repSalesList.reduce((a, b) => a + Number(b.faturamento), 0) || 0;
                 const repInv = filteredInvs.filter(i => i.usuario_id === rep.id).reduce((a, b) => a + Number(b.valor_total_investimento), 0) || 0;
-                
                 const repClients = clientPortfolio?.filter(c => c.usuario_id === rep.id) || [];
                 const repSalesCnpjs = new Set(repSalesList.map(s => String(s.cnpj || '').replace(/\D/g, '')));
                 const repPosit = repClients.filter(c => repSalesCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;
@@ -339,14 +338,9 @@ export const ManagerDashboard: React.FC = () => {
                 return { id: rep.id, nome: rep.nome, meta: repMeta, faturado: repSales, positivacao: repPosit, totalClientes: repClients.length, verba: repInv };
             }) || [];
 
-            const newData = { totalMeta, totalFaturado, totalClientes: totalClientes || 0, clientesPositivados: uniquePositivadosGlobal, investimentoMes: totalInv };
-            
-            setData(newData);
             setTeamDetails(details);
             setLoadingProgress(100);
-            const cacheKey = `${CACHE_KEY_PREFIX}_${selectedMonths.sort((a,b)=>a-b).join('_')}_${selectedYear}`;
-            sessionStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: newData, teamDetails: details }));
-            
+            sessionStorage.setItem(`${CACHE_KEY_PREFIX}_${selectedMonths.sort((a,b)=>a-b).join('_')}_${selectedYear}`, JSON.stringify({ timestamp: Date.now(), teamDetails: details }));
             setTimeout(() => setIsLoading(false), 500);
         } catch (e) { 
             console.error(e); 
@@ -354,33 +348,10 @@ export const ManagerDashboard: React.FC = () => {
         }
     };
 
-    const handleResetPeriod = () => {
-        setSelectedMonths([now.getMonth() + 1]);
-        setTempSelectedMonths([now.getMonth() + 1]);
-        setSelectedYear(now.getFullYear());
-    };
-
-    const toggleTempMonth = (m: number) => {
-        setTempSelectedMonths(prev => 
-            prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
-        );
-    };
-
-    const handleApplyFilter = () => {
-        if (tempSelectedMonths.length === 0) {
-            alert("Selecione ao menos um mês.");
-            return;
-        }
-        setSelectedMonths([...tempSelectedMonths]);
-        setShowMonthDropdown(false);
-    };
-
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
-    const pctMeta = data.totalMeta > 0 ? (data.totalFaturado / data.totalMeta) * 100 : 0;
-    const pctPosit = data.totalClientes > 0 ? (data.clientesPositivados / data.totalClientes) * 100 : 0;
-    const isCurrentPeriod = selectedMonths.length === 1 && selectedMonths[0] === (now.getMonth() + 1) && selectedYear === now.getFullYear();
-
-    const diff = data.totalFaturado - data.totalMeta;
+    const pctMeta = displayData.totalMeta > 0 ? (displayData.totalFaturado / displayData.totalMeta) * 100 : 0;
+    const pctPosit = displayData.totalClientes > 0 ? (displayData.clientesPositivados / displayData.totalClientes) * 100 : 0;
+    const diff = displayData.totalFaturado - displayData.totalMeta;
     const isNegativeDiff = diff < 0;
 
     const getMonthsLabel = () => {
@@ -412,7 +383,7 @@ export const ManagerDashboard: React.FC = () => {
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
-            <header className="flex flex-col md:flex-row justify-between items-end gap-6">
+            <header className="flex flex-col lg:flex-row justify-between items-end gap-6">
                 <div>
                     <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Visão de Resultados</h2>
                     <p className="text-[10px] font-black text-slate-400 mt-2 flex items-center gap-2 uppercase tracking-widest text-left">
@@ -420,22 +391,39 @@ export const ManagerDashboard: React.FC = () => {
                         Período: {selectedMonths.sort((a,b) => a-b).map(m => monthShort[m-1]).join(', ')} de {selectedYear}
                     </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
                     
+                    {/* Filtro de Representante */}
+                    <div className="relative flex-1 lg:flex-none">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                            <User className="w-3.5 h-3.5" />
+                        </div>
+                        <select 
+                            value={selectedRepId}
+                            onChange={(e) => setSelectedRepId(e.target.value)}
+                            className="w-full lg:w-auto pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer transition-all"
+                        >
+                            <option value="all">Equipe Completa (Global)</option>
+                            {teamDetails.sort((a,b) => a.nome.localeCompare(b.nome)).map(rep => (
+                                <option key={rep.id} value={rep.id}>{rep.nome.toUpperCase()}</option>
+                            ))}
+                        </select>
+                    </div>
+
                     <div className="relative" ref={dropdownRef}>
                         <button 
                             onClick={() => {
                                 setTempSelectedMonths([...selectedMonths]);
                                 setShowMonthDropdown(!showMonthDropdown);
                             }}
-                            className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50 min-w-[200px] justify-between transition-all"
+                            className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50 min-w-[180px] justify-between transition-all"
                         >
                             <span>{getMonthsLabel()}</span>
                             <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
                         </button>
                         
                         {showMonthDropdown && (
-                            <div className="absolute top-full left-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
+                            <div className="absolute top-full left-0 lg:left-auto lg:right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
                                 <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Selecionar Período</span>
                                     <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="text-[9px] font-black text-blue-600 uppercase hover:underline transition-all">Todos</button>
@@ -474,14 +462,6 @@ export const ManagerDashboard: React.FC = () => {
                         <option value={2026}>2026</option>
                     </select>
 
-                    {!isCurrentPeriod && (
-                        <button 
-                            onClick={handleResetPeriod}
-                            className="bg-blue-600 text-white border border-blue-500 rounded-xl px-5 py-2.5 text-[10px] font-black uppercase flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md"
-                        >
-                            <RotateCcw className="w-3.5 h-3.5" /> Voltar ao Atual
-                        </button>
-                    )}
                     <button onClick={() => fetchKpis()} className="bg-white border border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-all shadow-sm">
                         <RefreshCw className="w-4 h-4 text-slate-400" />
                     </button>
@@ -492,14 +472,14 @@ export const ManagerDashboard: React.FC = () => {
                 <div onClick={() => setActiveKpiDetail('meta')} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-500 transition-all active:scale-95">
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Target className="w-20 h-20 text-blue-600" /></div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta do Período</p>
-                    <h3 className="text-2xl font-black text-slate-900">{formatBRL(data.totalMeta)}</h3>
+                    <h3 className="text-2xl font-black text-slate-900">{formatBRL(displayData.totalMeta)}</h3>
                     <p className="text-[9px] font-black text-slate-400 uppercase mt-4 tracking-widest">Clique para ver metas</p>
                 </div>
 
                 <div onClick={() => setActiveKpiDetail('faturado')} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-500 transition-all active:scale-95">
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><DollarSign className="w-20 h-20 text-blue-600" /></div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturado Real</p>
-                    <h3 className={`text-2xl font-black ${pctMeta >= 100 ? 'text-blue-600' : 'text-red-600'}`}>{formatBRL(data.totalFaturado)}</h3>
+                    <h3 className={`text-2xl font-black ${pctMeta >= 100 ? 'text-blue-600' : 'text-red-600'}`}>{formatBRL(displayData.totalFaturado)}</h3>
                     <div className="mt-4 flex items-center justify-between">
                         <span className={`text-[10px] font-black uppercase ${pctMeta >= 100 ? 'text-blue-600' : 'text-red-600'}`}>
                             {pctMeta.toFixed(1)}% Alcançado
@@ -511,8 +491,8 @@ export const ManagerDashboard: React.FC = () => {
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Users className="w-20 h-20 text-purple-600" /></div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Positivação</p>
                     <div className="flex items-baseline gap-2">
-                        <h3 className="text-2xl font-black text-slate-900">{data.clientesPositivados}</h3>
-                        <span className="text-xs text-slate-400 font-bold">/ {data.totalClientes}</span>
+                        <h3 className="text-2xl font-black text-slate-900">{displayData.clientesPositivados}</h3>
+                        <span className="text-xs text-slate-400 font-bold">/ {displayData.totalClientes}</span>
                     </div>
                     <div className="mt-4 flex items-center gap-2">
                          <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />
@@ -523,7 +503,7 @@ export const ManagerDashboard: React.FC = () => {
                 <div onClick={() => setActiveKpiDetail('verba')} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group cursor-pointer hover:border-amber-500 transition-all active:scale-95">
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Wallet className="w-20 h-20 text-amber-600" /></div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Verba Utilizada</p>
-                    <h3 className="text-2xl font-black text-amber-600">{formatBRL(data.investimentoMes)}</h3>
+                    <h3 className="text-2xl font-black text-amber-600">{formatBRL(displayData.investimentoMes)}</h3>
                     <div className="mt-4 flex items-center gap-2">
                          <TrendingUp className="w-3.5 h-3.5 text-blue-500" />
                          <span className="text-[10px] font-black text-slate-600 uppercase">Investimentos Aprovados</span>

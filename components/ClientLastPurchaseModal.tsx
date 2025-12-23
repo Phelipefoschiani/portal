@@ -1,7 +1,7 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle, ListChecks } from 'lucide-react';
+import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle, ListChecks, CheckCircle2 } from 'lucide-react';
 import { Button } from './Button';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -20,9 +20,23 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   const [isExporting, setIsExporting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const sortedProducts = [...client.products].sort((a, b) => {
-    return new Date(a.lastPurchaseDate).getTime() - new Date(b.lastPurchaseDate).getTime();
-  });
+  const sortedProducts = useMemo(() => {
+    return [...client.products].sort((a, b) => {
+      return new Date(a.lastPurchaseDate).getTime() - new Date(b.lastPurchaseDate).getTime();
+    });
+  }, [client.products]);
+
+  // Helper para identificar se é "Vermelho" (60-90 dias)
+  const isRedItem = (product: any) => {
+    const daysSince = Math.floor((new Date().getTime() - new Date(product.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
+    return daysSince > 60 && daysSince <= 90;
+  };
+
+  const redItems = sortedProducts.filter(p => isRedItem(p));
+  const whiteItems = sortedProducts.filter(p => !isRedItem(p));
+
+  const isAllRedSelected = redItems.length > 0 && redItems.every(p => selectedProductIds.includes(p.id));
+  const isAllWhiteSelected = whiteItems.length > 0 && whiteItems.every(p => selectedProductIds.includes(p.id));
 
   const toggleProduct = (id: string) => {
     setSelectedProductIds(prev => 
@@ -30,23 +44,26 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
     );
   };
 
-  const toggleAll = () => {
-    if (selectedProductIds.length === sortedProducts.length) {
-      setSelectedProductIds([]);
+  const toggleRedCategory = () => {
+    const redIds = redItems.map(p => p.id);
+    if (isAllRedSelected) {
+      // Desmarcar apenas os vermelhos
+      setSelectedProductIds(prev => prev.filter(id => !redIds.includes(id)));
     } else {
-      setSelectedProductIds(sortedProducts.map(p => p.id));
+      // Marcar todos os vermelhos (sem remover os brancos que já estiverem marcados)
+      setSelectedProductIds(prev => Array.from(new Set([...prev, ...redIds])));
     }
   };
 
-  const selectOnlyRed = () => {
-    const redIds = sortedProducts
-      .filter(p => {
-        const daysSince = Math.floor((new Date().getTime() - new Date(p.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
-        return daysSince > 60 && daysSince <= 90;
-      })
-      .map(p => p.id);
-    
-    setSelectedProductIds(redIds);
+  const toggleWhiteCategory = () => {
+    const whiteIds = whiteItems.map(p => p.id);
+    if (isAllWhiteSelected) {
+      // Desmarcar apenas os brancos
+      setSelectedProductIds(prev => prev.filter(id => !whiteIds.includes(id)));
+    } else {
+      // Marcar todos os brancos (sem remover os vermelhos que já estiverem marcados)
+      setSelectedProductIds(prev => Array.from(new Set([...prev, ...whiteIds])));
+    }
   };
 
   const handleDownloadPDF = async () => {
@@ -76,6 +93,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   };
 
   const selectedProductsData = sortedProducts.filter(p => selectedProductIds.includes(p.id));
+  const formatQty = (val: number) => new Intl.NumberFormat('pt-BR').format(val);
 
   return createPortal(
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
@@ -88,7 +106,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
             </div>
             <div>
               <h3 className="text-xl font-bold text-slate-800 tracking-tight">Histórico de Últimas Compras</h3>
-              <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Analise de itens</p>
+              <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Análise de Itens e Reposição</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
@@ -99,23 +117,23 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
         <div className="p-4 bg-white border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 px-8">
             <div className="flex items-center gap-6">
                 <button 
-                    onClick={toggleAll}
-                    className="flex items-center gap-2 text-[10px] font-black text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest"
+                    onClick={toggleWhiteCategory}
+                    className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${isAllWhiteSelected ? 'text-blue-600' : 'text-slate-500 hover:text-blue-500'}`}
                 >
-                    {selectedProductIds.length === sortedProducts.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-slate-300" />}
-                    Selecionar Todos
+                    {isAllWhiteSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-slate-300" />}
+                    Selecionar Brancos
                 </button>
                 <button 
-                    onClick={selectOnlyRed}
-                    className="flex items-center gap-2 text-[10px] font-black text-red-600 hover:text-red-700 transition-colors uppercase tracking-widest"
+                    onClick={toggleRedCategory}
+                    className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${isAllRedSelected ? 'text-red-600' : 'text-slate-500 hover:text-red-500'}`}
                 >
-                    <ListChecks className="w-5 h-5" />
+                    {isAllRedSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-slate-300" />}
                     Selecionar Vermelhos
                 </button>
             </div>
             
             <div className="flex items-center gap-4 w-full sm:w-auto">
-                <span className="text-[10px] font-black text-slate-400 uppercase">{selectedProductIds.length} itens selecionados</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase">{selectedProductIds.length} itens marcados</span>
                 <Button 
                     variant="primary" 
                     onClick={handleDownloadPDF} 
@@ -151,6 +169,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                         {sortedProducts.map((product) => {
                             const isSelected = selectedProductIds.includes(product.id);
                             const daysSince = Math.floor((new Date().getTime() - new Date(product.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
+                            const isRed = isRedItem(product);
                             const unitPrice = product.quantity > 0 ? product.totalValue / product.quantity : 0;
                             
                             return (
@@ -166,7 +185,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                                     </td>
                                     <td className="py-5 px-6">
                                         <p className="font-black text-slate-800 text-xs uppercase tracking-tight">{product.name}</p>
-                                        {daysSince > 60 && daysSince <= 90 && (
+                                        {isRed && (
                                             <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded-lg text-[9px] font-black bg-red-50 text-red-500 border border-red-100 uppercase tracking-widest">
                                                 Sem compra há {daysSince} dias
                                             </span>
@@ -181,7 +200,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                                     <td className="py-5 px-6 text-right font-bold text-slate-600 tabular-nums">
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(unitPrice)}
                                     </td>
-                                    <td className="py-5 px-6 text-center font-black text-slate-900">{product.quantity}</td>
+                                    <td className="py-5 px-6 text-center font-black text-slate-900">{formatQty(product.quantity)}</td>
                                     <td className="py-5 px-8 text-right font-black text-slate-900 tabular-nums">
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.totalValue)}
                                     </td>
@@ -223,7 +242,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                         <tr key={product.id} className="border-b border-slate-100">
                             <td className="py-4 px-2">
                                 <p className="font-black text-slate-800 text-sm uppercase">{product.name}</p>
-                                {daysSince > 60 && daysSince <= 90 && (
+                                {isRedItem(product) && (
                                     <p className="text-[10px] font-black text-red-500 uppercase mt-1">
                                         Sem compra há {daysSince} dias
                                     </p>
@@ -233,7 +252,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                             <td className="py-4 px-2 text-right font-black text-slate-900 text-xs">
                                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(unitPrice)}
                             </td>
-                            <td className="py-4 px-2 text-center font-black text-slate-900 text-sm">{product.quantity}</td>
+                            <td className="py-4 px-2 text-center font-black text-slate-900 text-sm">{formatQty(product.quantity)}</td>
                             <td className="py-4 px-2 text-right font-black text-slate-800 text-sm">
                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.totalValue)}
                             </td>
