@@ -107,7 +107,6 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
         try {
             const element = exportRef.current;
             
-            // Forçamos a captura do scrollHeight total para evitar cortes
             const canvas = await html2canvas(element, { 
                 scale: 2, 
                 useCORS: true,
@@ -118,7 +117,6 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                 windowWidth: element.scrollWidth,
                 windowHeight: element.scrollHeight,
                 onclone: (clonedDoc) => {
-                    // No documento clonado que o html2canvas usa, removemos restrições de scroll
                     const el = clonedDoc.getElementById('raio-x-export-root');
                     if (el) {
                         el.style.height = 'auto';
@@ -211,11 +209,11 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                             </div>
                             <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Faturado</p>
-                                <p className="text-xl font-black text-emerald-600">{formatBRL(totalSales)}</p>
+                                <p className="text-xl font-black text-blue-600">{formatBRL(totalSales)}</p>
                             </div>
                             <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Alcance Geral</p>
-                                <p className={`text-xl font-black ${pctTotal >= 100 ? 'text-emerald-600' : 'text-blue-600'}`}>{pctTotal.toFixed(1)}%</p>
+                                <p className={`text-xl font-black ${pctTotal >= 100 ? 'text-blue-600' : 'text-red-600'}`}>{pctTotal.toFixed(1)}%</p>
                             </div>
                             <div className="bg-slate-900 p-5 rounded-3xl text-white shadow-xl">
                                 <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Projeção Final</p>
@@ -277,13 +275,13 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                                                 <td className="px-6 py-4 text-slate-400 font-medium tabular-nums">{formatBRL(m.target)}</td>
                                                 <td className="px-6 py-4 text-slate-900 font-black tabular-nums">{formatBRL(m.sales)}</td>
                                                 <td className="px-6 py-4 text-center">
-                                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-black border ${achievement >= 100 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-black border ${achievement >= 100 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
                                                         {achievement.toFixed(1)}%
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     {m.sales > 0 ? (
-                                                        <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                        <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
                                                             {growth >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                                                             {Math.abs(growth).toFixed(1)}%
                                                         </div>

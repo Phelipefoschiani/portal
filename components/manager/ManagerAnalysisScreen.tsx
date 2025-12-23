@@ -147,7 +147,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
                     </div>
                     <div className="flex gap-6">
                         <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+                            <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Meta Superada</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -196,14 +196,14 @@ export const ManagerAnalysisScreen: React.FC = () => {
                                     </div>
 
                                     <div 
-                                        className={`w-full rounded-2xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-emerald-500 shadow-emerald-200' : 'bg-red-500 shadow-red-100'}`}
+                                        className={`w-full rounded-2xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-200' : 'bg-red-500 shadow-red-100'}`}
                                         style={{ height: `${Math.max(salesHeight, 2)}%` }}
                                     >
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent rounded-2xl"></div>
                                         {isSuccess && (
                                             <div className="absolute -top-7 left-1/2 -translate-x-1/2">
-                                                <div className="p-1 bg-emerald-100 rounded-full">
-                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                <div className="p-1 bg-blue-100 rounded-full">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
                                                 </div>
                                             </div>
                                         )}
@@ -232,7 +232,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
                             <div>
                                 <div className="flex justify-between items-start mb-6">
                                     <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center font-black text-lg text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner">{row.rep.nome.charAt(0)}</div>
-                                    <div className={`text-[10px] font-black px-4 py-1.5 rounded-full border ${row.pct >= 100 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>{row.pct.toFixed(1)}%</div>
+                                    <div className={`text-[10px] font-black px-4 py-1.5 rounded-full border ${row.pct >= 100 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-red-50 text-red-600 border-red-100'}`}>{row.pct.toFixed(1)}%</div>
                                 </div>
                                 <h4 className="font-black text-slate-900 uppercase text-sm truncate mb-1 tracking-tighter">{row.rep.nome}</h4>
                                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">

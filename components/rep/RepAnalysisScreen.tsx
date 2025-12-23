@@ -163,11 +163,11 @@ export const RepAnalysisScreen: React.FC = () => {
                 </div>
                 <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturado Real</p>
-                    <h3 className="text-2xl font-black text-emerald-600">{formatBRL(totalSales)}</h3>
+                    <h3 className="text-2xl font-black text-blue-600">{formatBRL(totalSales)}</h3>
                 </div>
                 <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Atingimento</p>
-                    <h3 className={`text-2xl font-black ${pctTotal >= 100 ? 'text-emerald-600' : 'text-blue-600'}`}>{pctTotal.toFixed(1)}%</h3>
+                    <h3 className={`text-2xl font-black ${pctTotal >= 100 ? 'text-blue-600' : 'text-blue-500'}`}>{pctTotal.toFixed(1)}%</h3>
                 </div>
                 <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl">
                     <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Projeção Final</p>
@@ -185,7 +185,7 @@ export const RepAnalysisScreen: React.FC = () => {
                     </div>
                     <div className="flex gap-6">
                         <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+                            <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Meta Atingida</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -218,12 +218,12 @@ export const RepAnalysisScreen: React.FC = () => {
 
                                 <div className="relative w-full flex-1 flex flex-col justify-end">
                                     <div className="w-full bg-slate-100 rounded-2xl border border-slate-200/50 absolute bottom-0 transition-all" style={{ height: `${Math.max(targetHeight, 2)}%` }}></div>
-                                    <div className={`w-full rounded-2xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-emerald-500 shadow-emerald-200' : 'bg-red-500 shadow-red-100'}`} style={{ height: `${Math.max(salesHeight, 2)}%` }}>
+                                    <div className={`w-full rounded-2xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-200' : 'bg-red-500 shadow-red-100'}`} style={{ height: `${Math.max(salesHeight, 2)}%` }}>
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent rounded-2xl"></div>
                                         {isSuccess && (
                                             <div className="absolute -top-7 left-1/2 -translate-x-1/2">
-                                                <div className="p-1 bg-emerald-100 rounded-full shadow-sm">
-                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                <div className="p-1 bg-blue-100 rounded-full shadow-sm">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
                                                 </div>
                                             </div>
                                         )}
@@ -260,13 +260,13 @@ export const RepAnalysisScreen: React.FC = () => {
                                     <td className="px-8 py-4 text-slate-400 font-medium">{formatBRL(m.target)}</td>
                                     <td className="px-8 py-4 text-slate-900 font-black">{formatBRL(m.sales)}</td>
                                     <td className="px-8 py-4 text-center">
-                                        <span className={`px-3 py-1 rounded-full text-[9px] font-black border ${achievement >= 100 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                        <span className={`px-3 py-1 rounded-full text-[9px] font-black border ${achievement >= 100 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
                                             {achievement.toFixed(1)}%
                                         </span>
                                     </td>
                                     <td className="px-8 py-4 text-center">
                                         {m.sales > 0 ? (
-                                            <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                            <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
                                                 {growth >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                                                 {Math.abs(growth).toFixed(1)}%
                                             </div>

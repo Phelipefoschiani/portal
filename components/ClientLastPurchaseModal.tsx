@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle } from 'lucide-react';
+import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle, ListChecks } from 'lucide-react';
 import { Button } from './Button';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -38,6 +38,17 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
     }
   };
 
+  const selectOnlyRed = () => {
+    const redIds = sortedProducts
+      .filter(p => {
+        const daysSince = Math.floor((new Date().getTime() - new Date(p.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
+        return daysSince > 60 && daysSince <= 90;
+      })
+      .map(p => p.id);
+    
+    setSelectedProductIds(redIds);
+  };
+
   const handleDownloadPDF = async () => {
     if (selectedProductIds.length === 0) return;
     setIsExporting(true);
@@ -67,7 +78,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   const selectedProductsData = sortedProducts.filter(p => selectedProductIds.includes(p.id));
 
   return createPortal(
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-8 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
       <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-white/20">
         
         <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
@@ -77,7 +88,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
             </div>
             <div>
               <h3 className="text-xl font-bold text-slate-800 tracking-tight">Histórico de Últimas Compras</h3>
-              <p className="text-sm font-medium text-slate-500">Analise itens sem reposição recente e gere sugestões.</p>
+              <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Analise de itens</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
@@ -86,25 +97,34 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
         </div>
 
         <div className="p-4 bg-white border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 px-8">
-            <button 
-                onClick={toggleAll}
-                className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest"
-            >
-                {selectedProductIds.length === sortedProducts.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-slate-300" />}
-                Selecionar Todos
-            </button>
+            <div className="flex items-center gap-6">
+                <button 
+                    onClick={toggleAll}
+                    className="flex items-center gap-2 text-[10px] font-black text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest"
+                >
+                    {selectedProductIds.length === sortedProducts.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-slate-300" />}
+                    Selecionar Todos
+                </button>
+                <button 
+                    onClick={selectOnlyRed}
+                    className="flex items-center gap-2 text-[10px] font-black text-red-600 hover:text-red-700 transition-colors uppercase tracking-widest"
+                >
+                    <ListChecks className="w-5 h-5" />
+                    Selecionar Vermelhos
+                </button>
+            </div>
             
             <div className="flex items-center gap-4 w-full sm:w-auto">
-                <span className="text-xs font-bold text-slate-400">{selectedProductIds.length} itens selecionados</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase">{selectedProductIds.length} itens selecionados</span>
                 <Button 
                     variant="primary" 
                     onClick={handleDownloadPDF} 
                     disabled={selectedProductIds.length === 0}
                     isLoading={isExporting}
-                    className="flex-1 sm:flex-none h-11 text-xs font-bold shadow-blue-100"
+                    className="flex-1 sm:flex-none h-11 text-[10px] font-black shadow-blue-100 uppercase tracking-widest"
                 >
                     <FileDown className="w-4 h-4 mr-2" />
-                    Gerar Relatório Selecionado
+                    Gerar Relatório
                 </Button>
             </div>
         </div>
@@ -116,20 +136,22 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                     <p className="font-bold uppercase text-xs tracking-widest">Nenhum histórico encontrado</p>
                 </div>
             ) : (
-                <table className="w-full text-left text-sm border-collapse min-w-[700px]">
+                <table className="w-full text-left text-sm border-collapse min-w-[800px]">
                     <thead className="bg-slate-100 sticky top-0 z-10">
                         <tr className="text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-200">
                             <th className="py-4 px-8 w-16 text-center">#</th>
                             <th className="py-4 px-6">Produto</th>
                             <th className="py-4 px-6">Última Compra</th>
-                            <th className="py-4 px-6 text-center">Qtd. Última</th>
-                            <th className="py-4 px-8 text-right">Valor Último</th>
+                            <th className="py-4 px-6 text-right">Preço Unit.</th>
+                            <th className="py-4 px-6 text-center">Última Qtd</th>
+                            <th className="py-4 px-8 text-right">Último Valor</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
                         {sortedProducts.map((product) => {
                             const isSelected = selectedProductIds.includes(product.id);
                             const daysSince = Math.floor((new Date().getTime() - new Date(product.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
+                            const unitPrice = product.quantity > 0 ? product.totalValue / product.quantity : 0;
                             
                             return (
                                 <tr 
@@ -143,21 +165,24 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                                         </div>
                                     </td>
                                     <td className="py-5 px-6">
-                                        <p className="font-bold text-slate-800">{product.name}</p>
-                                        {daysSince > 60 && (
-                                            <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded-lg text-[9px] font-bold bg-red-50 text-red-500 border border-red-100 uppercase tracking-tighter">
+                                        <p className="font-black text-slate-800 text-xs uppercase tracking-tight">{product.name}</p>
+                                        {daysSince > 60 && daysSince <= 90 && (
+                                            <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded-lg text-[9px] font-black bg-red-50 text-red-500 border border-red-100 uppercase tracking-widest">
                                                 Sem compra há {daysSince} dias
                                             </span>
                                         )}
                                     </td>
-                                    <td className="py-5 px-6 text-slate-500 font-medium">
+                                    <td className="py-5 px-6 text-slate-500 font-bold uppercase text-[10px]">
                                         <div className="flex items-center gap-2">
                                             <CalendarClock className="w-4 h-4 text-slate-300" />
                                             {new Date(product.lastPurchaseDate).toLocaleDateString('pt-BR')}
                                         </div>
                                     </td>
-                                    <td className="py-5 px-6 text-center font-bold text-slate-600">{product.quantity}</td>
-                                    <td className="py-5 px-8 text-right font-bold text-slate-900 tabular-nums">
+                                    <td className="py-5 px-6 text-right font-bold text-slate-600 tabular-nums">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(unitPrice)}
+                                    </td>
+                                    <td className="py-5 px-6 text-center font-black text-slate-900">{product.quantity}</td>
+                                    <td className="py-5 px-8 text-right font-black text-slate-900 tabular-nums">
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.totalValue)}
                                     </td>
                                 </tr>
@@ -169,41 +194,56 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
         </div>
       </div>
 
-      <div className="fixed top-0 left-[-9999px] w-[800px] bg-white text-slate-900 p-12" ref={printRef}>
+      <div className="fixed top-0 left-[-9999px] w-[900px] bg-white text-slate-900 p-12" ref={printRef}>
         <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
             <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 mb-1">Sugestão de Reposição</p>
-                <h1 className="text-4xl font-bold text-slate-900 tracking-tighter">{client.name}</h1>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 mb-1">Sugestão de Reposição</p>
+                <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">{client.name}</h1>
             </div>
             <div className="text-right">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Relatório Gerado em</p>
-                <p className="text-lg font-bold text-slate-800">{new Date().toLocaleDateString('pt-BR')}</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Relatório Gerado em</p>
+                <p className="text-lg font-black text-slate-800">{new Date().toLocaleDateString('pt-BR')}</p>
             </div>
         </div>
         <table className="w-full text-left text-sm border-collapse mb-8">
             <thead>
-                <tr className="border-b-2 border-slate-200 text-slate-400 uppercase text-[10px] font-bold tracking-[0.2em]">
+                <tr className="border-b-2 border-slate-200 text-slate-400 uppercase text-[10px] font-black tracking-[0.2em]">
                     <th className="py-3 px-2">Item / Descrição</th>
                     <th className="py-3 px-2 text-right">Última Compra</th>
-                    <th className="py-3 px-2 text-center">Últ. Qtd</th>
-                    <th className="py-3 px-2 text-right">Valor Total</th>
+                    <th className="py-3 px-2 text-right">Preço Unit.</th>
+                    <th className="py-3 px-2 text-center">Última Qtd</th>
+                    <th className="py-3 px-2 text-right">Último Valor</th>
                 </tr>
             </thead>
             <tbody>
-                {selectedProductsData.map((product) => (
-                    <tr key={product.id} className="border-b border-slate-100">
-                        <td className="py-4 px-2 font-bold text-slate-800 text-base">{product.name}</td>
-                        <td className="py-4 px-2 text-right font-medium text-slate-600">{new Date(product.lastPurchaseDate).toLocaleDateString('pt-BR')}</td>
-                        <td className="py-4 px-2 text-center font-bold text-slate-900">{product.quantity}</td>
-                        <td className="py-4 px-2 text-right font-bold text-slate-800">
-                           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.totalValue)}
-                        </td>
-                    </tr>
-                ))}
+                {selectedProductsData.map((product) => {
+                    const unitPrice = product.quantity > 0 ? product.totalValue / product.quantity : 0;
+                    const daysSince = Math.floor((new Date().getTime() - new Date(product.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
+                    return (
+                        <tr key={product.id} className="border-b border-slate-100">
+                            <td className="py-4 px-2">
+                                <p className="font-black text-slate-800 text-sm uppercase">{product.name}</p>
+                                {daysSince > 60 && daysSince <= 90 && (
+                                    <p className="text-[10px] font-black text-red-500 uppercase mt-1">
+                                        Sem compra há {daysSince} dias
+                                    </p>
+                                )}
+                            </td>
+                            <td className="py-4 px-2 text-right font-bold text-slate-600 text-xs">{new Date(product.lastPurchaseDate).toLocaleDateString('pt-BR')}</td>
+                            <td className="py-4 px-2 text-right font-black text-slate-900 text-xs">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(unitPrice)}
+                            </td>
+                            <td className="py-4 px-2 text-center font-black text-slate-900 text-sm">{product.quantity}</td>
+                            <td className="py-4 px-2 text-right font-black text-slate-800 text-sm">
+                               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.totalValue)}
+                            </td>
+                        </tr>
+                    );
+                })}
             </tbody>
         </table>
         <div className="mt-20 pt-8 border-t border-slate-100 flex justify-between items-center opacity-40">
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400">Portal Centro-Norte • Inteligência Comercial</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 italic">Portal Centro-Norte • Inteligência Comercial</p>
             <div className="w-12 h-12 bg-slate-900 rounded-xl"></div>
         </div>
       </div>

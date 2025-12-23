@@ -45,7 +45,6 @@ export const ManagerTargetsScreen: React.FC = () => {
     const fetchInitialData = async () => {
         setIsLoading(true);
         try {
-            // Busca representantes ignorando admin e gerente
             const { data: repsData } = await supabase
                 .from('usuarios')
                 .select('id, nome, nivel_acesso')
@@ -78,6 +77,34 @@ export const ManagerTargetsScreen: React.FC = () => {
         } catch (e) { console.error(e); } finally { setIsLoading(false); }
     };
 
+    const fetchAllSalesPaged = async (repId: string, start: string, end: string) => {
+        let allSales: any[] = [];
+        let from = 0;
+        let to = 999;
+        let hasMore = true;
+
+        while (hasMore) {
+            const { data, error } = await supabase
+                .from('dados_vendas')
+                .select('faturamento, cnpj, data')
+                .eq('usuario_id', repId)
+                .gte('data', start)
+                .lte('data', end)
+                .range(from, to);
+            
+            if (error) throw error;
+            if (data && data.length > 0) {
+                allSales = [...allSales, ...data];
+                if (data.length < 1000) hasMore = false;
+                from += 1000;
+                to += 1000;
+            } else {
+                hasMore = false;
+            }
+        }
+        return allSales;
+    };
+
     const fetchClientHistory = async () => {
         setIsClientsLoading(true);
         try {
@@ -86,26 +113,22 @@ export const ManagerTargetsScreen: React.FC = () => {
 
             const { data: clients } = await supabase.from('clientes').select('id, nome_fantasia, cnpj').eq('usuario_id', selectedRepId).order('nome_fantasia');
             
-            const { data: sales } = await supabase.from('dados_vendas')
-                .select('faturamento, cnpj, data')
-                .eq('usuario_id', selectedRepId)
-                .gte('data', `${year2}-01-01`)
-                .lte('data', `${year1}-12-31`);
+            // Busca paged para garantir que pega todo o faturamento de 2025/2024 sem limites
+            const salesArray = await fetchAllSalesPaged(selectedRepId, `${year2}-01-01`, `${year1}-12-31`);
 
             const { data: existingClientTargets } = await supabase.from('metas_clientes')
                 .select('valor, cliente_id')
                 .eq('ano', selectedYear);
 
-            const salesArray = (sales || []) as any[];
-            const totalRepYear1 = salesArray.filter(s => new Date(s.data).getFullYear() === year1).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
-            const totalRepYear2 = salesArray.filter(s => new Date(s.data).getFullYear() === year2).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
+            const totalRepYear1 = salesArray.filter(s => new Date(s.data + 'T00:00:00').getFullYear() === year1).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
+            const totalRepYear2 = salesArray.filter(s => new Date(s.data + 'T00:00:00').getFullYear() === year2).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
 
             setRepAnnualHistory({ year1: totalRepYear1, year2: totalRepYear2 });
 
             const clientStats = (clients || []).map(c => {
                 const cleanCnpj = c.cnpj.replace(/\D/g, '');
-                const salesYear1 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data).getFullYear() === year1).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
-                const salesYear2 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data).getFullYear() === year2).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
+                const salesYear1 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data + 'T00:00:00').getFullYear() === year1).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
+                const salesYear2 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data + 'T00:00:00').getFullYear() === year2).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
                 
                 const repShareValue = Number(repShares[selectedRepId] || 0);
                 const repAnnualForRep = (repShareValue / 100) * managerGlobalTarget;
