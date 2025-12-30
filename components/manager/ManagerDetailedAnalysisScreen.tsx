@@ -346,7 +346,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                             <tr key={idx} className="hover:bg-slate-50 transition-colors group">
                                                 <td className="px-6 py-4">
                                                     <div className="flex flex-wrap items-center gap-2">
-                                                        {row.keys.map((k, kIdx) => (
+                                                        {row.keys.map((k: string, kIdx: number) => (
                                                             <React.Fragment key={kIdx}>
                                                                 <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${kIdx === row.keys.length - 1 ? 'bg-blue-50 text-blue-600 border-blue-100 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{k}</span>
                                                                 {kIdx < row.keys.length - 1 && <ArrowRight className="w-3 h-3 text-slate-300" />}
@@ -428,7 +428,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                         <tr key={idx} className="border-b border-slate-100">
                                             <td className="py-4 px-3">
                                                 <div className="flex flex-wrap gap-1 items-center">
-                                                    {row.keys.map((k, kIdx) => (
+                                                    {row.keys.map((k: string, kIdx: number) => (
                                                         <React.Fragment key={kIdx}>
                                                             <span className="text-[9px] font-black uppercase text-slate-700">{k}</span>
                                                             {kIdx < row.keys.length - 1 && <span className="text-slate-300 mx-1">/</span>}
