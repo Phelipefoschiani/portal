@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Menu } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Menu, Table2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { createPortal } from 'react-dom';
 import { Button } from './Button';
@@ -92,10 +92,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const adminMenuItems: MenuItem[] = [
     { id: 'admin-dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-    { id: 'admin-analysis', label: 'Análise de Performance', icon: BarChart3 },
+    { id: 'admin-analysis', label: 'Análise Performance', icon: BarChart3 },
+    { id: 'admin-detailed-analysis', label: 'Construtor de BI', icon: Table2 },
     { id: 'admin-import', label: 'Importar Faturamento', icon: FileUp },
     { id: 'admin-targets', label: 'Definição de Metas', icon: Target },
-    { id: 'admin-clients', label: 'Carteira Global', icon: Users },
+    { id: 'admin-clients', label: 'Carteira Total', icon: Users },
     { id: 'admin-campaigns', label: 'Análise Campanhas', icon: ShieldCheck, hasAlert: investmentAlert },
     { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, hasAlert: forecastAlert },
     { id: 'admin-notifications', label: 'Gestão Notificações', icon: Bell },
@@ -112,7 +113,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Overlay para mobile */}
       {isOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[45] lg:hidden animate-fadeIn"
@@ -168,7 +168,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-500 group-hover:text-blue-500/70">Alterar Senha</span>
              </div>
           </div>
-          {/* Fix: changed 'onLogout' to 'onClick' to match standard DOM element property */}
           <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200">
             <LogOut className="w-5 h-5" />
             <span className="font-medium text-sm">Sair</span>

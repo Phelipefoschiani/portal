@@ -1,30 +1,23 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Target, TrendingUp, Users, AlertCircle, Calendar, DollarSign, RefreshCw, CheckCircle2, Award, ChevronDown, CheckSquare, Square, RotateCcw, Filter } from 'lucide-react';
 import { NonPositivizedModal } from './NonPositivizedModal';
 import { PositivizedModal } from './PositivizedModal';
 import { RepPerformanceModal } from './manager/RepPerformanceModal';
 import { supabase } from '../lib/supabase';
+import { totalDataStore } from '../lib/dataStore';
 
 export const Dashboard: React.FC = () => {
   const now = new Date();
   const [showNonPositivizedModal, setShowNonPositivizedModal] = useState(false);
   const [showPositivizedModal, setShowPositivizedModal] = useState(false);
   const [showPerformanceModal, setShowPerformanceModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [showMonthDropdown, setShowMonthDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
   const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-
-  const [data, setData] = useState({
-    meta: 0,
-    faturado: 0,
-    clientesPositivados: 0,
-    totalClientes: 0
-  });
 
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
@@ -45,65 +38,33 @@ export const Dashboard: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (userId) {
-      fetchDashboardData();
-    }
-  }, [userId, selectedMonths, selectedYear]);
+  const data = useMemo(() => {
+    const sales = totalDataStore.sales;
+    const targets = totalDataStore.targets;
+    const clients = totalDataStore.clients;
 
-  const fetchDashboardData = async () => {
-    if (selectedMonths.length === 0) return;
-    setIsLoading(true);
-    
-    const firstMonth = Math.min(...selectedMonths);
-    const lastMonth = Math.max(...selectedMonths);
-    const startStr = `${selectedYear}-${String(firstMonth).padStart(2, '0')}-01`;
-    const endStr = new Date(selectedYear, lastMonth, 0).toISOString().split('T')[0];
+    const totalMeta = targets
+      .filter(t => t.usuario_id === userId && selectedMonths.includes(t.mes) && t.ano === selectedYear)
+      .reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
 
-    try {
-      // 1. Metas Somadas
-      const { data: metaData } = await supabase.from('metas_usuarios')
-        .select('valor')
-        .eq('usuario_id', userId)
-        .in('mes', selectedMonths)
-        .eq('ano', selectedYear);
-      
-      const totalMeta = metaData?.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0) || 0;
+    const filteredSales = sales.filter(s => {
+      const d = new Date(s.data + 'T00:00:00');
+      const m = d.getUTCMonth() + 1;
+      const y = d.getUTCFullYear();
+      return s.usuario_id === userId && selectedMonths.includes(m) && y === selectedYear;
+    });
 
-      // 2. Vendas no Período
-      const { data: salesData } = await supabase
-        .from('dados_vendas')
-        .select('faturamento, cnpj, data')
-        .eq('usuario_id', userId)
-        .gte('data', startStr)
-        .lte('data', endStr);
+    const totalFaturado = filteredSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+    const salesCnpjs = new Set(filteredSales.map(s => cleanCnpj(s.cnpj)));
+    const positivadosCount = clients.filter(c => salesCnpjs.has(cleanCnpj(c.cnpj))).length;
 
-      const filteredSales = salesData?.filter(s => {
-          const m = new Date(s.data + 'T00:00:00').getUTCMonth() + 1;
-          return selectedMonths.includes(m);
-      }) || [];
-
-      // 3. Clientes Únicos
-      const { data: allClients, count: totalClientesCount } = await supabase.from('clientes').select('cnpj', { count: 'exact' }).eq('usuario_id', userId);
-
-      const salesCnpjsCleaned = new Set(filteredSales.map(s => cleanCnpj(s.cnpj)).filter(c => c !== ''));
-      const totalFaturado = filteredSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0) || 0;
-      
-      let positivadosCount = 0;
-      allClients?.forEach(client => { if (salesCnpjsCleaned.has(cleanCnpj(client.cnpj))) positivadosCount++; });
-
-      setData({
-        meta: totalMeta,
-        faturado: totalFaturado,
-        clientesPositivados: positivadosCount,
-        totalClientes: totalClientesCount || 0
-      });
-    } catch (error) {
-      console.error('Erro ao carregar dashboard:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    return {
+      meta: totalMeta,
+      faturado: totalFaturado,
+      clientesPositivados: positivadosCount,
+      totalClientes: clients.length
+    };
+  }, [selectedMonths, selectedYear, userId]);
 
   const percentualAtingido = data.meta > 0 ? (data.faturado / data.meta) * 100 : 0;
   const percentualClientes = data.totalClientes > 0 ? (data.clientesPositivados / data.totalClientes) * 100 : 0;
@@ -111,16 +72,10 @@ export const Dashboard: React.FC = () => {
   const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
 
   const toggleTempMonth = (m: number) => {
-    setTempSelectedMonths(prev => 
-        prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
-    );
+    setTempSelectedMonths(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
   };
 
   const handleApplyFilter = () => {
-    if (tempSelectedMonths.length === 0) {
-        alert("Selecione ao menos um mês.");
-        return;
-    }
     setSelectedMonths([...tempSelectedMonths]);
     setShowMonthDropdown(false);
   };
@@ -131,15 +86,6 @@ export const Dashboard: React.FC = () => {
     if (selectedMonths.length === 12) return "ANO COMPLETO";
     return `${selectedMonths.length} MESES`;
   };
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-96 text-slate-400">
-        <RefreshCw className="w-10 h-10 animate-spin mb-4 text-blue-600" />
-        <span className="font-black uppercase text-[10px] tracking-widest animate-pulse">Consolidando período...</span>
-      </div>
-    );
-  }
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-fadeIn pb-20 md:pb-12">
@@ -201,13 +147,6 @@ export const Dashboard: React.FC = () => {
           >
             <Award className="w-4 h-4" /> Ver Raio-X
           </button>
-          
-          <button 
-            onClick={fetchDashboardData} 
-            className="p-3 md:px-5 md:py-2.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase text-slate-600 bg-white rounded-2xl hover:bg-slate-50 transition-all border border-slate-200 shadow-sm"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
@@ -240,7 +179,7 @@ export const Dashboard: React.FC = () => {
             <span className="font-black text-slate-900 text-lg md:text-xl">{formatCurrency(data.faturado)}</span>
           </div>
           <div className="h-3 md:h-4 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/60 shadow-inner">
-            <div className={`h-full rounded-full transition-all duration-1000 ease-out ${percentualAtingido >= 100 ? 'bg-blue-600' : 'bg-red-500'}`} style={{ width: `${Math.min(percentualAtingido, 100)}%` }}></div>
+            <div className={`h-full rounded-full transition-all duration-1000 ease-out ${percentualAtingido >= 100 ? 'bg-blue-600' : 'bg-red-50'}`} style={{ width: `${Math.min(percentualAtingido, 100)}%` }}></div>
           </div>
         </div>
       </div>

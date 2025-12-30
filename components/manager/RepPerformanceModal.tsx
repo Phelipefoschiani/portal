@@ -127,7 +127,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
             });
             
             const link = document.createElement('a');
-            link.download = `RaioX_${rep.nome.replace(/\s/g, '_')}_${year}.png`;
+            link.download = `Performance_${rep.nome.replace(/\s/g, '_')}_${year}.png`;
             link.href = canvas.toDataURL('image/png', 1.0);
             link.click();
         } catch (e) { 
@@ -143,7 +143,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md">
             <div className="flex flex-col items-center gap-4">
                 <Loader2 className="w-10 h-10 animate-spin text-white" />
-                <p className="text-white font-black text-[10px] uppercase tracking-[0.3em]">Gerando inteligência comercial...</p>
+                <p className="text-white font-black text-[10px] uppercase tracking-[0.3em]">Consolidando faturamento...</p>
             </div>
         </div>
     );
@@ -175,12 +175,12 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                         </div>
                         <div>
                             <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">{rep.nome}</h2>
-                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.3em] mt-1">Visualização Executiva de Performance</p>
+                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.3em] mt-1">Análise de Desempenho Regional</p>
                         </div>
                     </div>
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={handleDownload} isLoading={isExporting} className="rounded-xl px-6 h-10 text-[9px] font-black uppercase tracking-widest bg-slate-50 border-slate-200">
-                             <Download className="w-3.5 h-3.5 mr-2" /> Salvar Relatório Completo
+                             <Download className="w-3.5 h-3.5 mr-2" /> Exportar Dados
                         </Button>
                         <button onClick={onClose} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-all">
                             <X className="w-6 h-6" />
@@ -192,7 +192,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                     <div id="raio-x-export-root" ref={exportRef} className="p-8 space-y-8 bg-white">
                         <div className="pb-8 border-b-2 border-slate-900 flex justify-between items-end">
                             <div>
-                                <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.4em] mb-2">Raio-X de Performance Comercial</p>
+                                <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.4em] mb-2">Relatório Executivo de Vendas</p>
                                 <h1 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">{rep.nome}</h1>
                                 <p className="text-sm font-bold text-slate-400 mt-1 uppercase tracking-widest">Ano de Referência: {year}</p>
                             </div>
@@ -225,11 +225,24 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
 
                         <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
                             <div className="flex justify-between items-center mb-6">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2"><LineChart className="w-4 h-4 text-blue-600" /> Histórico de Vendas vs Meta</h4>
+                                <div className="flex items-center gap-6">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2"><LineChart className="w-4 h-4 text-blue-600" /> Histórico de Vendas vs Meta</h4>
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-3 h-0.5 bg-red-500 rounded-full"></div>
+                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Meta Planejada</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-3 h-1 bg-blue-600 rounded-full"></div>
+                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Realizado</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div className="h-[220px] w-full relative px-2">
                                 <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
-                                    <polyline points={getPoints('target')} fill="none" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="2.5" />
+                                    {/* LINHA DE META EM VERMELHO E CONTÍNUA (SÓLIDA) PARA MÁXIMA VISIBILIDADE */}
+                                    <polyline points={getPoints('target')} fill="none" stroke="#ef4444" strokeWidth="1.5" />
                                     <polyline points={getPoints('proj')} fill="none" stroke="#bfdbfe" strokeWidth="2.5" />
                                     <polyline points={getPoints('sales')} fill="none" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                                     {data.monthly.map((m: any, i: number) => {

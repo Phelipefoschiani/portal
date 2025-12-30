@@ -8,6 +8,7 @@ import { NotificationsScreen } from './components/NotificationsScreen';
 import { InvestmentsScreen } from './components/InvestmentsScreen';
 import { CampaignsScreen } from './components/CampaignsScreen';
 import { UrgentNoticeModal } from './components/UrgentNoticeModal';
+import { HydrationScreen } from './components/HydrationScreen';
 import { Sidebar } from './components/Sidebar';
 import { supabase } from './lib/supabase';
 import { checkAndMarkDeliveredNotifications } from './lib/mockData';
@@ -25,9 +26,11 @@ import { ManagerClientsScreen } from './components/manager/ManagerClientsScreen'
 import { ManagerTargetsScreen } from './components/manager/ManagerTargetsScreen';
 import { ManagerImportScreen } from './components/manager/ManagerImportScreen';
 import { ManagerAnalysisScreen } from './components/manager/ManagerAnalysisScreen';
+import { ManagerDetailedAnalysisScreen } from './components/manager/ManagerDetailedAnalysisScreen';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [userName, setUserName] = useState('Visitante'); 
@@ -44,6 +47,8 @@ const App: React.FC = () => {
       setUserRole(role);
       setUserId(id);
       setIsAuthenticated(true);
+      // Mantemos false para forçar reidratação ao abrir o app
+      setIsHydrated(false); 
       setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
     }
     setIsCheckingAuth(false);
@@ -54,7 +59,6 @@ const App: React.FC = () => {
     setUserRole(role);
     setUserId(id);
     setIsAuthenticated(true);
-    setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
     sessionStorage.setItem('pcn_session', JSON.stringify({ name, role, id }));
     if (role === 'rep') checkAndMarkDeliveredNotifications();
   };
@@ -65,6 +69,7 @@ const App: React.FC = () => {
     }
     sessionStorage.removeItem('pcn_session');
     setIsAuthenticated(false);
+    setIsHydrated(false);
     setCurrentView('dashboard');
     setUserRole('rep');
     setUserId(null);
@@ -78,6 +83,11 @@ const App: React.FC = () => {
 
   if (isCheckingAuth) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-inter">Iniciando Portal...</div>;
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
+  
+  // Nova etapa: Hidratação do Banco de Dados
+  if (!isHydrated && userId) {
+    return <HydrationScreen userId={userId} userRole={userRole} onComplete={() => setIsHydrated(true)} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row font-inter overflow-x-hidden">
@@ -125,6 +135,7 @@ const App: React.FC = () => {
                 {currentView === 'admin-dashboard' && <ManagerDashboard />}
                 {currentView === 'admin-import' && <ManagerImportScreen />}
                 {currentView === 'admin-analysis' && <ManagerAnalysisScreen />}
+                {currentView === 'admin-detailed-analysis' && <ManagerDetailedAnalysisScreen />}
                 {currentView === 'admin-campaigns' && <ManagerCampaignsScreen />}
                 {currentView === 'admin-forecast' && <ManagerForecastScreen />}
                 {currentView === 'admin-notifications' && <ManagerNotificationsScreen />}

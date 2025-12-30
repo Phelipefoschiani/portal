@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle, ListChecks, CheckCircle2 } from 'lucide-react';
+import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle, ListChecks, CheckCircle2, Download, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -18,7 +18,9 @@ interface ClientLastPurchaseModalProps {
 export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = ({ client, onClose }) => {
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
-  const printRef = useRef<HTMLDivElement>(null);
+  
+  // Ref para as páginas individuais de exportação
+  const exportPagesRef = useRef<HTMLDivElement>(null);
 
   const sortedProducts = useMemo(() => {
     return [...client.products].sort((a, b) => {
@@ -26,10 +28,24 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
     });
   }, [client.products]);
 
-  // Helper para identificar se é "Vermelho" (60-90 dias)
+  // Calcula a diferença em dias
+  const getDaysSince = (dateStr: string) => {
+    const today = new Date();
+    const purchaseDate = new Date(dateStr);
+    const diffTime = Math.abs(today.getTime() - purchaseDate.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  // Lógica baseada em meses (Ex: Dezembro -> Setembro pra trás é vermelho)
+  // Conta o mês atual e os 2 anteriores. O quarto mês retroativo em diante é crítico.
   const isRedItem = (product: any) => {
-    const daysSince = Math.floor((new Date().getTime() - new Date(product.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
-    return daysSince > 60 && daysSince <= 90;
+    const today = new Date();
+    const purchaseDate = new Date(product.lastPurchaseDate);
+    
+    const diffMonths = (today.getFullYear() * 12 + today.getMonth()) - 
+                       (purchaseDate.getFullYear() * 12 + purchaseDate.getMonth());
+    
+    return diffMonths >= 3;
   };
 
   const redItems = sortedProducts.filter(p => isRedItem(p));
@@ -47,10 +63,8 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   const toggleRedCategory = () => {
     const redIds = redItems.map(p => p.id);
     if (isAllRedSelected) {
-      // Desmarcar apenas os vermelhos
       setSelectedProductIds(prev => prev.filter(id => !redIds.includes(id)));
     } else {
-      // Marcar todos os vermelhos (sem remover os brancos que já estiverem marcados)
       setSelectedProductIds(prev => Array.from(new Set([...prev, ...redIds])));
     }
   };
@@ -58,42 +72,61 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   const toggleWhiteCategory = () => {
     const whiteIds = whiteItems.map(p => p.id);
     if (isAllWhiteSelected) {
-      // Desmarcar apenas os brancos
       setSelectedProductIds(prev => prev.filter(id => !whiteIds.includes(id)));
     } else {
-      // Marcar todos os brancos (sem remover os vermelhos que já estiverem marcados)
       setSelectedProductIds(prev => Array.from(new Set([...prev, ...whiteIds])));
     }
   };
+
+  // Agrupa os produtos selecionados em lotes para paginação no PDF (aprox 15 itens por página para não cortar)
+  const selectedProductsData = sortedProducts.filter(p => selectedProductIds.includes(p.id));
+  const ITEMS_PER_PAGE = 15;
+  const productBatches = useMemo(() => {
+    const batches = [];
+    for (let i = 0; i < selectedProductsData.length; i += ITEMS_PER_PAGE) {
+      batches.push(selectedProductsData.slice(i, i + ITEMS_PER_PAGE));
+    }
+    return batches;
+  }, [selectedProductsData]);
 
   const handleDownloadPDF = async () => {
     if (selectedProductIds.length === 0) return;
     setIsExporting(true);
     try {
-      const element = printRef.current;
-      if (!element) return;
-      const canvas = await html2canvas(element, { 
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 1000
-      });
-      const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      
+      // Captura cada div de "página" separadamente
+      const pageElements = exportPagesRef.current?.querySelectorAll('.pdf-page-container');
+      if (!pageElements) return;
+
+      for (let i = 0; i < pageElements.length; i++) {
+        const canvas = await html2canvas(pageElements[i] as HTMLElement, { 
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: 800
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        const imgHeightInPDF = (canvas.height * pdfWidth) / canvas.width;
+        
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeightInPDF);
+      }
+
       pdf.save(`sugestao_reposicao_${client.name.replace(/\s/g, '_')}.pdf`);
     } catch (err) {
       console.error(err);
+      alert('Erro ao gerar o PDF. Verifique se o navegador possui permissões de download.');
     } finally {
       setIsExporting(false);
     }
   };
 
-  const selectedProductsData = sortedProducts.filter(p => selectedProductIds.includes(p.id));
   const formatQty = (val: number) => new Intl.NumberFormat('pt-BR').format(val);
+  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
   return createPortal(
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
@@ -125,7 +158,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                 </button>
                 <button 
                     onClick={toggleRedCategory}
-                    className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${isAllRedSelected ? 'text-red-600' : 'text-slate-500 hover:text-red-500'}`}
+                    className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${isAllRedSelected ? 'text-red-600' : 'text-slate-500 hover:text-blue-500'}`}
                 >
                     {isAllRedSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-slate-300" />}
                     Selecionar Vermelhos
@@ -168,9 +201,9 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                     <tbody className="divide-y divide-slate-100 bg-white">
                         {sortedProducts.map((product) => {
                             const isSelected = selectedProductIds.includes(product.id);
-                            const daysSince = Math.floor((new Date().getTime() - new Date(product.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
                             const isRed = isRedItem(product);
                             const unitPrice = product.quantity > 0 ? product.totalValue / product.quantity : 0;
+                            const daysSince = getDaysSince(product.lastPurchaseDate);
                             
                             return (
                                 <tr 
@@ -198,11 +231,11 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                                         </div>
                                     </td>
                                     <td className="py-5 px-6 text-right font-bold text-slate-600 tabular-nums">
-                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(unitPrice)}
+                                        {formatCurrency(unitPrice)}
                                     </td>
                                     <td className="py-5 px-6 text-center font-black text-slate-900">{formatQty(product.quantity)}</td>
                                     <td className="py-5 px-8 text-right font-black text-slate-900 tabular-nums">
-                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.totalValue)}
+                                        {formatCurrency(product.totalValue)}
                                     </td>
                                 </tr>
                             );
@@ -213,58 +246,69 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
         </div>
       </div>
 
-      <div className="fixed top-0 left-[-9999px] w-[900px] bg-white text-slate-900 p-12" ref={printRef}>
-        <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
-            <div>
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 mb-1">Sugestão de Reposição</p>
-                <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">{client.name}</h1>
+      {/* ÁREA DE EXPORTAÇÃO (PAGINADA E OCULTA) */}
+      <div className="fixed top-0 left-[-9999px] w-[800px]" ref={exportPagesRef}>
+        {productBatches.map((batch, pageIdx) => (
+          <div key={pageIdx} className="pdf-page-container bg-white p-12 text-slate-900 min-h-[1100px] flex flex-col">
+            <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
+                <div>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 mb-1">Sugestão de Reposição - Página {pageIdx + 1}/{productBatches.length}</p>
+                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">{client.name}</h1>
+                </div>
+                <div className="text-right">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Relatório Gerado em</p>
+                    <p className="text-lg font-black text-slate-800">{new Date().toLocaleDateString('pt-BR')}</p>
+                </div>
             </div>
-            <div className="text-right">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Relatório Gerado em</p>
-                <p className="text-lg font-black text-slate-800">{new Date().toLocaleDateString('pt-BR')}</p>
-            </div>
-        </div>
-        <table className="w-full text-left text-sm border-collapse mb-8">
-            <thead>
-                <tr className="border-b-2 border-slate-200 text-slate-400 uppercase text-[10px] font-black tracking-[0.2em]">
-                    <th className="py-3 px-2">Item / Descrição</th>
-                    <th className="py-3 px-2 text-right">Última Compra</th>
-                    <th className="py-3 px-2 text-right">Preço Unit.</th>
-                    <th className="py-3 px-2 text-center">Última Qtd</th>
-                    <th className="py-3 px-2 text-right">Último Valor</th>
-                </tr>
-            </thead>
-            <tbody>
-                {selectedProductsData.map((product) => {
-                    const unitPrice = product.quantity > 0 ? product.totalValue / product.quantity : 0;
-                    const daysSince = Math.floor((new Date().getTime() - new Date(product.lastPurchaseDate).getTime()) / (1000 * 3600 * 24));
-                    return (
-                        <tr key={product.id} className="border-b border-slate-100">
-                            <td className="py-4 px-2">
-                                <p className="font-black text-slate-800 text-sm uppercase">{product.name}</p>
-                                {isRedItem(product) && (
-                                    <p className="text-[10px] font-black text-red-500 uppercase mt-1">
-                                        Sem compra há {daysSince} dias
-                                    </p>
-                                )}
-                            </td>
-                            <td className="py-4 px-2 text-right font-bold text-slate-600 text-xs">{new Date(product.lastPurchaseDate).toLocaleDateString('pt-BR')}</td>
-                            <td className="py-4 px-2 text-right font-black text-slate-900 text-xs">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(unitPrice)}
-                            </td>
-                            <td className="py-4 px-2 text-center font-black text-slate-900 text-sm">{formatQty(product.quantity)}</td>
-                            <td className="py-4 px-2 text-right font-black text-slate-800 text-sm">
-                               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.totalValue)}
-                            </td>
+
+            <div className="flex-1">
+                <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                        <tr className="border-b-2 border-slate-200 text-slate-400 uppercase text-[10px] font-black tracking-[0.2em]">
+                            <th className="py-3 px-2">Item / Descrição</th>
+                            <th className="py-3 px-2 text-right">Última Compra</th>
+                            <th className="py-3 px-2 text-right">Preço Unit.</th>
+                            <th className="py-3 px-2 text-center">Última Qtd</th>
+                            <th className="py-3 px-2 text-right">Último Valor</th>
                         </tr>
-                    );
-                })}
-            </tbody>
-        </table>
-        <div className="mt-20 pt-8 border-t border-slate-100 flex justify-between items-center opacity-40">
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 italic">Portal Centro-Norte • Inteligência Comercial</p>
-            <div className="w-12 h-12 bg-slate-900 rounded-xl"></div>
-        </div>
+                    </thead>
+                    <tbody>
+                        {batch.map((product) => {
+                            const unitPrice = product.quantity > 0 ? product.totalValue / product.quantity : 0;
+                            const daysSince = getDaysSince(product.lastPurchaseDate);
+                            const isRed = isRedItem(product);
+
+                            return (
+                                <tr key={product.id} className="border-b border-slate-100">
+                                    <td className="py-4 px-2">
+                                        <p className="font-black text-slate-800 text-sm uppercase">{product.name}</p>
+                                        {isRed && (
+                                            <p className="text-[10px] font-black text-red-500 uppercase mt-1">
+                                                Crítico: Sem compra há {daysSince} dias
+                                            </p>
+                                        )}
+                                    </td>
+                                    <td className="py-4 px-2 text-right font-bold text-slate-600 text-xs">{new Date(product.lastPurchaseDate).toLocaleDateString('pt-BR')}</td>
+                                    <td className="py-4 px-2 text-right font-black text-slate-900 text-xs">
+                                        {formatCurrency(unitPrice)}
+                                    </td>
+                                    <td className="py-4 px-2 text-center font-black text-slate-900 text-sm">{formatQty(product.quantity)}</td>
+                                    <td className="py-4 px-2 text-right font-black text-slate-800 text-sm">
+                                       {formatCurrency(product.totalValue)}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+
+            <div className="mt-12 pt-8 border-t border-slate-100 flex justify-between items-center opacity-40">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 italic">Portal Centro-Norte • Inteligência Comercial</p>
+                <div className="w-12 h-12 bg-slate-900 rounded-xl"></div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>,
     document.body
