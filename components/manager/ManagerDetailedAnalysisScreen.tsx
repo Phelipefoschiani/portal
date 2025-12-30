@@ -3,7 +3,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Table2, Filter, ChevronRight, FileSpreadsheet, Percent, Calculator, Search, User, Boxes, Tag, Package, Building2, BarChart4, Download, Layers, CheckSquare, Square, X, ChevronDown, ListFilter, ArrowRight, Calendar, FileText, Loader2 } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Button } from '../Button';
 
