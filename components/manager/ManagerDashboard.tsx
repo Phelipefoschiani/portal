@@ -478,11 +478,11 @@ export const ManagerDashboard: React.FC = () => {
                              <div className="flex flex-col items-end gap-3 mr-4 border-r border-slate-100 pr-6">
                                 <div className="flex items-center gap-2">
                                     <div className="w-2 h-2 bg-blue-600 rounded-full legend-dot-export shrink-0"></div>
-                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Meta OK (>= 100%)</span>
+                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Meta OK (&gt;= 100%)</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-2 h-2 bg-red-500 rounded-full legend-dot-export shrink-0"></div>
-                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Abaixo ({"< 100%"})</span>
+                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Abaixo (&lt; 100%)</span>
                                 </div>
                              </div>
                              <button 
@@ -517,7 +517,7 @@ export const ManagerDashboard: React.FC = () => {
                                         </div>
 
                                         <div 
-                                            className={`w-full max-w-[44px] rounded-t-2xl transition-all duration-1000 ease-out shadow-lg relative ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-500 shadow-red-100'}`}
+                                            className={`w-full max-w-[44px] rounded-t-2xl transition-all duration-1000 ease-out shadow-lg relative ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-50 shadow-red-100'}`}
                                             style={{ height: `${barHeightPct}%` }}
                                         >
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent rounded-t-2xl"></div>

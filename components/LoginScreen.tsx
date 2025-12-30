@@ -88,14 +88,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic">
             Centro-Norte <span className="text-blue-500">Portal</span>
           </h1>
-          <p className="text-slate-400 text-sm mt-3 font-medium uppercase tracking-[0.2em]">Sistemas Integrados</p>
         </div>
 
         <div className="bg-white/[0.03] backdrop-blur-2xl border border-white/10 rounded-[40px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] overflow-hidden animate-slideUp">
           <div className="p-8 md:p-10 space-y-8">
             <div className="space-y-2">
-                <h2 className="text-xl font-bold text-white tracking-tight">Bem-vindo de volta</h2>
-                <p className="text-slate-500 text-sm">Insira suas credenciais corporativas</p>
+                <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Insira suas credenciais corporativas</p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -127,7 +125,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 />
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center">
                 <label className="flex items-center space-x-3 cursor-pointer group select-none">
                   <div 
                     className={`w-5 h-5 rounded-lg border transition-all duration-300 flex items-center justify-center ${rememberMe ? 'bg-blue-600 border-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'border-slate-700 bg-white/5 group-hover:border-slate-500'}`}
@@ -137,7 +135,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                   </div>
                   <span className="text-xs text-slate-400 font-bold group-hover:text-slate-200 transition-colors uppercase tracking-wider" onClick={() => setRememberMe(!rememberMe)}>Lembrar acesso</span>
                 </label>
-                <button type="button" className="text-[10px] font-black text-blue-500 uppercase tracking-widest hover:text-blue-400 transition-colors">Esqueci a senha</button>
               </div>
 
               {error && (
