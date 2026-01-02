@@ -28,12 +28,11 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
   }, []);
 
   const fetchAllSalesParallel = async (role: string, uid: string) => {
-    const year = new Date().getFullYear();
-    const startDate = `${year}-01-01`;
-    const endDate = `${year}-12-31`;
+    // Agora buscamos desde 2024 para permitir filtros históricos
+    const startDate = `2024-01-01`;
+    const endDate = `2026-12-31`;
     const pageSize = 1000;
 
-    // Adicionando canal_vendas e grupo para análise detalhada
     const columns = 'faturamento, cnpj, usuario_id, data, qtde_faturado, produto, codigo_produto, canal_vendas, grupo, cliente_nome';
 
     let countQuery = supabase
@@ -103,21 +102,21 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       totalDataStore.clients = clients || [];
 
       setCurrentStep(2);
-      setStatus('Baixando inteligência anual...');
+      setStatus('Baixando histórico 2024-2025...');
       const sales = await fetchAllSalesParallel(userRole, userId);
       totalDataStore.sales = sales;
       setProgress(80);
 
       setCurrentStep(3);
-      setStatus('Consolidando verbas...');
-      const year = new Date().getFullYear();
+      setStatus('Consolidando metas...');
       
-      let targetQuery = supabase.from('metas_usuarios').select('*').eq('ano', year);
+      // Carregando metas de múltiplos anos para permitir troca no filtro
+      let targetQuery = supabase.from('metas_usuarios').select('*').in('ano', [2024, 2025, 2026]);
       if (userRole !== 'admin') targetQuery = targetQuery.eq('usuario_id', userId);
       const { data: targets } = await targetQuery;
       totalDataStore.targets = targets || [];
 
-      let invQuery = supabase.from('investimentos').select('*').gte('data', `${year}-01-01`).eq('status', 'approved');
+      let invQuery = supabase.from('investimentos').select('*').gte('data', `2024-01-01`).eq('status', 'approved');
       if (userRole !== 'admin') invQuery = invQuery.eq('usuario_id', userId);
       const { data: invs } = await invQuery;
       totalDataStore.investments = invs || [];
@@ -126,7 +125,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       await new Promise(r => setTimeout(r, 300));
 
       setCurrentStep(4);
-      setStatus('Portal Centro-Norte Liberado!');
+      setStatus('Ambiente Gerencial Pronto!');
       setProgress(100);
       totalDataStore.isHydrated = true;
       
@@ -152,7 +151,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
              <Database className="text-white w-10 h-10 animate-bounce" />
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight uppercase">Sincronização Turbo</h1>
-          <p className="text-slate-400 text-sm font-medium">Processando dados em alta performance</p>
+          <p className="text-slate-400 text-sm font-medium">Extraindo inteligência de dados Centro-Norte</p>
         </div>
 
         <div className="flex justify-between relative px-2">
@@ -185,7 +184,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
         </div>
         
         <div className="text-center pt-8">
-            <p className="text-[8px] font-black text-slate-500 uppercase tracking-[0.4em]">Engine de Dados v2.0 • Portal Centro-Norte</p>
+            <p className="text-[8px] font-black text-slate-500 uppercase tracking-[0.4em]">Engine de Dados v2.1 • Portal Centro-Norte</p>
         </div>
       </div>
     </div>

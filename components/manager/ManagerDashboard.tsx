@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, BarChart3 as BarIcon, Share2 } from 'lucide-react';
+import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, BarChart3 as BarIcon, Share2, CalendarDays } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
@@ -206,10 +206,12 @@ export const ManagerDashboard: React.FC = () => {
 
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const monthShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    // Removido 2023, adicionado 2027
+    const years = [2024, 2025, 2026, 2027];
 
     useEffect(() => {
         processConsolidatedData();
-    }, [selectedMonths, selectedYear]);
+    }, [selectedMonths, selectedYear, selectedRepId]);
 
     const processConsolidatedData = () => {
         const reps = totalDataStore.users;
@@ -219,8 +221,10 @@ export const ManagerDashboard: React.FC = () => {
         const portfolio = totalDataStore.clients;
 
         const details = reps.map(rep => {
-            const repMeta = targets.filter(t => t.usuario_id === rep.id && selectedMonths.includes(t.mes) && t.ano === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
+            // Meta: Filtrada por lista de meses e ano
+            const repMeta = targets.filter(t => t.usuario_id === rep.id && selectedMonths.includes(t.mes) && Number(t.ano) === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             
+            // Faturamento: Filtrado por lista de meses e ano
             const repSalesList = sales.filter(s => {
                 const d = new Date(s.data + 'T00:00:00');
                 const m = d.getUTCMonth() + 1;
@@ -230,6 +234,7 @@ export const ManagerDashboard: React.FC = () => {
 
             const repSales = repSalesList.reduce((a, b) => a + Number(b.faturamento), 0);
             
+            // Verba: Filtrada por lista de meses e ano
             const repInv = invs.filter(inv => {
                 const d = new Date(inv.data + 'T00:00:00');
                 const m = d.getUTCMonth() + 1;
@@ -237,6 +242,7 @@ export const ManagerDashboard: React.FC = () => {
                 return inv.usuario_id === rep.id && selectedMonths.includes(m) && y === selectedYear && inv.status === 'approved';
             }).reduce((a, b) => a + Number(b.valor_total_investimento), 0);
 
+            // Positivação: Baseada nas vendas do período filtrado
             const repClients = portfolio.filter(c => c.usuario_id === rep.id);
             const salesCnpjs = new Set(repSalesList.map(s => String(s.cnpj || '').replace(/\D/g, '')));
             const repPosit = repClients.filter(c => salesCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;
@@ -349,7 +355,7 @@ export const ManagerDashboard: React.FC = () => {
                     <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise Regional</h2>
                     <p className="text-[10px] font-black text-slate-400 mt-2 flex items-center gap-2 uppercase tracking-widest text-left">
                         <Calendar className="w-3.5 h-3.5 text-blue-500" /> 
-                        Período: {selectedMonths.sort((a,b) => a-b).map(m => monthShort[m-1]).join(', ')} de {selectedYear}
+                        Período: {selectedMonths.length === 0 ? '---' : selectedMonths.sort((a,b) => a-b).map(m => monthShort[m-1]).join(', ')} de {selectedYear}
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
@@ -362,9 +368,24 @@ export const ManagerDashboard: React.FC = () => {
                             onChange={(e) => setSelectedRepId(e.target.value)}
                             className="w-full lg:w-auto pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer transition-all"
                         >
-                            <option value="all">Equipe Completa (Total)</option>
+                            <option value="all">Equipe Completa</option>
                             {teamDetails.sort((a,b) => a.nome.localeCompare(b.nome)).map(rep => (
                                 <option key={rep.id} value={rep.id}>{rep.nome.toUpperCase()}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="relative flex-1 lg:flex-none">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                            <CalendarDays className="w-3.5 h-3.5" />
+                        </div>
+                        <select 
+                            value={selectedYear} 
+                            onChange={(e) => setSelectedYear(Number(e.target.value))}
+                            className="w-full lg:w-auto pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer transition-all"
+                        >
+                            {years.map(y => (
+                                <option key={y} value={y}>{y}</option>
                             ))}
                         </select>
                     </div>
@@ -383,11 +404,21 @@ export const ManagerDashboard: React.FC = () => {
                         
                         {showMonthDropdown && (
                             <div className="absolute top-full left-0 lg:left-auto lg:right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
-                                <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Selecionar Período</span>
-                                    <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="text-[9px] font-black text-blue-600 uppercase hover:underline transition-all">Todos</button>
+                                <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-2">
+                                    <button 
+                                        onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} 
+                                        className="flex-1 text-[9px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all"
+                                    >
+                                        Marcar Todos
+                                    </button>
+                                    <button 
+                                        onClick={() => setTempSelectedMonths([])} 
+                                        className="flex-1 text-[9px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg hover:bg-red-100 transition-all"
+                                    >
+                                        Desmarcar Todos
+                                    </button>
                                 </div>
-                                <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto">
+                                <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto custom-scrollbar">
                                     {monthNames.map((m, i) => (
                                         <button 
                                             key={i} 
