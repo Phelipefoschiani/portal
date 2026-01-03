@@ -84,12 +84,12 @@ const KpiDetailModal: React.FC<{
     });
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white w-full max-w-3xl rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border border-white/20 flex flex-col max-h-[90vh]">
-                <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 md:p-6 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white w-full max-w-7xl rounded-[40px] shadow-2xl overflow-hidden animate-slideUp border border-white/20 flex flex-col max-h-[95vh]">
+                <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div className="min-w-0 flex-1">
-                        <h3 className="text-lg md:text-xl font-black text-slate-900 uppercase tracking-tight truncate">{type ? titles[type] : ''}</h3>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Portal Centro-Norte • {periodLabel}</p>
+                        <h3 className="text-base md:text-lg font-black text-slate-900 uppercase tracking-tighter truncate">{type ? titles[type] : ''}</h3>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Portal Centro-Norte • {periodLabel}</p>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
                         <button 
@@ -97,93 +97,101 @@ const KpiDetailModal: React.FC<{
                             disabled={isExporting !== null}
                             className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all disabled:opacity-50"
                         >
-                            {isExporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                            <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">PDF</span>
+                            {isExporting === 'pdf' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                            <span className="text-[9px] font-black uppercase tracking-widest hidden sm:inline">Gerar PDF</span>
                         </button>
                         <button 
                             onClick={() => handleExport('photo')}
                             disabled={isExporting !== null}
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 shadow-lg shadow-blue-100"
                         >
-                            {isExporting === 'photo' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                            <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Foto</span>
+                            {isExporting === 'photo' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                            <span className="text-[9px] font-black uppercase tracking-widest hidden sm:inline">Salvar Imagem</span>
                         </button>
                         <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
-                            <X className="w-6 h-6" />
+                            <X className="w-5 h-5" />
                         </button>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto bg-white" id="modal-export-area-content" ref={exportRef}>
-                    <div className="p-10">
-                        <div className="mb-10 pb-8 border-b-4 border-slate-900 flex justify-between items-end">
+                <div className="flex-1 overflow-y-auto bg-white custom-scrollbar" id="modal-export-area-content" ref={exportRef}>
+                    <div className="p-6 md:p-10">
+                        <div className="mb-8 pb-6 border-b-2 border-slate-900 flex justify-between items-end">
                             <div>
-                                <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.4em] mb-2">Portal de Inteligência Comercial</p>
-                                <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">{type ? titles[type] : ''}</h1>
+                                <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.4em] mb-1.5">Consolidado Regional de Inteligência</p>
+                                <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tighter leading-none">{type ? titles[type] : ''}</h1>
                                 <div className="flex gap-4 mt-2">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Período: {periodLabel}</span>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Emitido em: {new Date().toLocaleDateString()}</span>
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Métrica: {type?.toUpperCase()}</span>
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Período: {periodLabel}</span>
                                 </div>
                             </div>
-                            <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black text-xl">CN</div>
+                            <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black text-lg">CN</div>
                         </div>
 
-                        {(type === 'meta' || type === 'faturado') && (
-                            <div className="mb-8 p-8 bg-slate-900 rounded-[32px] text-white flex justify-between items-center shadow-2xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-4 opacity-10"><BarIcon className="w-24 h-24" /></div>
-                                <div>
-                                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Cota Regional Planejada</p>
-                                    <p className="text-3xl font-black">{formatBRL(totalMeta)}</p>
-                                </div>
-                                {type === 'faturado' && (
-                                    <div className="text-right">
-                                        <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Total Realizado</p>
-                                        <p className="text-3xl font-black">{formatBRL(totalFaturado)}</p>
-                                    </div>
-                                )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                            <div className="p-6 bg-slate-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-4 opacity-10"><Target className="w-16 h-16" /></div>
+                                <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Cota Regional Total</p>
+                                <p className="text-2xl font-black">{formatBRL(totalMeta)}</p>
                             </div>
-                        )}
+                            <div className="p-6 bg-blue-50 border border-blue-100 rounded-3xl relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-4 opacity-10"><DollarSign className="w-16 h-16 text-blue-600" /></div>
+                                <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Faturado Realizado</p>
+                                <p className="text-2xl font-black text-slate-900">{formatBRL(totalFaturado)}</p>
+                            </div>
+                        </div>
 
-                        <div className="divide-y divide-slate-100">
-                            {sortedDetails.map((rep) => {
-                                const achievement = rep.meta > 0 ? (rep.faturado / rep.meta) * 100 : 0;
-                                const isSuccess = achievement >= 100;
-                                return (
-                                    <div key={rep.id} className="py-6 flex justify-between items-center group">
-                                        <div className="flex items-center gap-5">
-                                            <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center font-black text-slate-400 uppercase text-xl border border-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
-                                                {rep.nome.charAt(0)}
-                                            </div>
-                                            <div>
-                                                <p className="font-black text-slate-800 uppercase text-base tracking-tight">{rep.nome}</p>
-                                                {type === 'faturado' && (
-                                                    <p className="text-[11px] font-bold text-slate-400 uppercase mt-1">
-                                                        Meta Individual: <span className="text-slate-600">{formatBRL(rep.meta)}</span>
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="font-black text-slate-900 text-xl tabular-nums">
-                                                {type === 'meta' && formatBRL(rep.meta)}
-                                                {type === 'faturado' && formatBRL(rep.faturado)}
-                                                {type === 'verba' && formatBRL(rep.verba)}
-                                                {type === 'positivacao' && `${((rep.positivacao / (rep.totalClientes || 1)) * 100).toFixed(1)}%`}
-                                            </p>
-                                            {type === 'faturado' && rep.meta > 0 && (
-                                                <p className={`text-[10px] font-black uppercase mt-1.5 px-2 py-0.5 rounded inline-block border ${isSuccess ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                                                    {achievement.toFixed(1)}% atingido
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                        <div className="bg-white border border-slate-100 rounded-[32px] overflow-hidden">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                    <tr>
+                                        <th className="px-6 py-4">#</th>
+                                        <th className="px-6 py-4">Representante</th>
+                                        <th className="px-6 py-4 text-right">Planejado</th>
+                                        <th className="px-6 py-4 text-right">Realizado</th>
+                                        <th className="px-6 py-4 text-center">Eficiência</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {sortedDetails.map((rep, idx) => {
+                                        const achievement = rep.meta > 0 ? (rep.faturado / rep.meta) * 100 : 0;
+                                        const isSuccess = achievement >= 100;
+                                        return (
+                                            <tr key={rep.id} className="hover:bg-slate-50/50 transition-colors group">
+                                                <td className="px-6 py-3 text-[10px] font-black text-slate-300">{idx + 1}</td>
+                                                <td className="px-6 py-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-slate-400 uppercase text-xs border border-slate-200 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                                            {rep.nome.charAt(0)}
+                                                        </div>
+                                                        <span className="font-black text-slate-700 uppercase text-[11px] tracking-tight truncate max-w-[200px]">{rep.nome}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-3 text-right font-bold text-slate-400 text-xs tabular-nums">{formatBRL(rep.meta)}</td>
+                                                <td className="px-6 py-3 text-right font-black text-slate-900 text-xs tabular-nums">
+                                                    {type === 'verba' ? formatBRL(rep.verba) : 
+                                                     type === 'positivacao' ? `${rep.positivacao} clts` : formatBRL(rep.faturado)}
+                                                </td>
+                                                <td className="px-6 py-3 text-center">
+                                                    <div className="flex flex-col items-center">
+                                                        <span className={`text-[10px] font-black uppercase ${isSuccess ? 'text-blue-600' : 'text-red-500'}`}>
+                                                            {type === 'positivacao' ? `${((rep.positivacao / (rep.totalClientes || 1)) * 100).toFixed(1)}%` : `${achievement.toFixed(1)}%`}
+                                                        </span>
+                                                        <div className="w-12 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                                                            <div className={`h-full ${isSuccess ? 'bg-blue-600' : 'bg-red-500'}`} style={{ width: `${Math.min(achievement, 100)}%` }}></div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
-                <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
-                    <button onClick={onClose} className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all">Sair da Visualização</button>
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                    <button onClick={onClose} className="bg-slate-900 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all">Fechar Relatório</button>
                 </div>
             </div>
         </div>
@@ -206,7 +214,6 @@ export const ManagerDashboard: React.FC = () => {
 
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const monthShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    // Removido 2023, adicionado 2027
     const years = [2024, 2025, 2026, 2027];
 
     useEffect(() => {
@@ -221,10 +228,8 @@ export const ManagerDashboard: React.FC = () => {
         const portfolio = totalDataStore.clients;
 
         const details = reps.map(rep => {
-            // Meta: Filtrada por lista de meses e ano
             const repMeta = targets.filter(t => t.usuario_id === rep.id && selectedMonths.includes(t.mes) && Number(t.ano) === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             
-            // Faturamento: Filtrado por lista de meses e ano
             const repSalesList = sales.filter(s => {
                 const d = new Date(s.data + 'T00:00:00');
                 const m = d.getUTCMonth() + 1;
@@ -234,7 +239,6 @@ export const ManagerDashboard: React.FC = () => {
 
             const repSales = repSalesList.reduce((a, b) => a + Number(b.faturamento), 0);
             
-            // Verba: Filtrada por lista de meses e ano
             const repInv = invs.filter(inv => {
                 const d = new Date(inv.data + 'T00:00:00');
                 const m = d.getUTCMonth() + 1;
@@ -242,7 +246,6 @@ export const ManagerDashboard: React.FC = () => {
                 return inv.usuario_id === rep.id && selectedMonths.includes(m) && y === selectedYear && inv.status === 'approved';
             }).reduce((a, b) => a + Number(b.valor_total_investimento), 0);
 
-            // Positivação: Baseada nas vendas do período filtrado
             const repClients = portfolio.filter(c => c.usuario_id === rep.id);
             const salesCnpjs = new Set(repSalesList.map(s => String(s.cnpj || '').replace(/\D/g, '')));
             const repPosit = repClients.filter(c => salesCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;

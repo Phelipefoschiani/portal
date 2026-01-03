@@ -19,7 +19,6 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   
-  // Ref para as páginas individuais de exportação
   const exportPagesRef = useRef<HTMLDivElement>(null);
 
   const sortedProducts = useMemo(() => {
@@ -28,7 +27,6 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
     });
   }, [client.products]);
 
-  // Calcula a diferença em dias
   const getDaysSince = (dateStr: string) => {
     const today = new Date();
     const purchaseDate = new Date(dateStr);
@@ -36,15 +34,11 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  // Lógica baseada em meses (Ex: Dezembro -> Setembro pra trás é vermelho)
-  // Conta o mês atual e os 2 anteriores. O quarto mês retroativo em diante é crítico.
   const isRedItem = (product: any) => {
     const today = new Date();
     const purchaseDate = new Date(product.lastPurchaseDate);
-    
     const diffMonths = (today.getFullYear() * 12 + today.getMonth()) - 
                        (purchaseDate.getFullYear() * 12 + purchaseDate.getMonth());
-    
     return diffMonths >= 3;
   };
 
@@ -78,7 +72,6 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
     }
   };
 
-  // Agrupa os produtos selecionados em lotes para paginação no PDF (aprox 15 itens por página para não cortar)
   const selectedProductsData = sortedProducts.filter(p => selectedProductIds.includes(p.id));
   const ITEMS_PER_PAGE = 15;
   const productBatches = useMemo(() => {
@@ -96,7 +89,6 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       
-      // Captura cada div de "página" separadamente
       const pageElements = exportPagesRef.current?.querySelectorAll('.pdf-page-container');
       if (!pageElements) return;
 
@@ -138,8 +130,8 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
               <History className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-slate-800 tracking-tight">Histórico de Últimas Compras</h3>
-              <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Análise de Itens e Reposição</p>
+              <h3 className="text-xl font-bold text-slate-800 tracking-tight">Sugestão de Reposição</h3>
+              <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">{client.name}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
@@ -175,12 +167,12 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                     className="flex-1 sm:flex-none h-11 text-[10px] font-black shadow-blue-100 uppercase tracking-widest"
                 >
                     <FileDown className="w-4 h-4 mr-2" />
-                    Gerar Relatório
+                    Gerar Relatório PDF
                 </Button>
             </div>
         </div>
 
-        <div className="overflow-y-auto bg-slate-50 flex-1">
+        <div className="overflow-y-auto bg-slate-50 flex-1 custom-scrollbar">
             {sortedProducts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-32 text-slate-300">
                     <AlertTriangle className="w-12 h-12 mb-2 opacity-20" />
@@ -211,12 +203,12 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                                     className={`hover:bg-slate-50 transition-all cursor-pointer ${isSelected ? 'bg-blue-50/40' : ''}`}
                                     onClick={() => toggleProduct(product.id)}
                                 >
-                                    <td className="py-5 px-8 text-center">
+                                    <td className="py-4 px-8 text-center">
                                         <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center mx-auto transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'border-slate-200'}`}>
                                             {isSelected && <span className="text-[10px] font-bold">✓</span>}
                                         </div>
                                     </td>
-                                    <td className="py-5 px-6">
+                                    <td className="py-4 px-6">
                                         <p className="font-black text-slate-800 text-xs uppercase tracking-tight">{product.name}</p>
                                         {isRed && (
                                             <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded-lg text-[9px] font-black bg-red-50 text-red-500 border border-red-100 uppercase tracking-widest">
@@ -224,17 +216,17 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                                             </span>
                                         )}
                                     </td>
-                                    <td className="py-5 px-6 text-slate-500 font-bold uppercase text-[10px]">
+                                    <td className="py-4 px-6 text-slate-500 font-bold uppercase text-[10px]">
                                         <div className="flex items-center gap-2">
                                             <CalendarClock className="w-4 h-4 text-slate-300" />
                                             {new Date(product.lastPurchaseDate).toLocaleDateString('pt-BR')}
                                         </div>
                                     </td>
-                                    <td className="py-5 px-6 text-right font-bold text-slate-600 tabular-nums">
+                                    <td className="py-4 px-6 text-right font-bold text-slate-600 tabular-nums">
                                         {formatCurrency(unitPrice)}
                                     </td>
-                                    <td className="py-5 px-6 text-center font-black text-slate-900">{formatQty(product.quantity)}</td>
-                                    <td className="py-5 px-8 text-right font-black text-slate-900 tabular-nums">
+                                    <td className="py-4 px-6 text-center font-black text-slate-900">{formatQty(product.quantity)}</td>
+                                    <td className="py-4 px-8 text-right font-black text-slate-900 tabular-nums">
                                         {formatCurrency(product.totalValue)}
                                     </td>
                                 </tr>
@@ -246,17 +238,17 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
         </div>
       </div>
 
-      {/* ÁREA DE EXPORTAÇÃO (PAGINADA E OCULTA) */}
       <div className="fixed top-0 left-[-9999px] w-[800px]" ref={exportPagesRef}>
         {productBatches.map((batch, pageIdx) => (
-          <div key={pageIdx} className="pdf-page-container bg-white p-12 text-slate-900 min-h-[1100px] flex flex-col">
+          <div key={pageIdx} className="pdf-page-container bg-white p-12 text-slate-900 min-h-[1120px] flex flex-col">
             <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
                 <div>
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 mb-1">Sugestão de Reposição - Página {pageIdx + 1}/{productBatches.length}</p>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 mb-1">Sugestão de Reposição • Página {pageIdx + 1}/{productBatches.length}</p>
                     <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">{client.name}</h1>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-1">Inteligência Comercial Centro-Norte</p>
                 </div>
                 <div className="text-right">
-                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Relatório Gerado em</p>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Data do Relatório</p>
                     <p className="text-lg font-black text-slate-800">{new Date().toLocaleDateString('pt-BR')}</p>
                 </div>
             </div>
@@ -264,12 +256,12 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
             <div className="flex-1">
                 <table className="w-full text-left text-sm border-collapse">
                     <thead>
-                        <tr className="border-b-2 border-slate-200 text-slate-400 uppercase text-[10px] font-black tracking-[0.2em]">
-                            <th className="py-3 px-2">Item / Descrição</th>
-                            <th className="py-3 px-2 text-right">Última Compra</th>
-                            <th className="py-3 px-2 text-right">Preço Unit.</th>
-                            <th className="py-3 px-2 text-center">Última Qtd</th>
-                            <th className="py-3 px-2 text-right">Último Valor</th>
+                        <tr className="border-b-2 border-slate-200 bg-slate-50 text-slate-400 uppercase text-[10px] font-black tracking-[0.2em]">
+                            <th className="py-4 px-2">Item / Descrição</th>
+                            <th className="py-4 px-2 text-right">Última Compra</th>
+                            <th className="py-4 px-2 text-right">Preço Unit.</th>
+                            <th className="py-4 px-2 text-center">Última Qtd</th>
+                            <th className="py-4 px-2 text-right">Último Valor</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -281,10 +273,10 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
                             return (
                                 <tr key={product.id} className="border-b border-slate-100">
                                     <td className="py-4 px-2">
-                                        <p className="font-black text-slate-800 text-sm uppercase">{product.name}</p>
+                                        <p className="font-black text-slate-800 text-sm uppercase leading-tight">{product.name}</p>
                                         {isRed && (
                                             <p className="text-[10px] font-black text-red-500 uppercase mt-1">
-                                                Crítico: Sem compra há {daysSince} dias
+                                                * Crítico: Sem compra há {daysSince} dias
                                             </p>
                                         )}
                                     </td>
@@ -304,8 +296,8 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
             </div>
 
             <div className="mt-12 pt-8 border-t border-slate-100 flex justify-between items-center opacity-40">
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 italic">Portal Centro-Norte • Inteligência Comercial</p>
-                <div className="w-12 h-12 bg-slate-900 rounded-xl"></div>
+                <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400 italic">Portal Centro-Norte • Este documento é exclusivo para suporte comercial.</p>
+                <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black">CN</div>
             </div>
           </div>
         ))}

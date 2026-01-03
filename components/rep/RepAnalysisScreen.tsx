@@ -1,15 +1,19 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Target, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, Loader2, Award, BarChart3, RefreshCw, Download, FileText, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Target, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, Loader2, Award, BarChart3, RefreshCw, Download, FileText, CheckCircle2, X, Users, DollarSign, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import html2canvas from 'html2canvas';
+import { createPortal } from 'react-dom';
+import { totalDataStore } from '../../lib/dataStore';
 
 export const RepAnalysisScreen: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [data, setData] = useState<any>(null);
+    const [rawSales, setRawSales] = useState<any[]>([]);
+    const [selectedMonthIdx, setSelectedMonthIdx] = useState<number | null>(null);
     const exportRef = useRef<HTMLDivElement>(null);
 
     const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
@@ -31,7 +35,7 @@ export const RepAnalysisScreen: React.FC = () => {
         while (hasMore) {
             const { data, error } = await supabase
                 .from('dados_vendas')
-                .select('faturamento, data, cnpj')
+                .select('faturamento, data, cnpj, cliente_nome')
                 .eq('usuario_id', userId)
                 .gte('data', start)
                 .lte('data', end)
@@ -52,6 +56,7 @@ export const RepAnalysisScreen: React.FC = () => {
         try {
             const sales = await fetchAllSales(`${selectedYear}-01-01`, `${selectedYear}-12-31`);
             const prevSales = await fetchAllSales(`${selectedYear - 1}-01-01`, `${selectedYear - 1}-12-31`);
+            setRawSales(sales);
 
             const { data: targets } = await supabase
                 .from('metas_usuarios')
@@ -115,6 +120,46 @@ export const RepAnalysisScreen: React.FC = () => {
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
+    const monthDetailData = useMemo(() => {
+        if (selectedMonthIdx === null || !data) return null;
+        
+        const monthInfo = data.monthly[selectedMonthIdx];
+        const monthSales = rawSales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            return d.getUTCMonth() === selectedMonthIdx;
+        });
+
+        // Mapa de clientes da carteira para lookup de nome
+        const portfolioMap = new Map();
+        totalDataStore.clients.forEach(c => {
+            portfolioMap.set(cleanCnpj(c.cnpj), c.nome_fantasia);
+        });
+
+        const clientMap = new Map<string, { name: string; total: number }>();
+        monthSales.forEach(s => {
+            const cnpjClean = cleanCnpj(s.cnpj);
+            const current = clientMap.get(cnpjClean) || { 
+                // Tenta nome da carteira -> tenta nome da venda -> padrão Não Identificado
+                name: portfolioMap.get(cnpjClean) || s.cliente_nome || 'CLIENTE NÃO IDENTIFICADO', 
+                total: 0 
+            };
+            clientMap.set(cnpjClean, { ...current, total: current.total + Number(s.faturamento) });
+        });
+
+        const sortedClients = Array.from(clientMap.values())
+            .sort((a, b) => b.total - a.total)
+            .map(c => ({
+                ...c,
+                share: monthInfo.sales > 0 ? (c.total / monthInfo.sales) * 100 : 0
+            }));
+
+        return {
+            ...monthInfo,
+            clients: sortedClients,
+            totalPortfolio: totalDataStore.clients.length
+        };
+    }, [selectedMonthIdx, data, rawSales]);
+
     if (isLoading || !data) return (
         <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 space-y-4">
             <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
@@ -126,6 +171,7 @@ export const RepAnalysisScreen: React.FC = () => {
     const totalSales = data.monthly.reduce((a: number, b: any) => a + b.sales, 0);
     const pctTotal = totalMeta > 0 ? (totalSales / totalMeta) * 100 : 0;
     const monthsNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const fullMonthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-20">
@@ -151,7 +197,7 @@ export const RepAnalysisScreen: React.FC = () => {
                         <option value={2026}>ANO 2026</option>
                     </select>
                     <Button onClick={handleDownload} isLoading={isExporting} variant="outline" className="rounded-xl px-6 h-11 text-[9px] font-black uppercase tracking-widest bg-blue-600 text-white border-blue-600 hover:bg-blue-700">
-                         <Download className="w-3.5 h-3.5 mr-2" /> Salvar Raio-X
+                         <Download className="w-3.5 h-3.5 mr-2" /> Salvar Gráfico
                     </Button>
                 </div>
             </header>
@@ -189,13 +235,13 @@ export const RepAnalysisScreen: React.FC = () => {
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Meta Atingida</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                            <div className="w-3 h-3 bg-red-600 rounded-full"></div>
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Abaixo da Meta</span>
                         </div>
                     </div>
                 </div>
 
-                <div className="h-[350px] w-full flex items-end justify-between gap-3 md:gap-6 px-2">
+                <div className="h-[350px] w-full flex items-end justify-between gap-3 md:gap-6 px-2 pt-10">
                     {data.monthly.map((item: any, idx: number) => {
                         const maxVal = Math.max(...data.monthly.flatMap((d: any) => [d.sales, d.target])) * 1.1 || 1;
                         const salesHeight = (item.sales / maxVal) * 100;
@@ -205,6 +251,12 @@ export const RepAnalysisScreen: React.FC = () => {
 
                         return (
                             <div key={idx} className="flex-1 flex flex-col items-center group h-full relative">
+                                <div className="absolute top-[-35px] flex flex-col items-center animate-fadeIn">
+                                    <span className={`text-[10px] font-black tabular-nums ${isSuccess ? 'text-blue-600' : 'text-red-600'}`}>
+                                        {achievement > 0 ? `${achievement.toFixed(0)}%` : ''}
+                                    </span>
+                                </div>
+
                                 <div className="absolute top-[-90px] opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100 z-30 pointer-events-none w-[160px]">
                                     <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-2xl text-center relative">
                                         <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">{achievement.toFixed(1)}%</p>
@@ -218,7 +270,7 @@ export const RepAnalysisScreen: React.FC = () => {
 
                                 <div className="relative w-full flex-1 flex flex-col justify-end">
                                     <div className="w-full bg-slate-100 rounded-2xl border border-slate-200/50 absolute bottom-0 transition-all" style={{ height: `${Math.max(targetHeight, 2)}%` }}></div>
-                                    <div className={`w-full rounded-2xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-200' : 'bg-red-500 shadow-red-100'}`} style={{ height: `${Math.max(salesHeight, 2)}%` }}>
+                                    <div className={`w-full rounded-2xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-200' : 'bg-red-600 shadow-red-200'}`} style={{ height: `${Math.max(salesHeight, 2)}%` }}>
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent rounded-2xl"></div>
                                         {isSuccess && (
                                             <div className="absolute -top-7 left-1/2 -translate-x-1/2">
@@ -252,11 +304,19 @@ export const RepAnalysisScreen: React.FC = () => {
                         {data.monthly.map((m: any, idx: number) => {
                             const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                             const growth = m.prevSales > 0 ? ((m.sales / m.prevSales) - 1) * 100 : 0;
-                            const fullMonthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
                             return (
-                                <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                                    <td className="px-8 py-4 font-bold text-slate-700 uppercase text-xs">{fullMonthNames[idx]}</td>
+                                <tr 
+                                    key={idx} 
+                                    className="group hover:bg-blue-50/40 transition-colors cursor-pointer"
+                                    onClick={() => setSelectedMonthIdx(idx)}
+                                >
+                                    <td className="px-8 py-4">
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-bold text-slate-700 uppercase text-xs">{fullMonthNames[idx]}</span>
+                                            <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors" />
+                                        </div>
+                                    </td>
                                     <td className="px-8 py-4 text-slate-400 font-medium">{formatBRL(m.target)}</td>
                                     <td className="px-8 py-4 text-slate-900 font-black">{formatBRL(m.sales)}</td>
                                     <td className="px-8 py-4 text-center">
@@ -266,7 +326,7 @@ export const RepAnalysisScreen: React.FC = () => {
                                     </td>
                                     <td className="px-8 py-4 text-center">
                                         {m.sales > 0 ? (
-                                            <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                                            <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                                                 {growth >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                                                 {Math.abs(growth).toFixed(1)}%
                                             </div>
@@ -283,6 +343,123 @@ export const RepAnalysisScreen: React.FC = () => {
                     </tbody>
                 </table>
             </div>
+
+            {selectedMonthIdx !== null && monthDetailData && createPortal(
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white w-full max-w-4xl rounded-[40px] shadow-2xl overflow-hidden animate-slideUp border border-white/20 flex flex-col max-h-[90vh]">
+                        
+                        {/* Header do Modal */}
+                        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <div>
+                                <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Resumo de Faturamento</h3>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 flex items-center gap-2">
+                                    <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                                    {fullMonthNames[selectedMonthIdx]} • {selectedYear}
+                                </p>
+                            </div>
+                            <button 
+                                onClick={() => setSelectedMonthIdx(null)}
+                                className="p-2 hover:bg-white hover:shadow-md rounded-full transition-all text-slate-400 hover:text-slate-900"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-white">
+                            {/* Cards de KPI no Modal */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 flex flex-col justify-center">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturado Real</p>
+                                    <p className="text-xl font-black text-blue-600 tabular-nums">{formatBRL(monthDetailData.sales)}</p>
+                                </div>
+                                <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 flex flex-col justify-center">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta do Mês</p>
+                                    <p className="text-xl font-black text-slate-900 tabular-nums">{formatBRL(monthDetailData.target)}</p>
+                                </div>
+                                <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 flex flex-col justify-center">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Atingimento %</p>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-xl font-black tabular-nums ${monthDetailData.sales >= monthDetailData.target ? 'text-emerald-600' : 'text-red-600'}`}>
+                                            {(monthDetailData.target > 0 ? (monthDetailData.sales / monthDetailData.target) * 100 : 0).toFixed(1)}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="bg-slate-900 p-5 rounded-3xl text-white shadow-lg flex flex-col justify-center">
+                                    <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Positivação</p>
+                                    <div className="flex items-baseline gap-1.5">
+                                        <p className="text-xl font-black text-white">{monthDetailData.positive}</p>
+                                        <span className="text-[10px] font-bold text-slate-500">/ {monthDetailData.totalPortfolio} clts</span>
+                                    </div>
+                                    <p className="text-[8px] font-black text-blue-400 uppercase mt-1">
+                                        {((monthDetailData.positive / monthDetailData.totalPortfolio) * 100).toFixed(1)}% da carteira
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Tabela de Clientes no Modal */}
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3">
+                                    <Users className="w-5 h-5 text-blue-600" />
+                                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Ranking de Clientes do Mês</h4>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden">
+                                    <table className="w-full text-left">
+                                        <thead className="bg-slate-50 border-b border-slate-100">
+                                            <tr className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                                <th className="px-8 py-5 w-16">#</th>
+                                                <th className="px-6 py-5">Cliente</th>
+                                                <th className="px-6 py-5 text-right">Valor Comprado</th>
+                                                <th className="px-8 py-5 text-right">Participação (Share)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {monthDetailData.clients.map((client: any, idx: number) => (
+                                                <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                    <td className="px-8 py-4">
+                                                        <span className={`w-6 h-6 flex items-center justify-center rounded-lg text-[10px] font-black ${idx < 3 ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-400'}`}>
+                                                            {idx + 1}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <p className="text-xs font-black text-slate-800 uppercase truncate">{client.name}</p>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <p className="text-sm font-black text-slate-900 tabular-nums">{formatBRL(client.total)}</p>
+                                                    </td>
+                                                    <td className="px-8 py-4 text-right">
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="text-xs font-black text-blue-600 tabular-nums">{client.share.toFixed(2)}%</span>
+                                                            <div className="w-24 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                                                                <div className="h-full bg-blue-600" style={{ width: `${Math.min(client.share * 2, 100)}%` }}></div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {monthDetailData.clients.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={4} className="px-8 py-20 text-center text-slate-400">
+                                                        <DollarSign className="w-12 h-12 mx-auto mb-4 opacity-10" />
+                                                        <p className="font-black uppercase text-[10px] tracking-widest">Nenhuma venda registrada para este mês.</p>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer do Modal */}
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                            <Button onClick={() => setSelectedMonthIdx(null)} className="rounded-2xl px-10 font-black text-[10px] uppercase tracking-widest">
+                                Fechar Relatório
+                            </Button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 };

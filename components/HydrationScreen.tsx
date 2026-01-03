@@ -28,9 +28,9 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
   }, []);
 
   const fetchAllSalesParallel = async (role: string, uid: string) => {
-    // Agora buscamos desde 2024 para permitir filtros históricos
+    // Range expandido até 2027 conforme solicitação
     const startDate = `2024-01-01`;
-    const endDate = `2026-12-31`;
+    const endDate = `2027-12-31`;
     const pageSize = 1000;
 
     const columns = 'faturamento, cnpj, usuario_id, data, qtde_faturado, produto, codigo_produto, canal_vendas, grupo, cliente_nome';
@@ -102,7 +102,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       totalDataStore.clients = clients || [];
 
       setCurrentStep(2);
-      setStatus('Baixando histórico 2024-2025...');
+      setStatus('Baixando histórico 2024-2027...');
       const sales = await fetchAllSalesParallel(userRole, userId);
       totalDataStore.sales = sales;
       setProgress(80);
@@ -110,8 +110,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       setCurrentStep(3);
       setStatus('Consolidando metas...');
       
-      // Carregando metas de múltiplos anos para permitir troca no filtro
-      let targetQuery = supabase.from('metas_usuarios').select('*').in('ano', [2024, 2025, 2026]);
+      let targetQuery = supabase.from('metas_usuarios').select('*').in('ano', [2024, 2025, 2026, 2027]);
       if (userRole !== 'admin') targetQuery = targetQuery.eq('usuario_id', userId);
       const { data: targets } = await targetQuery;
       totalDataStore.targets = targets || [];

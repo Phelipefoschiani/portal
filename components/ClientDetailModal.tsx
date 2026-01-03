@@ -14,6 +14,7 @@ interface ClientDetailModalProps {
 }
 
 export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, onClose }) => {
+  // Ano de referência padrão é o ano atual
   const [year, setYear] = useState(new Date().getFullYear());
   const [showProducts, setShowProducts] = useState(false);
   const [showLastPurchase, setShowLastPurchase] = useState(false);
@@ -35,24 +36,28 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
     setIsLoading(true);
     const cleanedCnpj = cleanCnpj(client.cnpj);
     try {
-      // Busca todas as vendas do cliente no ano (com bypass de limite se necessário, mas para um cliente só 1000 costuma bastar)
-      const { data: sales } = await supabase
+      // BUSCA HISTÓRICO COMPLETO (Sem filtro de data para Reposição e Mix)
+      const { data: allSales } = await supabase
         .from('dados_vendas')
         .select('*')
-        .eq('cnpj', cleanedCnpj) // USANDO CNPJ LIMPO NA QUERY
-        .gte('data', `${year}-01-01`)
-        .lte('data', `${year}-12-31`)
-        .limit(5000);
+        .eq('cnpj', cleanedCnpj)
+        .limit(10000);
 
+      // BUSCA METAS DO ANO SELECIONADO
       const { data: targets } = await supabase
         .from('metas_clientes')
         .select('*')
         .eq('cliente_id', client.id)
         .eq('ano', year);
 
+      // 1. Processar Histórico Mensal (Filtrado pelo Ano Selecionado)
       const monthlyHistory = Array.from({ length: 12 }, (_, i) => {
         const monthNum = i + 1;
-        const monthSales = sales?.filter(s => new Date(s.data + 'T00:00:00').getUTCMonth() + 1 === monthNum) || [];
+        const monthSales = allSales?.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            return d.getUTCMonth() + 1 === monthNum && d.getUTCFullYear() === year;
+        }) || [];
+        
         const monthTarget = targets?.find(t => t.mes === monthNum)?.valor || 0;
         const totalFaturado = monthSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
         
@@ -65,8 +70,9 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
         };
       });
 
+      // 2. Processar Mix de Produtos (Histórico COMPLETO)
       const productMap = new Map();
-      sales?.forEach(s => {
+      allSales?.forEach(s => {
         const key = s.codigo_produto || s.produto;
         const current = productMap.get(key) || { 
           id: key, 
@@ -144,9 +150,9 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
                      onChange={(e) => setYear(Number(e.target.value))}
                      className="bg-transparent border-none p-0 font-bold text-slate-700 focus:ring-0 cursor-pointer"
                    >
-                     <option value={2023}>2023</option>
                      <option value={2024}>2024</option>
                      <option value={2025}>2025</option>
+                     <option value={2026}>2026</option>
                    </select>
                 </span>
               </div>
@@ -164,7 +170,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
                 disabled={isLoading}
              >
                 <History className="w-4 h-4 mr-2" />
-                Reposição
+                Reposição (Histórico Completo)
              </Button>
              
              <Button 
@@ -198,7 +204,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
               <div className="animate-fadeIn">
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
                    <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-center min-h-[100px]">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Média Mensal</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Média Mensal ({year})</p>
                       <p className="text-xl font-bold text-slate-800">{formatCurrency(averagePurchase)}</p>
                    </div>
                    <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-center min-h-[100px]">
@@ -226,7 +232,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, on
 
                 <div className="flex items-center gap-2 mb-6">
                     <Calendar className="w-5 h-5 text-blue-500" />
-                    <h3 className="text-lg font-bold text-slate-800">Histórico Mensal</h3>
+                    <h3 className="text-lg font-bold text-slate-800">Histórico Mensal {year}</h3>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

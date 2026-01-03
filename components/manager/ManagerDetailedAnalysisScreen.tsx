@@ -12,6 +12,9 @@ type Metric = 'faturamento' | 'quantidade' | 'ticketMedio' | 'share';
 
 export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const now = new Date();
+    const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+    const userRole = session.role as 'admin' | 'rep';
+    const isAdmin = userRole === 'admin';
     
     // 1. Estados de Filtros de Tempo
     const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
@@ -23,8 +26,8 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const [filterCanais, setFilterCanais] = useState<string[]>([]);
     const [filterGrupos, setFilterGrupos] = useState<string[]>([]);
     
-    // 3. Estados de Estrutura
-    const [rowDimensions, setRowDimensions] = useState<Dimension[]>(['representante']);
+    // 3. Estados de Estrutura - Representante não agrupa por "representante" pois só vê a si mesmo
+    const [rowDimensions, setRowDimensions] = useState<Dimension[]>(isAdmin ? ['representante'] : ['cliente']);
     const [displayMode, setDisplayMode] = useState<'value' | 'percent'>('value');
     const [searchTerm, setSearchTerm] = useState('');
     const [isExporting, setIsExporting] = useState<'excel' | 'pdf' | null>(null);
@@ -71,8 +74,8 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             return y === selectedYear && selectedMonths.includes(m);
         });
 
-        // Filtro 2: Seleção Manual
-        if (filterReps.length > 0) sales = sales.filter(s => filterReps.includes(s.usuario_id));
+        // Filtro 2: Seleção Manual (Apenas Admin vê reps)
+        if (isAdmin && filterReps.length > 0) sales = sales.filter(s => filterReps.includes(s.usuario_id));
         if (filterCanais.length > 0) sales = sales.filter(s => filterCanais.includes(s.canal_vendas));
         if (filterGrupos.length > 0) sales = sales.filter(s => filterGrupos.includes(s.grupo));
 
@@ -124,7 +127,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             items: result.sort((a, b) => b.faturamento - a.faturamento),
             totals: { faturamento: grandTotalFaturamento, quantidade: grandTotalQuantidade }
         };
-    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, rowDimensions, searchTerm]);
+    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, rowDimensions, searchTerm, isAdmin]);
 
     // 5. Lógica de Exportação
     const handleExportExcel = () => {
@@ -248,17 +251,19 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         </h3>
                         
                         <div className="space-y-4">
-                            <div>
-                                <p className="text-[9px] font-black text-slate-500 uppercase mb-2">Representantes</p>
-                                <div className="max-h-32 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1 custom-scrollbar">
-                                    {filterOptions.reps.map(r => (
-                                        <button key={r.id} onClick={() => toggleFilter(filterReps, setFilterReps, r.id)} className={`w-full text-left px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase flex items-center justify-between ${filterReps.includes(r.id) ? 'bg-blue-600 text-white' : 'hover:bg-slate-50 text-slate-600'}`}>
-                                            <span className="truncate">{r.nome}</span>
-                                            {filterReps.includes(r.id) ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3 opacity-20" />}
-                                        </button>
-                                    ))}
+                            {isAdmin && (
+                                <div>
+                                    <p className="text-[9px] font-black text-slate-500 uppercase mb-2">Representantes</p>
+                                    <div className="max-h-32 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1 custom-scrollbar">
+                                        {filterOptions.reps.map(r => (
+                                            <button key={r.id} onClick={() => toggleFilter(filterReps, setFilterReps, r.id)} className={`w-full text-left px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase flex items-center justify-between ${filterReps.includes(r.id) ? 'bg-blue-600 text-white' : 'hover:bg-slate-50 text-slate-600'}`}>
+                                                <span className="truncate">{r.nome}</span>
+                                                {filterReps.includes(r.id) ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3 opacity-20" />}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                             <div>
                                 <p className="text-[9px] font-black text-slate-500 uppercase mb-2">Canais de Venda</p>
                                 <div className="max-h-32 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1 custom-scrollbar">
@@ -291,7 +296,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         </h3>
                         <div className="space-y-1">
                             {[
-                                { id: 'representante', label: 'Representante', icon: User },
+                                ...(isAdmin ? [{ id: 'representante', label: 'Representante', icon: User }] : []),
                                 { id: 'canal', label: 'Canal Vendas', icon: Tag },
                                 { id: 'grupo', label: 'Grupo', icon: Boxes },
                                 { id: 'cliente', label: 'Cliente', icon: Building2 },
