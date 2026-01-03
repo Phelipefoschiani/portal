@@ -121,12 +121,12 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
                             <th className="py-4 px-6">Produto</th>
                             <th className="py-4 px-6 text-center">Qtd.</th>
                             <th className="py-4 px-6 text-right">Valor Total</th>
-                            <th className="py-4 px-8 text-right">Share</th>
+                            <th className="py-4 px-8 text-right">Participação</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {sortedProducts.map((product, idx) => {
-                            const share = totalFaturado > 0 ? (product.totalValue / totalFaturado) * 100 : 0;
+                            const participation = totalFaturado > 0 ? (product.totalValue / totalFaturado) * 100 : 0;
                             return (
                                 <tr key={product.id} className="hover:bg-slate-50 transition-colors group">
                                     <td className="py-4 px-8 text-center text-slate-300 font-bold text-xs">{idx + 1}</td>
@@ -139,9 +139,9 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
                                     </td>
                                     <td className="py-4 px-8 text-right">
                                         <div className="flex items-center justify-end gap-3">
-                                            <span className="text-[10px] font-black text-slate-400">{share.toFixed(1)}%</span>
+                                            <span className="text-[10px] font-black text-slate-400">{participation.toFixed(1)}%</span>
                                             <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                <div className="h-full bg-purple-500" style={{ width: `${share}%` }}></div>
+                                                <div className="h-full bg-purple-500" style={{ width: `${participation}%` }}></div>
                                             </div>
                                         </div>
                                     </td>
@@ -154,24 +154,23 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
         </div>
       </div>
 
-      {/* ÁREA DE EXPORTAÇÃO (PAGINADA E OCULTA) */}
       <div className="fixed top-0 left-[-9999px] w-[800px]" ref={exportPagesRef}>
         {productBatches.map((batch, pageIdx) => (
           <div key={pageIdx} className="mix-pdf-page bg-white p-12 text-slate-900 min-h-[1100px] flex flex-col">
             <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
                 <div>
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-purple-600 mb-1">Mix de Produtos Ativo - Página {pageIdx + 1}/{productBatches.length}</p>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-purple-600 mb-1">Participação no Mix - Página {pageIdx + 1}/{productBatches.length}</p>
                     <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">{client.name}</h1>
                 </div>
                 <div className="text-right">
-                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Relatório de Mix Gerado em</p>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Relatório Gerado em</p>
                     <p className="text-lg font-black text-slate-800">{new Date().toLocaleDateString('pt-BR')}</p>
                 </div>
             </div>
 
             <div className="flex-1">
                 <div className="mb-6 flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resumo do Faturamento Anual</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faturamento Anual Acumulado</span>
                     <span className="text-xl font-black text-purple-600">{formatCurrency(totalFaturado)}</span>
                 </div>
 
@@ -182,13 +181,13 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
                             <th className="py-3 px-2">Descrição do Produto</th>
                             <th className="py-3 px-2 text-center">Quantidade</th>
                             <th className="py-3 px-2 text-right">Valor Total</th>
-                            <th className="py-3 px-2 text-right">Share (%)</th>
+                            <th className="py-3 px-2 text-right">Partic. (%)</th>
                         </tr>
                     </thead>
                     <tbody>
                         {batch.map((product, idx) => {
                             const globalIdx = (pageIdx * ITEMS_PER_PAGE) + idx + 1;
-                            const share = totalFaturado > 0 ? (product.totalValue / totalFaturado) * 100 : 0;
+                            const participation = totalFaturado > 0 ? (product.totalValue / totalFaturado) * 100 : 0;
 
                             return (
                                 <tr key={product.id} className="border-b border-slate-100">
@@ -201,7 +200,7 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
                                         {formatCurrency(product.totalValue)}
                                     </td>
                                     <td className="py-4 px-2 text-right font-black text-purple-600 text-xs">
-                                       {share.toFixed(1)}%
+                                       {participation.toFixed(1)}%
                                     </td>
                                 </tr>
                             );

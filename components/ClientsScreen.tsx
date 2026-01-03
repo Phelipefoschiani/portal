@@ -24,7 +24,7 @@ export const ClientsScreen: React.FC = () => {
     return Array.from(set).sort();
   }, []);
 
-  // 2. Motor de Inteligência: Processa Ranking, Share Dinâmico e Última Compra
+  // 2. Motor de Inteligência: Processa Ranking, Participação Dinâmica e Última Compra
   const processedData = useMemo(() => {
     const clients = totalDataStore.clients;
     const sales = totalDataStore.sales;
@@ -70,7 +70,7 @@ export const ClientsScreen: React.FC = () => {
         ...c,
         faturamentoPeriodo: fat,
         lastPurchase: stats?.lastDate || null,
-        share: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0
+        participation: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0
       };
     }).sort((a, b) => b.faturamentoPeriodo - a.faturamentoPeriodo);
 
@@ -90,7 +90,7 @@ export const ClientsScreen: React.FC = () => {
           <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Minha Carteira</h2>
           <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-2 flex items-center gap-2 text-left">
              <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
-             {selectedChannel === 'all' ? 'Ranking Geral de Faturamento' : `Análise de Share: ${selectedChannel}`}
+             {selectedChannel === 'all' ? 'Ranking Geral de Faturamento' : `Análise de Participação: ${selectedChannel}`}
           </p>
         </div>
 
@@ -166,7 +166,7 @@ export const ClientsScreen: React.FC = () => {
                 <th className="px-6 py-5">CNPJ</th>
                 <th className="px-6 py-5">Canal</th>
                 <th className="px-6 py-5">Última Compra</th>
-                <th className="px-6 py-5 text-right">% Ref</th>
+                <th className="px-6 py-5 text-right">% Participação</th>
                 <th className="px-8 py-5 text-center">Ver</th>
               </tr>
             </thead>
@@ -206,11 +206,11 @@ export const ClientsScreen: React.FC = () => {
                   </td>
                   <td className="px-6 py-5 text-right">
                     <div className="flex flex-col items-end">
-                        <span className={`text-sm font-black tabular-nums ${client.share > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
-                            {client.share.toFixed(2)}%
+                        <span className={`text-sm font-black tabular-nums ${client.participation > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                            {client.participation.toFixed(2)}%
                         </span>
                         <div className="w-16 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                            <div className="h-full bg-blue-600" style={{ width: `${Math.min(client.share * 2.5, 100)}%` }}></div>
+                            <div className="h-full bg-blue-600" style={{ width: `${Math.min(client.participation * 2.5, 100)}%` }}></div>
                         </div>
                     </div>
                   </td>
