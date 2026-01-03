@@ -59,6 +59,7 @@ const App: React.FC = () => {
     setUserRole(role);
     setUserId(id);
     setIsAuthenticated(true);
+    setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
     sessionStorage.setItem('pcn_session', JSON.stringify({ name, role, id }));
     if (role === 'rep') checkAndMarkDeliveredNotifications();
   };

@@ -77,8 +77,9 @@ export const ManagerTargetsScreen: React.FC = () => {
             const initialWeights: Record<string, number[]> = {};
             const syncedReps = new Set<string>();
             
+            // CORREÇÃO: Sempre recalcular o total anual do ano selecionado com base no banco
             const totalYear = targetsData?.reduce((acc, curr) => acc + Number(curr.valor), 0) || 0;
-            if (managerTotalTarget === 0) setManagerTotalTarget(totalYear);
+            setManagerTotalTarget(totalYear);
 
             repsData?.forEach(rep => {
                 const repItems = targetsData?.filter(t => t.usuario_id === rep.id) || [];
