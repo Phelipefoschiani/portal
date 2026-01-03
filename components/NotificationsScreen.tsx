@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Bell, Clock, AlertOctagon, Info, MailOpen, ChevronRight, CheckCircle2, RefreshCw, Loader2, Zap, Paperclip, Download, FileText, Image as ImageIcon } from 'lucide-react';
+import { Bell, Clock, AlertOctagon, Info, MailOpen, ChevronRight, CheckCircle2, RefreshCw, Loader2, Zap, Paperclip, Download, FileText, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from './Button';
 
@@ -45,6 +45,19 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, lida: true } : n));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    if (!confirm('Deseja remover este aviso do seu mural pessoal?')) return;
+    try {
+      // Remove anexos primeiro por conta de restrições de FK
+      await supabase.from('notificacao_anexos').delete().eq('notificacao_id', id);
+      const { error } = await supabase.from('notificacoes').delete().eq('id', id);
+      if (error) throw error;
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (e: any) {
+      alert('Erro ao remover: ' + e.message);
     }
   };
 
@@ -115,14 +128,23 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                       : 'border-slate-200 opacity-80 shadow-sm'
                   }`}
                 >
-                  {!notif.lida && (
-                      <div className={`absolute top-0 right-0 px-4 py-1 rounded-bl-2xl text-[8px] font-black uppercase tracking-widest text-white ${
-                          notif.prioridade === 'urgent' ? 'bg-red-500' :
-                          notif.prioridade === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
-                      }`}>
-                         Novo
-                      </div>
-                  )}
+                  <div className="absolute top-0 right-0 flex items-center">
+                      {!notif.lida && (
+                          <div className={`px-4 py-1 rounded-bl-2xl text-[8px] font-black uppercase tracking-widest text-white ${
+                              notif.prioridade === 'urgent' ? 'bg-red-500' :
+                              notif.prioridade === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
+                          }`}>
+                             Novo
+                          </div>
+                      )}
+                      <button 
+                        onClick={() => deleteNotification(notif.id)}
+                        className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all rounded-bl-xl border-l border-b border-slate-100 opacity-0 group-hover:opacity-100"
+                        title="Remover aviso"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                  </div>
 
                   <div className="flex items-start gap-5">
                       <div className={`p-4 rounded-2xl shrink-0 shadow-sm border ${
@@ -134,7 +156,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                       </div>
 
                       <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-start mb-2">
+                          <div className="flex justify-between items-start mb-2 pr-12">
                               <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight leading-tight">
                                   {title}
                               </h3>
@@ -175,7 +197,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                                   <Button 
                                       size="sm"
                                       onClick={() => {
-                                          // Added logic to handle forecast corrections directly from mural
                                           if (notif.metadata?.type === 'forecast_rejected' && notif.metadata?.relatedId && onFixForecast) {
                                               onFixForecast(notif.metadata.relatedId);
                                           }

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShieldCheck, CheckCircle2, XCircle, Loader2, Quote, X, History, TrendingUp, Calendar, Info, MessageCircleQuestion, Filter, DollarSign, Wallet, ArrowUpRight, BarChart3, ChevronDown, PieChart, Target, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, XCircle, Loader2, Quote, X, History, TrendingUp, Calendar, Info, MessageCircleQuestion, Filter, DollarSign, Wallet, ArrowUpRight, BarChart3, ChevronDown, PieChart, Target, AlertTriangle, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { createPortal } from 'react-dom';
@@ -56,47 +56,27 @@ export const ManagerCampaignsScreen: React.FC = () => {
         }
     };
 
-    // Cálculos de Saldo e Verba (Meta Anual * 5%)
     const teamStats = useMemo(() => {
         if (viewMode !== 'history') return [];
-
         const reps = totalDataStore.users;
         const targets = totalDataStore.targets;
         const allInvs = totalDataStore.investments;
-
         return reps.map(rep => {
-            // 1. Meta Anual total (soma dos meses do ano)
-            const annualTarget = targets
-                .filter(t => t.usuario_id === rep.id && t.ano === filterYear)
-                .reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
-
-            // 2. Teto de Investimento (5% da Meta)
+            const annualTarget = targets.filter(t => t.usuario_id === rep.id && t.ano === filterYear).reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
             const investmentPool = annualTarget * 0.05;
-
-            // 3. Consumo REAL (Apenas o que foi APROVADO pelo gerente no ano)
             const annualSpent = allInvs.filter(inv => {
                 const d = new Date(inv.data + 'T00:00:00');
-                const matchYear = d.getUTCFullYear() === filterYear;
-                return inv.usuario_id === rep.id && matchYear && inv.status === 'approved';
+                return inv.usuario_id === rep.id && d.getUTCFullYear() === filterYear && inv.status === 'approved';
             }).reduce((acc, curr) => acc + (Number(curr.valor_total_investimento) || 0), 0);
-
             const remaining = investmentPool - annualSpent;
             const consumptionPct = investmentPool > 0 ? (annualSpent / investmentPool) * 100 : 0;
-
-            return {
-                repId: rep.id,
-                nome: rep.nome,
-                metaAnual: annualTarget,
-                verbaTotal: investmentPool,
-                gastoAnual: annualSpent,
-                saldo: remaining,
-                consumoPct: consumptionPct
-            };
+            return { repId: rep.id, nome: rep.nome, metaAnual: annualTarget, verbaTotal: investmentPool, gastoAnual: annualSpent, saldo: remaining, consumoPct: consumptionPct };
         }).sort((a, b) => b.metaAnual - a.metaAnual);
-    }, [viewMode, filterYear, investments]); // Recalcula se mudar o ano ou a lista local mudar
+    }, [viewMode, filterYear, investments]);
 
     const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
-        if (isActionLoading) return;
+        if (isActionLoading || !selectedDetail) return;
+        
         if (status === 'rejected' && !rejectionReason.trim()) {
             alert('Por favor, informe o motivo da recusa.');
             return;
@@ -104,29 +84,32 @@ export const ManagerCampaignsScreen: React.FC = () => {
 
         setIsActionLoading(true);
         try {
+            const currentObs = selectedDetail.observacao || '';
+            // Remove qualquer marcação de recusa anterior para não duplicar se o gerente mudar de ideia antes de salvar
+            const cleanObs = currentObs.replace(/\[RECUSADO:.*?\]\s*/, '');
+            const finalObs = status === 'rejected' ? `[RECUSADO: ${rejectionReason.toUpperCase()}] ${cleanObs}` : cleanObs;
+
             const { error } = await supabase
                 .from('investimentos')
-                .update({ 
-                    status,
-                    observacao: status === 'rejected' 
-                        ? `[RECUSADO: ${rejectionReason.toUpperCase()}] - ${selectedDetail.observacao}`
-                        : selectedDetail.observacao
-                })
+                .update({ status, observacao: finalObs.trim() })
                 .eq('id', id);
-            
+
             if (error) throw error;
-            
-            // Atualiza localmente a lista de investimentos do store para o cálculo do saldo refletir na hora
+
             if (status === 'approved') {
                 totalDataStore.investments = [...totalDataStore.investments, { ...selectedDetail, status: 'approved' }];
             }
 
+            // Remove da lista local de pendentes
             setInvestments(prev => prev.filter(i => i.id !== id));
             setSelectedDetail(null);
             setShowRejectionModal(false);
             setRejectionReason('');
+            
+            alert(status === 'approved' ? 'Investimento aprovado com sucesso!' : 'Investimento recusado.');
         } catch (error: any) {
-            alert('Erro ao processar: ' + error.message);
+            console.error('Erro na atualização:', error);
+            alert('Erro ao processar: ' + (error.message || 'Falha na conexão com o banco de dados.'));
         } finally {
             setIsActionLoading(false);
         }
@@ -141,22 +124,11 @@ export const ManagerCampaignsScreen: React.FC = () => {
                     <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
                         <PieChart className="w-7 h-7 text-blue-600" /> Auditoria de Campanhas
                     </h2>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Validação de Verbas sobre Meta Anual (5%)</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Validação de ROI e Verbas (Teto 5% da Meta)</p>
                 </div>
-                
                 <div className="flex flex-wrap items-center gap-3 bg-slate-100 p-1.5 rounded-2xl">
-                    <button 
-                        onClick={() => setViewMode('pending')} 
-                        className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'pending' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        Solicitações ({investments.length})
-                    </button>
-                    <button 
-                        onClick={() => setViewMode('history')} 
-                        className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'history' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        Histórico e Saldo Verba
-                    </button>
+                    <button onClick={() => setViewMode('pending')} className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'pending' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Solicitações ({investments.length})</button>
+                    <button onClick={() => setViewMode('history')} className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'history' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Histórico e Saldo Verba</button>
                 </div>
             </div>
 
@@ -167,156 +139,111 @@ export const ManagerCampaignsScreen: React.FC = () => {
                             <Target className="w-4 h-4 text-blue-600" />
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saldo de Investimento por Representante</span>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <select 
-                                value={filterYear} 
-                                onChange={e => setFilterYear(Number(e.target.value))}
-                                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-black uppercase outline-none focus:ring-2 focus:ring-blue-100"
-                            >
-                                <option value={2024}>Ano 2024</option>
-                                <option value={2025}>Ano 2025</option>
-                            </select>
-                        </div>
+                        <select value={filterYear} onChange={e => setFilterYear(Number(e.target.value))} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-black uppercase outline-none">
+                            <option value={2024}>Ano 2024</option><option value={2025}>Ano 2025</option>
+                        </select>
                     </div>
-
                     <div className="overflow-x-auto rounded-2xl border border-slate-100">
                         <table className="w-full text-left">
                             <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                <tr>
-                                    <th className="px-6 py-4">Vendedor</th>
-                                    <th className="px-6 py-4 text-right">Meta Anual (100%)</th>
-                                    <th className="px-6 py-4 text-right">Verba Total (5%)</th>
-                                    <th className="px-6 py-4 text-right">Consumido (Aprovado)</th>
-                                    <th className="px-6 py-4 text-right">Saldo Disponível</th>
-                                </tr>
+                                <tr><th className="px-6 py-4">Vendedor</th><th className="px-6 py-4 text-right">Meta Anual</th><th className="px-6 py-4 text-right">Verba (5%)</th><th className="px-6 py-4 text-right">Consumido</th><th className="px-6 py-4 text-right">Saldo</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
                                 {teamStats.map(stat => (
                                     <tr key={stat.repId} className="hover:bg-slate-50 transition-colors group">
-                                        <td className="px-6 py-4">
-                                            <p className="font-black text-slate-800 text-xs uppercase">{stat.nome}</p>
-                                            <div className="w-full h-1 bg-slate-100 rounded-full mt-2 overflow-hidden max-w-[100px]">
-                                                <div className={`h-full ${stat.consumoPct > 90 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(stat.consumoPct, 100)}%` }}></div>
-                                            </div>
-                                        </td>
+                                        <td className="px-6 py-4"><p className="font-black text-slate-800 text-xs uppercase">{stat.nome}</p></td>
                                         <td className="px-6 py-4 text-right font-bold text-slate-400 tabular-nums">{formatCurrency(stat.metaAnual)}</td>
                                         <td className="px-6 py-4 text-right font-black text-slate-700 tabular-nums">{formatCurrency(stat.verbaTotal)}</td>
                                         <td className="px-6 py-4 text-right font-black text-purple-600 tabular-nums">{formatCurrency(stat.gastoAnual)}</td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex flex-col items-end">
-                                                <p className={`font-black tabular-nums ${stat.saldo >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                                                    {formatCurrency(stat.saldo)}
-                                                </p>
-                                                <span className={`text-[8px] font-black uppercase ${stat.consumoPct > 90 ? 'text-red-400' : 'text-slate-400'}`}>
-                                                    {stat.consumoPct.toFixed(1)}% utilizado
-                                                </span>
-                                            </div>
-                                        </td>
+                                        <td className="px-6 py-4 text-right"><p className={`font-black tabular-nums ${stat.saldo >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{formatCurrency(stat.saldo)}</p></td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
-
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-6 pt-4 border-t border-slate-50">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-6 pt-4">
                         <div className="flex gap-2">
-                            <button onClick={() => setSubTab('approved')} className={`px-6 py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${subTab === 'approved' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'bg-white text-emerald-600 border-emerald-100 hover:bg-emerald-50'}`}>
-                                Verbas Aprovadas
-                            </button>
-                            <button onClick={() => setSubTab('rejected')} className={`px-6 py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${subTab === 'rejected' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-red-600 border-red-100 hover:bg-red-50'}`}>
-                                Verbas Recusadas
-                            </button>
+                            <button onClick={() => setSubTab('approved')} className={`px-6 py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${subTab === 'approved' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-600 border-emerald-100'}`}>Aprovadas</button>
+                            <button onClick={() => setSubTab('rejected')} className={`px-6 py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${subTab === 'rejected' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-600 border-red-100'}`}>Recusadas</button>
                         </div>
-                        
-                        <div className="flex items-center gap-3 w-full md:w-auto">
-                            <Filter className="w-4 h-4 text-slate-400" />
-                            <select 
-                                value={filterMonth} 
-                                onChange={e => setFilterMonth(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                                className="flex-1 md:flex-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100"
-                            >
-                                <option value="all">Filtro Mês: Todos</option>
-                                {monthsNames.map((m, i) => <option key={i} value={i + 1}>{m.toUpperCase()}</option>)}
-                            </select>
-                        </div>
+                        <select value={filterMonth} onChange={e => setFilterMonth(e.target.value === 'all' ? 'all' : Number(e.target.value))} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-black uppercase outline-none">
+                            <option value="all">Todos os Meses</option>{monthsNames.map((m, i) => <option key={i} value={i + 1}>{m.toUpperCase()}</option>)}
+                        </select>
                     </div>
                 </div>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {isLoading ? (
-                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400">
-                        <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-2" />
-                        <p className="text-[10px] font-black uppercase tracking-widest animate-pulse">Sincronizando auditoria...</p>
-                    </div>
+                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400"><Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-2" /><p className="text-[10px] font-black uppercase tracking-widest">Sincronizando auditoria...</p></div>
                 ) : investments.length === 0 ? (
-                    <div className="col-span-full bg-white rounded-[32px] p-24 text-center border border-dashed border-slate-200">
-                        <ShieldCheck className="w-16 h-16 text-slate-100 mx-auto mb-4" />
-                        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.3em]">Nenhuma solicitação para este critério.</p>
-                    </div>
+                    <div className="col-span-full bg-white rounded-[32px] p-24 text-center border border-dashed border-slate-200"><ShieldCheck className="w-16 h-16 text-slate-100 mx-auto mb-4" /><p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.3em]">Nenhuma solicitação para este critério.</p></div>
                 ) : (
-                    investments.map(inv => (
-                        <div key={inv.id} onClick={() => setSelectedDetail(inv)} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all cursor-pointer group flex flex-col h-full animate-slideUp">
-                            <div className="flex justify-between items-start mb-4">
-                                <span className="text-[9px] font-black text-blue-600 uppercase bg-blue-50 px-2.5 py-1 rounded-lg">Rep: {inv.usuarios?.nome}</span>
-                                <span className="text-[9px] text-slate-400 font-bold uppercase">{new Date(inv.data).toLocaleDateString('pt-BR')}</span>
-                            </div>
-                            <h3 className="font-black text-slate-800 uppercase text-sm leading-tight group-hover:text-blue-600 transition-colors mb-2">{inv.clientes?.nome_fantasia}</h3>
-                            <p className="text-[10px] text-slate-400 italic line-clamp-2 mb-6">"{inv.observacao}"</p>
-                            
-                            <div className="mt-auto pt-4 border-t border-slate-50 flex justify-between items-end">
-                                <div>
-                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Solicitado</p>
-                                    <p className="text-xl font-black text-slate-900 leading-none">{formatCurrency(inv.valor_total_investimento)}</p>
+                    investments.map(inv => {
+                        const obs = inv.observacao || '';
+                        const orderMatch = obs.match(/\[PEDIDO:\s*R\$\s*(.*?)\]/);
+                        const pedidoValue = orderMatch ? orderMatch[1] : 'N/I';
+                        const cleanObs = obs.replace(/\[PEDIDO:.*?\]\s*/, '').replace(/\[RECUSADO:.*?\]\s*/, '');
+                        
+                        const orderNum = Number(pedidoValue.replace(/\./g, '').replace(',', '.')) || 1;
+                        const roi = (inv.valor_total_investimento / orderNum) * 100;
+
+                        return (
+                            <div key={inv.id} onClick={() => setSelectedDetail(inv)} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all cursor-pointer group flex flex-col h-full animate-slideUp">
+                                <div className="flex justify-between items-start mb-4">
+                                    <span className="text-[9px] font-black text-blue-600 uppercase bg-blue-50 px-2.5 py-1 rounded-lg">Rep: {inv.usuarios?.nome}</span>
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded ${roi > 7 ? 'text-red-500 bg-red-50' : 'text-emerald-600 bg-emerald-50'}`}>{roi.toFixed(1)}% ROI</span>
                                 </div>
-                                <div className={`p-2 rounded-xl transition-colors ${inv.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : inv.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
-                                    {inv.status === 'approved' ? <CheckCircle2 className="w-5 h-5" /> : inv.status === 'rejected' ? <XCircle className="w-5 h-5" /> : <TrendingUp className="w-5 h-5" />}
+                                <h3 className="font-black text-slate-800 uppercase text-sm leading-tight group-hover:text-blue-600 transition-colors mb-2">{inv.clientes?.nome_fantasia}</h3>
+                                <div className="bg-slate-50 p-3 rounded-xl mb-4 border border-slate-100">
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Pedido Relacionado</p>
+                                    <p className="text-md font-black text-slate-900">R$ {pedidoValue}</p>
+                                </div>
+                                <p className="text-[10px] text-slate-400 italic line-clamp-2 mb-6">"{cleanObs || 'Sem justificativa detalhada'}"</p>
+                                
+                                <div className="mt-auto pt-4 border-t border-slate-50 flex justify-between items-end">
+                                    <div>
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Verba Solicitada</p>
+                                        <p className="text-xl font-black text-blue-600 leading-none">{formatCurrency(inv.valor_total_investimento)}</p>
+                                    </div>
+                                    <div className={`p-2 rounded-xl ${inv.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : inv.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
+                                        {inv.status === 'approved' ? <CheckCircle2 className="w-5 h-5" /> : inv.status === 'rejected' ? <XCircle className="w-5 h-5" /> : <TrendingUp className="w-5 h-5" />}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
 
             {selectedDetail && createPortal(
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fadeIn">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-slideUp">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                                <h3 className="text-md font-black text-slate-900 uppercase tracking-tight">{selectedDetail.clientes?.nome_fantasia}</h3>
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Representante: {selectedDetail.usuarios?.nome}</p>
-                            </div>
-                            <button onClick={() => setSelectedDetail(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div><h3 className="text-md font-black text-slate-900 uppercase tracking-tight">{selectedDetail.clientes?.nome_fantasia}</h3><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Representante: {selectedDetail.usuarios?.nome}</p></div>
+                            <button onClick={() => setSelectedDetail(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X className="w-5 h-5" /></button>
                         </div>
-                        
                         <div className="p-8 space-y-6">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="bg-slate-900 p-5 rounded-2xl text-white">
-                                    <p className="text-[9px] font-black text-blue-400 uppercase mb-1">Custo da Ação</p>
+                                    <p className="text-[9px] font-black text-blue-400 uppercase mb-1">Investimento</p>
                                     <p className="text-2xl font-black tabular-nums">{formatCurrency(selectedDetail.valor_total_investimento)}</p>
                                 </div>
-                                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Status Auditoria</p>
-                                    <p className={`text-xs font-black uppercase ${selectedDetail.status === 'approved' ? 'text-emerald-600' : selectedDetail.status === 'rejected' ? 'text-red-600' : 'text-amber-600'}`}>
-                                        {selectedDetail.status === 'pendente' ? 'Aguardando' : selectedDetail.status === 'approved' ? 'Aprovado' : 'Reprovado'}
-                                    </p>
+                                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-right">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Pedido Vinculado</p>
+                                    <p className="text-md font-black text-slate-900">R$ {(selectedDetail.observacao || '').match(/\[PEDIDO:\s*R\$\s*(.*?)\]/)?.[1] || '---'}</p>
                                 </div>
                             </div>
-
                             <div className="flex gap-2">
                                 {selectedDetail.valor_caju > 0 && <div className="flex-1 p-3 bg-pink-50 text-pink-700 rounded-xl text-center border border-pink-100"><p className="text-[8px] font-black uppercase">Caju</p><p className="text-xs font-black">{formatCurrency(selectedDetail.valor_caju)}</p></div>}
                                 {selectedDetail.valor_dinheiro > 0 && <div className="flex-1 p-3 bg-emerald-50 text-emerald-700 rounded-xl text-center border border-emerald-100"><p className="text-[8px] font-black uppercase">Cash</p><p className="text-xs font-black">{formatCurrency(selectedDetail.valor_dinheiro)}</p></div>}
                                 {selectedDetail.valor_produto > 0 && <div className="flex-1 p-3 bg-blue-50 text-blue-700 rounded-xl text-center border border-blue-100"><p className="text-[8px] font-black uppercase">Produto</p><p className="text-xs font-black">{formatCurrency(selectedDetail.valor_produto)}</p></div>}
                             </div>
-
                             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                <p className="text-[9px] font-black text-slate-400 uppercase mb-2 flex items-center gap-2"><Quote className="w-3 h-3"/> Justificativa do Vendedor</p>
-                                <p className="text-sm font-medium text-slate-700 italic leading-relaxed">"{selectedDetail.observacao}"</p>
+                                <p className="text-[9px] font-black text-slate-400 uppercase mb-2 flex items-center gap-2"><Quote className="w-3 h-3"/> Justificativa do Representante</p>
+                                <p className="text-sm font-medium text-slate-700 italic leading-relaxed">"{(selectedDetail.observacao || '').replace(/\[PEDIDO:.*?\]\s*/, '').replace(/\[RECUSADO:.*?\]\s*/, '') || 'Sem justificativa adicional.'}"</p>
                             </div>
                         </div>
-
                         {selectedDetail.status === 'pendente' && (
                             <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
                                 <Button variant="outline" fullWidth onClick={() => setShowRejectionModal(true)} className="bg-white text-red-600 border-red-200 h-14 rounded-2xl font-black text-xs uppercase">Negar Verba</Button>
@@ -324,22 +251,15 @@ export const ManagerCampaignsScreen: React.FC = () => {
                             </div>
                         )}
                     </div>
-
                     {showRejectionModal && (
                         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fadeIn">
                              <div className="bg-white w-full max-w-xs rounded-[32px] p-8 shadow-2xl animate-slideUp border border-white/20">
-                                <div className="text-center mb-6">
-                                    <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                                        <AlertTriangle className="w-8 h-8" />
-                                    </div>
-                                    <h4 className="text-lg font-black text-slate-900 uppercase tracking-tight">Recusar Campanha</h4>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Informe o motivo para o representante</p>
-                                </div>
+                                <div className="text-center mb-6"><div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle className="w-8 h-8" /></div><h4 className="text-lg font-black text-slate-900 uppercase tracking-tight">Recusar Campanha</h4><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Informe o motivo para o representante</p></div>
                                 <textarea 
                                     value={rejectionReason} 
-                                    onChange={e => setRejectionReason(e.target.value)}
-                                    placeholder="Ex: ROI acima do permitido..."
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:ring-4 focus:ring-red-100 transition-all mb-6"
+                                    onChange={e => setRejectionReason(e.target.value)} 
+                                    placeholder="Ex: Percentual de investimento muito alto..." 
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:ring-4 focus:ring-red-100 transition-all mb-6" 
                                     rows={3}
                                 />
                                 <div className="grid grid-cols-2 gap-3">

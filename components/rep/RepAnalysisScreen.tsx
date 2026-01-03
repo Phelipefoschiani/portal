@@ -165,13 +165,19 @@ export const RepAnalysisScreen: React.FC = () => {
 
                 const mSales = mSalesList.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
                 
+                // Vendas do ano anterior para cálculo de crescimento
+                const mPrevSales = sales.filter(s => {
+                    const d = new Date(s.data + 'T00:00:00');
+                    return s.usuario_id === userId && d.getUTCFullYear() === (selectedYear - 1) && (d.getUTCMonth() + 1) === month;
+                }).reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+                
                 const mTarget = targets.find(t => 
                     t.usuario_id === userId && t.ano === selectedYear && t.mes === month
                 )?.valor || 0;
 
                 const mPositive = new Set(mSalesList.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
 
-                return { month, sales: mSales, target: mTarget, positive: mPositive };
+                return { month, sales: mSales, target: mTarget, prevSales: mPrevSales, positive: mPositive };
             });
 
             setStats({ monthly });
@@ -259,7 +265,7 @@ export const RepAnalysisScreen: React.FC = () => {
                                             onClick={() => setTempSelectedMonths(prev => prev.includes(i+1) ? prev.filter(x => x !== i+1) : [...prev, i+1])}
                                             className={`flex items-center gap-2 p-2.5 rounded-xl text-[10px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
                                         >
-                                            {tempSelectedMonths.includes(i + 1) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                                            {tempSelectedMonths.includes(i + 1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 opacity-20" />}
                                             {m}
                                         </button>
                                     ))}
@@ -365,12 +371,14 @@ export const RepAnalysisScreen: React.FC = () => {
                             <th className="px-8 py-5">Meta Planejada</th>
                             <th className="px-8 py-5">Faturado Real</th>
                             <th className="px-8 py-5 text-center">% Atingimento</th>
+                            <th className="px-8 py-5 text-center">Ano a Ano</th>
                             <th className="px-8 py-5 text-right">Positivação</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                         {stats.monthly.filter((m: any) => selectedMonths.includes(m.month)).map((m: any, idx: number) => {
                             const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
+                            const growth = m.prevSales > 0 ? ((m.sales / m.prevSales) - 1) * 100 : 0;
                             return (
                                 <tr 
                                     key={idx} 
@@ -389,6 +397,14 @@ export const RepAnalysisScreen: React.FC = () => {
                                         <span className={`px-3 py-1 rounded-full text-[9px] font-black border ${achievement >= 100 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
                                             {achievement.toFixed(1)}%
                                         </span>
+                                    </td>
+                                    <td className="px-8 py-4 text-center">
+                                        {m.sales > 0 ? (
+                                            <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                                                {growth >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                                {Math.abs(growth).toFixed(1)}%
+                                            </div>
+                                        ) : <span className="text-slate-200">--</span>}
                                     </td>
                                     <td className="px-8 py-4 text-right">
                                         <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-[9px] font-black">

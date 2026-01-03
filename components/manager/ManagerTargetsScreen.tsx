@@ -46,6 +46,19 @@ export const ManagerTargetsScreen: React.FC = () => {
         }
     }, [selectedRepId, selectedYear]);
 
+    // Lógica para capturar importação de Previsão enviada pelo Gestor
+    useEffect(() => {
+        const importDataRaw = sessionStorage.getItem('pcn_import_engineering');
+        if (importDataRaw) {
+            const data = JSON.parse(importDataRaw);
+            setSelectedRepId(data.repId);
+            setActiveTab('clients');
+            
+            // Note: O carregamento dos valores importados será feito dentro de fetchClientHistory
+            // após os dados de faturamento serem carregados para o rep correto.
+        }
+    }, []);
+
     useEffect(() => {
         const formatted = new Intl.NumberFormat('pt-BR', { 
             minimumFractionDigits: 2, 
@@ -77,7 +90,6 @@ export const ManagerTargetsScreen: React.FC = () => {
             const initialWeights: Record<string, number[]> = {};
             const syncedReps = new Set<string>();
             
-            // CORREÇÃO: Sempre recalcular o total anual do ano selecionado com base no banco
             const totalYear = targetsData?.reduce((acc, curr) => acc + Number(curr.valor), 0) || 0;
             setManagerTotalTarget(totalYear);
 
@@ -135,15 +147,31 @@ export const ManagerTargetsScreen: React.FC = () => {
             const repShareValue = Number(repShares[selectedRepId] || 0);
             const repAnnualForRep = (repShareValue / 100) * managerTotalTarget;
 
+            // Verificar se temos uma importação pendente na sessão
+            const importDataRaw = sessionStorage.getItem('pcn_import_engineering');
+            let importedMap = new Map<string, number>();
+            if (importDataRaw) {
+                const data = JSON.parse(importDataRaw);
+                if (data.repId === selectedRepId) {
+                    data.clients.forEach((c: any) => importedMap.set(c.id, c.value));
+                    sessionStorage.removeItem('pcn_import_engineering'); // Limpa após usar
+                }
+            }
+
             const clientStats = (clients || []).map(c => {
                 const cleanCnpj = c.cnpj.replace(/\D/g, '');
-                const salesYear1 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data + 'T00:00:00').getFullYear() === year1).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
-                const salesYear2 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data + 'T00:00:00').getFullYear() === year2).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
-                const savedTotal = ((existingClientTargets || []) as any[]).filter(t => t.cliente_id === c.id).reduce((acc: number, curr: any) => acc + (Number(curr.valor) || 0), 0);
+                const salesValueYear1 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data + 'T00:00:00').getFullYear() === year1).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
+                const salesValueYear2 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data + 'T00:00:00').getFullYear() === year2).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
+                
+                // Prioridade: 1. Valor importado agora, 2. Valor já salvo no banco
+                const savedTotal = importedMap.has(c.id) ? importedMap.get(c.id)! : ((existingClientTargets || []) as any[]).filter(t => t.cliente_id === c.id).reduce((acc: number, curr: any) => acc + (Number(curr.valor) || 0), 0);
+                
                 return {
                     ...c,
-                    shareYear1: totalRepYear1 > 0 ? (salesYear1 / totalRepYear1) * 100 : 0,
-                    shareYear2: totalRepYear2 > 0 ? (salesYear2 / totalRepYear2) * 100 : 0,
+                    valYear1: salesValueYear1,
+                    valYear2: salesValueYear2,
+                    shareYear1: totalRepYear1 > 0 ? (salesValueYear1 / totalRepYear1) * 100 : 0,
+                    shareYear2: totalRepYear2 > 0 ? (salesValueYear2 / totalRepYear2) * 100 : 0,
                     currentShare: repAnnualForRep > 0 ? (savedTotal / repAnnualForRep) * 100 : 0,
                     isConfigured: savedTotal > 0
                 };
@@ -153,6 +181,9 @@ export const ManagerTargetsScreen: React.FC = () => {
             const initialClientShares: Record<string, number> = {};
             clientStats.forEach(c => { initialClientShares[c.id] = Number(c.currentShare.toFixed(2)); });
             setClientShares(initialClientShares);
+            
+            if (importedMap.size > 0) alert('Previsão do representante carregada com sucesso! Revise e sincronize.');
+
         } catch (e) { console.error(e); } finally { setIsClientsLoading(false); }
     };
 
@@ -167,8 +198,8 @@ export const ManagerTargetsScreen: React.FC = () => {
 
     const handleSaveClientTargets = async () => {
         const totalShare = (Object.values(clientShares) as number[]).reduce((a, b) => a + (b || 0), 0);
-        if (Math.abs(totalShare - 100) > 0.05) {
-            alert(`A soma dos shares dos clientes deve ser exatamente 100.00%. Atualmente: ${totalShare.toFixed(2)}%`);
+        if (totalShare < 99.9) {
+            alert(`A alocação deve ser no mínimo 100.00%. Atualmente: ${totalShare.toFixed(2)}%`);
             return;
         }
 
@@ -233,7 +264,7 @@ export const ManagerTargetsScreen: React.FC = () => {
 
     const handleSaveAll = async () => {
         const totalShare = (Object.values(repShares) as number[]).reduce((acc: number, curr: number) => acc + (curr || 0), 0);
-        if (Math.abs(totalShare - 100) > 0.1) { alert('A soma dos shares da equipe deve ser exatamente 100.00%'); return; }
+        if (totalShare < 99.9) { alert('A soma dos shares da equipe deve ser no mínimo 100.00%'); return; }
         for (const rep of reps) {
             const share = Number(repShares[rep.id] || 0);
             if (share > 0) {
@@ -295,11 +326,11 @@ export const ManagerTargetsScreen: React.FC = () => {
         }
     };
 
-    const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(v);
+    const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
     const totalRepShare: number = (Object.values(repShares) as number[]).reduce((a: number, b: number) => (a || 0) + (b || 0), 0);
     const totalClientShare: number = (Object.values(clientShares) as number[]).reduce((a: number, b: number) => (a || 0) + (b || 0), 0);
 
-    const pendingClients = clientData.filter(c => c.nome_fantasia.toLowerCase().includes(clientSearch.toLowerCase()));
+    const pendingClients = clientData.filter(c => c.nome_fantasia.toLowerCase().includes(clientSearch.toLowerCase())).sort((a,b) => b.valYear1 - a.valYear1);
 
     return (
         <div className="w-full max-w-6xl mx-auto space-y-4 animate-fadeIn pb-32 text-slate-900">
@@ -339,7 +370,7 @@ export const ManagerTargetsScreen: React.FC = () => {
                             </div>
                             <div className="text-right pl-6 border-l border-white/10 ml-4">
                                 <p className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Alocação</p>
-                                <p className={`text-xl font-black tabular-nums ${Math.abs(totalRepShare - 100) < 0.1 ? 'text-emerald-400' : 'text-red-400'}`}>{totalRepShare.toFixed(2)}%</p>
+                                <p className={`text-xl font-black tabular-nums ${totalRepShare >= 99.9 ? 'text-emerald-400' : 'text-red-400'}`}>{totalRepShare.toFixed(2)}%</p>
                             </div>
                         </div>
                     </header>
@@ -422,31 +453,13 @@ export const ManagerTargetsScreen: React.FC = () => {
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex-1 max-w-sm">
+                            <div className="flex-1 max-sm">
                                 <select value={selectedRepId} onChange={(e) => setSelectedRepId(e.target.value)} className="w-full bg-slate-900 text-white border-none rounded-2xl px-6 py-4 text-xs font-black uppercase tracking-[0.2em] outline-none focus:ring-4 focus:ring-blue-100 shadow-2xl">
                                     <option value="">SELECIONE O REPRESENTANTE...</option>
                                     {reps.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
                                 </select>
                             </div>
                         </div>
-                        {selectedRepId && (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm relative overflow-hidden">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase mb-2 tracking-widest">Faturado {Number(selectedYear) - 2}</p>
-                                    <p className="text-xl font-black text-slate-900 tabular-nums">{formatBRL(repAnnualHistory.year2)}</p>
-                                    <div className="absolute top-0 right-0 p-4 opacity-5"><TrendingUp className="w-12 h-12" /></div>
-                                </div>
-                                <div className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm relative overflow-hidden">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase mb-2 tracking-widest">Faturado {Number(selectedYear) - 1}</p>
-                                    <p className="text-xl font-black text-slate-900 tabular-nums">{formatBRL(repAnnualHistory.year1)}</p>
-                                    <div className="absolute top-0 right-0 p-4 opacity-5"><TrendingUp className="w-12 h-12 text-blue-600" /></div>
-                                </div>
-                                <div className="bg-slate-900 p-6 rounded-[28px] border border-white/10 shadow-2xl">
-                                    <p className="text-[9px] font-black text-blue-400 uppercase mb-2 tracking-widest">Cota Rep. {selectedYear}</p>
-                                    <p className="text-xl font-black text-white tabular-nums">{formatBRL(((Number(repShares[selectedRepId] || 0)) / 100) * managerTotalTarget)}</p>
-                                </div>
-                            </div>
-                        )}
                     </header>
 
                     {selectedRepId && (
@@ -469,128 +482,74 @@ export const ManagerTargetsScreen: React.FC = () => {
                     ) : isClientsLoading ? (
                         <div className="p-32 text-center">
                             <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
-                            <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Processando massa de dados histórica...</p>
+                            <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Analisando volumes financeiros históricos...</p>
                         </div>
                     ) : (
                         <div className="space-y-8 pb-32">
-                            <section>
-                                <div className="flex items-center justify-between mb-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-blue-100 text-blue-600 rounded-xl shadow-sm"><Zap className="w-4 h-4" /></div>
-                                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Peso da Carteira (%)</h3>
-                                    </div>
-                                    <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all ${Math.abs(totalClientShare - 100) < 0.1 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                                        Alocação: {totalClientShare.toFixed(2)}%
-                                    </div>
-                                </div>
-                                <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden border-b-0">
-                                    <table className="w-full text-left">
-                                        <thead className="bg-slate-50 border-b border-slate-100 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">
-                                            <tr>
-                                                <th className="px-8 py-5">Cliente / Entidade</th>
-                                                <th className="px-8 py-5 text-center">{Number(selectedYear) - 2} (%)</th>
-                                                <th className="px-8 py-5 text-center">{Number(selectedYear) - 1} (%)</th>
-                                                <th className="px-8 py-5 text-center bg-blue-50/50">Meta {selectedYear} (%)</th>
-                                                <th className="px-8 py-5 text-right">Ação</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {pendingClients.map(c => {
-                                                const share = Number(clientShares[c.id] || 0);
-                                                const repShareVal = Number(repShares[selectedRepId] || 0);
-                                                const repAnnual = (repShareVal / 100) * managerTotalTarget;
-                                                const projected = (share / 100) * repAnnual;
+                            <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden border-b-0">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 border-b border-slate-100 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">
+                                        <tr>
+                                            <th className="px-8 py-5">Cliente / Entidade</th>
+                                            <th className="px-6 py-5 text-right">Faturado {Number(selectedYear) - 2}</th>
+                                            <th className="px-6 py-5 text-right">Faturado {Number(selectedYear) - 1}</th>
+                                            <th className="px-8 py-5 text-center bg-blue-50/50 text-blue-600">Alocação Meta (%)</th>
+                                            <th className="px-8 py-5 text-right">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {pendingClients.map(c => {
+                                            const share = Number(clientShares[c.id] || 0);
+                                            const repShareVal = Number(repShares[selectedRepId] || 0);
+                                            const repAnnual = (repShareVal / 100) * managerTotalTarget;
+                                            const projected = (share / 100) * repAnnual;
 
-                                                return (
-                                                    <tr key={c.id} className="hover:bg-slate-50 transition-colors group">
-                                                        <td className="px-8 py-5">
-                                                            <p className="font-black text-slate-800 uppercase text-xs tracking-tight group-hover:text-blue-600 transition-colors">{c.nome_fantasia}</p>
-                                                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">{c.cnpj}</p>
-                                                        </td>
-                                                        <td className="px-8 py-5 text-center font-bold text-slate-400 tabular-nums">{Number(c.shareYear2).toFixed(1)}%</td>
-                                                        <td className="px-8 py-5 text-center font-bold text-slate-400 tabular-nums">{Number(c.shareYear1).toFixed(1)}%</td>
-                                                        <td className="px-8 py-5 text-center bg-blue-50/30">
-                                                            <div className="flex items-center justify-center gap-2">
-                                                                <input type="number" step="0.01" value={share || ''} onChange={e => setClientShares(prev => ({ ...prev, [c.id]: Number(e.target.value) }))} className="w-16 bg-white border border-blue-200 rounded-xl px-2 py-1.5 text-center font-black text-blue-600 outline-none focus:ring-4 focus:ring-blue-100 shadow-sm" />
-                                                                <span className="text-[10px] font-black text-blue-300">%</span>
+                                            return (
+                                                <tr key={c.id} className="hover:bg-slate-50 transition-colors group">
+                                                    <td className="px-8 py-5">
+                                                        <p className="font-black text-slate-800 uppercase text-xs tracking-tight group-hover:text-blue-600 transition-colors">{c.nome_fantasia}</p>
+                                                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">{c.cnpj}</p>
+                                                    </td>
+                                                    <td className="px-6 py-5 text-right font-bold text-slate-400 tabular-nums text-xs">{formatBRL(c.valYear2)}</td>
+                                                    <td className="px-6 py-5 text-right font-bold text-slate-400 tabular-nums text-xs">{formatBRL(c.valYear1)}</td>
+                                                    <td className="px-8 py-5 text-center bg-blue-50/30">
+                                                        <div className="flex items-center justify-center gap-2">
+                                                            <input type="number" step="0.01" value={share || ''} onChange={e => setClientShares(prev => ({ ...prev, [c.id]: Number(e.target.value) }))} className="w-16 bg-white border border-blue-200 rounded-xl px-2 py-1.5 text-center font-black text-blue-600 outline-none focus:ring-4 focus:ring-blue-100 shadow-sm" />
+                                                            <span className="text-[10px] font-black text-blue-300">%</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-5 text-right">
+                                                        <div className="flex items-center justify-end gap-3">
+                                                            <div className="text-right mr-2">
+                                                                <p className="text-[10px] font-black text-slate-900 tabular-nums">{formatBRL(projected)}</p>
                                                             </div>
-                                                        </td>
-                                                        <td className="px-8 py-5 text-right">
-                                                            <div className="flex items-center justify-end gap-3">
-                                                                <div className="text-right mr-2">
-                                                                    <p className="text-[10px] font-black text-slate-900 tabular-nums leading-none">{formatBRL(projected)}</p>
-                                                                    <p className="text-[7px] font-black text-slate-400 uppercase mt-0.5">Total Ano</p>
-                                                                </div>
-                                                                <button 
-                                                                    onClick={() => setPreviewClient(c)}
-                                                                    className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm group/btn"
-                                                                >
-                                                                    <Eye className="w-4 h-4" />
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </section>
+                                                            <button onClick={() => setPreviewClient(c)} className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm group/btn"><Eye className="w-4 h-4" /></button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
                 </>
             )}
 
-            {/* MODAL DE PREVIEW MENSAL DO CLIENTE */}
             {previewClient && createPortal(
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
                     <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden animate-slideUp flex flex-col">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <div>
                                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">{previewClient.nome_fantasia}</h3>
-                                <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">
-                                    {previewClient.isConfigured ? 'Sazonalidade Mensal' : 'Simulação de Sazonalidade Mensal'}
-                                </p>
+                                <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Sazonalidade Mensal Simulada</p>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <button 
-                                    onClick={handleDownloadPreview}
-                                    disabled={isExporting}
-                                    className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
-                                    title="Baixar em PNG"
-                                >
-                                    {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                                </button>
-                                <button onClick={() => setPreviewClient(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
-                                    <X className="w-6 h-6" />
-                                </button>
-                            </div>
+                            <button onClick={() => setPreviewClient(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                                <X className="w-6 h-6" />
+                            </button>
                         </div>
                         <div className="p-8 overflow-y-auto bg-white" ref={previewRef} id="preview-export-container">
-                            {/* CABEÇALHO PARA EXPORTAÇÃO (ESCONDIDO NA UI) */}
-                            <div id="preview-header-export" className="hidden mb-8 pb-6 border-b-4 border-slate-900">
-                                <div className="flex justify-between items-end">
-                                    <div>
-                                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.4em] mb-2">Engenharia Comercial • Portal Centro-Norte</p>
-                                        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Planejamento de Metas {selectedYear}</h1>
-                                        <p className="text-lg font-black text-slate-400 uppercase tracking-tight mt-1">{previewClient.nome_fantasia}</p>
-                                    </div>
-                                    <div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-xl">CN</div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                                <div className="bg-slate-900 p-4 rounded-2xl text-white">
-                                    <p className="text-[8px] font-black text-blue-400 uppercase mb-1 tracking-widest">Share Alocado</p>
-                                    <p className="text-xl font-black">{Number(clientShares[previewClient.id] || 0).toFixed(2)}%</p>
-                                </div>
-                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 md:col-span-3">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1 tracking-widest">Total Anual Estimado</p>
-                                    <p className="text-2xl font-black text-slate-800 tabular-nums">
-                                        {formatBRL(((Number(clientShares[previewClient.id] || 0)) / 100) * ((Number(repShares[selectedRepId] || 0) / 100) * managerTotalTarget))}
-                                    </p>
-                                </div>
-                            </div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                 {months.map((m, i) => {
                                     const repWeight = Number(monthlyWeights[selectedRepId]?.[i] || 0);
@@ -613,16 +572,6 @@ export const ManagerTargetsScreen: React.FC = () => {
                                     );
                                 })}
                             </div>
-                            <div className="mt-8 p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center gap-3">
-                                <Info className="w-5 h-5 text-blue-600" />
-                                <p className="text-[10px] font-bold text-blue-700 leading-tight">
-                                    Esta projeção reflete o share do cliente aplicado sobre a sazonalidade definida para o representante comercial.
-                                </p>
-                            </div>
-                            {/* RODAPÉ PARA EXPORTAÇÃO */}
-                            <div className="hidden mt-12 pt-6 border-t border-slate-100 opacity-40 text-center">
-                                <p className="text-[8px] font-black uppercase tracking-[0.5em] text-slate-400 italic">Relatório Gerado automaticamente pelo Portal Centro-Norte em {new Date().toLocaleDateString()}</p>
-                            </div>
                         </div>
                         <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
                             <Button onClick={() => setPreviewClient(null)} variant="outline" className="rounded-xl px-8 h-10 font-black text-[10px] uppercase">Fechar</Button>
@@ -635,19 +584,15 @@ export const ManagerTargetsScreen: React.FC = () => {
             <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 z-[100]">
                 <div className="bg-slate-900/95 backdrop-blur-2xl p-5 rounded-[32px] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex items-center justify-between gap-6">
                     <div className="text-white">
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">{activeTab === 'team' ? 'Status Engenharia Equipe' : 'Status Engenharia Carteira'}</p>
-                        <p className={`text-md font-black tabular-nums ${Math.abs((activeTab === 'team' ? totalRepShare : totalClientShare) - 100) < 0.1 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Alocação Total {selectedYear}</p>
+                        <p className={`text-md font-black tabular-nums ${ (activeTab === 'team' ? totalRepShare : totalClientShare) >= 99.9 ? 'text-emerald-400' : 'text-red-400'}`}>
                             {(activeTab === 'team' ? totalRepShare : totalClientShare).toFixed(2)}% de Alocação
                         </p>
                     </div>
                     {activeTab === 'team' ? (
-                        <Button onClick={handleSaveAll} disabled={Math.abs(totalRepShare - 100) > 0.1 || isSavingAll} isLoading={isSavingAll} className="rounded-[20px] px-10 h-14 font-black uppercase text-[11px] tracking-[0.2em] bg-blue-600 hover:bg-blue-500 shadow-2xl shadow-blue-900/40">
-                            Sincronizar Meta Equipe
-                        </Button>
+                        <Button onClick={handleSaveAll} disabled={totalRepShare < 99.9 || isSavingAll} isLoading={isSavingAll} className="rounded-[20px] px-10 h-14 font-black uppercase text-[11px] tracking-[0.2em] bg-blue-600 hover:bg-blue-500 shadow-2xl shadow-blue-900/40">Sincronizar Meta Equipe</Button>
                     ) : (
-                        <Button onClick={handleSaveClientTargets} disabled={!selectedRepId || Math.abs(totalClientShare - 100) > 0.05 || isSavingId === 'clients-all'} isLoading={isSavingId === 'clients-all'} className="rounded-[20px] px-10 h-14 font-black uppercase text-[11px] tracking-[0.2em] bg-blue-600 hover:bg-blue-500 shadow-2xl shadow-blue-900/40">
-                            Sincronizar Carteira
-                        </Button>
+                        <Button onClick={handleSaveClientTargets} disabled={!selectedRepId || totalClientShare < 99.9 || isSavingId === 'clients-all'} isLoading={isSavingId === 'clients-all'} className="rounded-[20px] px-10 h-14 font-black uppercase text-[11px] tracking-[0.2em] bg-blue-600 hover:bg-blue-500 shadow-2xl shadow-blue-900/40">Sincronizar Carteira</Button>
                     )}
                 </div>
             </div>

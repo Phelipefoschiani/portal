@@ -12,7 +12,8 @@ import { HydrationScreen } from './components/HydrationScreen';
 import { Sidebar } from './components/Sidebar';
 import { supabase } from './lib/supabase';
 import { checkAndMarkDeliveredNotifications } from './lib/mockData';
-import { Menu } from 'lucide-react';
+import { Menu, AlertTriangle, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 // Rep Screens
 import { RepAnalysisScreen } from './components/rep/RepAnalysisScreen';
@@ -38,6 +39,7 @@ const App: React.FC = () => {
   const [userId, setUserId] = useState<string | null>(null);
   const [forecastToEditId, setForecastToEditId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showImportantNotice, setShowImportantNotice] = useState(false);
 
   useEffect(() => {
     const savedSession = sessionStorage.getItem('pcn_session');
@@ -47,12 +49,41 @@ const App: React.FC = () => {
       setUserRole(role);
       setUserId(id);
       setIsAuthenticated(true);
-      // Mantemos false para forçar reidratação ao abrir o app
       setIsHydrated(false); 
       setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
+      
+      // Inicia timer para notificações importantes (5 minutos)
+      if (role === 'rep') {
+          const timer = setTimeout(() => checkImportantNotices(id), 5 * 60 * 1000);
+          return () => clearTimeout(timer);
+      }
     }
     setIsCheckingAuth(false);
+
+    // Listener para navegação entre telas via CustomEvent
+    const handleNav = (e: any) => {
+        if (e.detail) setCurrentView(e.detail);
+    };
+    window.addEventListener('pcn_navigate', handleNav);
+    return () => window.removeEventListener('pcn_navigate', handleNav);
   }, []);
+
+  const checkImportantNotices = async (uid: string) => {
+      try {
+          const { data } = await supabase
+              .from('notificacoes')
+              .select('id')
+              .eq('para_usuario_id', uid)
+              .eq('prioridade', 'medium')
+              .eq('lida', false);
+          
+          if (data && data.length > 0) {
+              setShowImportantNotice(true);
+          }
+      } catch (e) {
+          console.error(e);
+      }
+  };
 
   const handleLogin = (name: string, role: 'admin' | 'rep', id: string) => {
     setUserName(name);
@@ -61,7 +92,10 @@ const App: React.FC = () => {
     setIsAuthenticated(true);
     setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
     sessionStorage.setItem('pcn_session', JSON.stringify({ name, role, id }));
-    if (role === 'rep') checkAndMarkDeliveredNotifications();
+    if (role === 'rep') {
+        checkAndMarkDeliveredNotifications();
+        setTimeout(() => checkImportantNotices(id), 5 * 60 * 1000);
+    }
   };
 
   const handleLogout = async () => {
@@ -85,7 +119,6 @@ const App: React.FC = () => {
   if (isCheckingAuth) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-inter">Iniciando Portal...</div>;
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
   
-  // Nova etapa: Hidratação do Banco de Dados
   if (!isHydrated && userId) {
     return <HydrationScreen userId={userId} userRole={userRole} onComplete={() => setIsHydrated(true)} />;
   }
@@ -117,6 +150,35 @@ const App: React.FC = () => {
       </header>
 
       {userRole === 'rep' && <UrgentNoticeModal />}
+
+      {showImportantNotice && createPortal(
+          <div className="fixed bottom-6 right-6 z-[180] animate-slideUp">
+              <div className="bg-amber-600 text-white p-5 rounded-[24px] shadow-2xl flex items-center gap-4 max-w-sm border border-amber-500 ring-4 ring-amber-100">
+                  <div className="p-3 bg-amber-500 rounded-xl">
+                      <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1">
+                      <h4 className="font-black text-xs uppercase tracking-widest">Comunicado Importante</h4>
+                      <p className="text-[10px] font-bold opacity-90 mt-1">Existem avisos importantes pendentes. Por favor, verifique seu mural.</p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                      <button 
+                        onClick={() => { setCurrentView('notifications'); setShowImportantNotice(false); }}
+                        className="p-2 bg-white/20 hover:bg-white/40 rounded-lg transition-all"
+                      >
+                          <Menu className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => setShowImportantNotice(false)}
+                        className="p-2 bg-black/20 hover:bg-black/40 rounded-lg transition-all"
+                      >
+                          <X className="w-4 h-4" />
+                      </button>
+                  </div>
+              </div>
+          </div>,
+          document.body
+      )}
 
       <main className="flex-1 min-h-screen bg-slate-50 lg:ml-64 transition-all duration-300">
         <div className="p-4 md:p-8">
