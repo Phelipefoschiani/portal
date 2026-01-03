@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Users, AlertCircle, Calendar, DollarSign, RefreshCw, CheckCircle2, Award, ChevronDown, CheckSquare, Square, RotateCcw, Filter } from 'lucide-react';
+import { Target, TrendingUp, Users, AlertCircle, Calendar, DollarSign, RefreshCw, CheckCircle2, Award, ChevronDown, CheckSquare, Square, RotateCcw, Filter, CalendarDays } from 'lucide-react';
 import { NonPositivizedModal } from './NonPositivizedModal';
 import { PositivizedModal } from './PositivizedModal';
 import { RepPerformanceModal } from './manager/RepPerformanceModal';
@@ -25,6 +25,7 @@ export const Dashboard: React.FC = () => {
 
   const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
   const monthShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  const availableYears = [2024, 2025, 2026, 2027];
 
   const cleanCnpj = (val: string) => String(val || '').replace(/\D/g, '');
 
@@ -91,7 +92,7 @@ export const Dashboard: React.FC = () => {
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-fadeIn pb-20 md:pb-12">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Painel de Performance</h2>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise Comercial</h2>
           <p className="text-slate-500 flex items-center gap-2 text-xs mt-2 capitalize font-bold text-left">
             <Calendar className="w-3.5 h-3.5 text-blue-500" />
             Período: {selectedMonths.sort((a,b) => a-b).map(m => monthShort[m-1]).join(', ')} de {selectedYear}
@@ -99,13 +100,28 @@ export const Dashboard: React.FC = () => {
         </div>
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           
+          <div className="relative">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                <CalendarDays className="w-3.5 h-3.5" />
+            </div>
+            <select 
+                value={selectedYear} 
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer transition-all"
+            >
+                {availableYears.map(y => (
+                    <option key={y} value={y}>ANO {y}</option>
+                ))}
+            </select>
+          </div>
+
           <div className="relative" ref={dropdownRef}>
                 <button 
                     onClick={() => {
                         setTempSelectedMonths([...selectedMonths]);
                         setShowMonthDropdown(!showMonthDropdown);
                     }}
-                    className="bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-[10px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50 min-w-[150px] justify-between transition-all"
+                    className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50 min-w-[150px] justify-between transition-all"
                 >
                     <span>{getMonthsLabel()}</span>
                     <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
@@ -113,9 +129,9 @@ export const Dashboard: React.FC = () => {
                 
                 {showMonthDropdown && (
                     <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
-                        <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Filtrar Meses</span>
-                            <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="text-[9px] font-black text-blue-600 uppercase hover:underline">Todos</button>
+                        <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-2">
+                            <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[9px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">Todos</button>
+                            <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[9px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg hover:bg-red-100 transition-all">Limpar</button>
                         </div>
                         <div className="p-2 grid grid-cols-1 gap-0.5 max-h-64 overflow-y-auto">
                             {monthNames.map((m, i) => (
@@ -145,7 +161,7 @@ export const Dashboard: React.FC = () => {
             onClick={() => setShowPerformanceModal(true)} 
             className="flex-1 md:flex-none flex items-center justify-center gap-2 text-[10px] font-black uppercase text-white bg-blue-600 px-6 py-3 rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 border border-blue-500"
           >
-            <Award className="w-4 h-4" /> Ver Raio-X
+            <Award className="w-4 h-4" /> Análise Comercial
           </button>
         </div>
       </div>
@@ -160,7 +176,7 @@ export const Dashboard: React.FC = () => {
               <Target className="w-6 h-6 md:w-8 md:w-8" />
             </div>
             <div>
-              <h3 className="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em]">Objetivo Acumulado</h3>
+              <h3 className="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em]">Objetivo do Período</h3>
               <p className="text-2xl md:text-4xl font-black text-slate-900 leading-none mt-1 md:mt-2">{formatCurrency(data.meta)}</p>
             </div>
           </div>

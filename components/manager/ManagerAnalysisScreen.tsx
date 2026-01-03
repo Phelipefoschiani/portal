@@ -4,6 +4,7 @@ import { Target, TrendingUp, Users, Calendar, DollarSign, Wallet, Loader2, Chevr
 import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
 import { Button } from '../Button';
+import { RepPerformanceModal } from './RepPerformanceModal';
 
 // --- MODAL DE DECOMPOSIÇÃO (NÍVEL 2: CANAL -> CLIENTES POSITIVADOS NO MÊS) ---
 const RepBreakdownModal: React.FC<{ 
@@ -252,6 +253,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
     const dropdownRef = useRef<HTMLDivElement>(null);
     
     const [selectedMonthForDetail, setSelectedMonthForDetail] = useState<number | null>(null);
+    const [selectedRepForPerformance, setSelectedRepForPerformance] = useState<any | null>(null);
     const [stats, setStats] = useState<any>({ globalPerformance: [], repData: [] });
 
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -438,11 +440,16 @@ export const ManagerAnalysisScreen: React.FC = () => {
                     <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
                         <Users className="w-5 h-5 text-blue-600" /> Desempenho Regional por Representante
                     </h3>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Clique no representante para ver o Raio-X</p>
                 </div>
                 
                 <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
                     {stats.repData.sort((a: any, b: any) => b.sales - a.sales).map((row: any) => (
-                        <div key={row.rep.id} className="p-5 flex flex-col md:flex-row items-center justify-between hover:bg-slate-50/50 transition-all group">
+                        <div 
+                            key={row.rep.id} 
+                            onClick={() => setSelectedRepForPerformance(row.rep)}
+                            className="p-5 flex flex-col md:flex-row items-center justify-between hover:bg-slate-50/50 transition-all group cursor-pointer"
+                        >
                             <div className="flex items-center gap-5 w-full md:w-1/3">
                                 <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
                                     {row.rep.nome.charAt(0)}
@@ -462,11 +469,12 @@ export const ManagerAnalysisScreen: React.FC = () => {
                                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta</p>
                                     <p className="text-sm font-bold text-slate-600 tabular-nums">{formatBRL(row.target)}</p>
                                 </div>
-                                <div className="text-right">
+                                <div className="text-right flex items-center gap-4">
                                     <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black border transition-all ${row.pct >= 100 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
                                         {row.pct >= 100 ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
                                         {row.pct.toFixed(1)}%
                                     </span>
+                                    <ChevronRight className="w-5 h-5 text-slate-200 group-hover:text-blue-500 transition-colors" />
                                 </div>
                             </div>
                         </div>
@@ -480,6 +488,14 @@ export const ManagerAnalysisScreen: React.FC = () => {
                     year={selectedYear} 
                     onClose={() => setSelectedMonthForDetail(null)} 
                     formatBRL={formatBRL}
+                />
+            )}
+
+            {selectedRepForPerformance && (
+                <RepPerformanceModal 
+                    rep={selectedRepForPerformance} 
+                    year={selectedYear} 
+                    onClose={() => setSelectedRepForPerformance(null)} 
                 />
             )}
         </div>
