@@ -139,7 +139,7 @@ export const ForecastScreen: React.FC = () => {
     }
   };
 
-  const totalClientMapped = (Object.values(clientForecasts) as number[]).reduce((a: number, b: number) => a + b, 0);
+  const totalClientMapped = (Object.values(clientForecasts) as number[]).reduce((a, b) => a + (b || 0), 0);
   const mappingProgress = totalConfirmedTarget > 0 ? (totalClientMapped / totalConfirmedTarget) * 100 : 0;
 
   const saveClientMapping = async () => {
@@ -150,12 +150,18 @@ export const ForecastScreen: React.FC = () => {
     setIsSaving(true);
     try {
         const { data: currentF } = await supabase.from('previsoes').select('id').eq('usuario_id', userId).eq('data', `${selectedYear}-01-01`).single();
+        
+        if (!currentF) {
+            throw new Error('Não foi possível localizar o registro principal da previsão. Salve a primeira aba antes.');
+        }
+
         const inserts = Object.entries(clientForecasts).map(([cId, val]) => ({
             previsao_id: currentF.id,
             cliente_id: cId,
             valor_previsto_cliente: val,
             status: 'pending'
         }));
+        
         await supabase.from('previsao_clientes').delete().eq('previsao_id', currentF.id);
         await supabase.from('previsao_clientes').insert(inserts);
         alert('Mapeamento de carteira enviado para análise do gestor!');

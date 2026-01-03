@@ -4,7 +4,11 @@ import { Megaphone, Save, CheckCircle2, TrendingUp, DollarSign, Percent, AlertCi
 import { Button } from './Button';
 import { supabase } from '../lib/supabase';
 
-export const CampaignsScreen: React.FC = () => {
+interface CampaignsScreenProps {
+  onNavigateToInvestments?: () => void;
+}
+
+export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToInvestments }) => {
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
   const [clients, setClients] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
