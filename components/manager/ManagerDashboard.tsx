@@ -174,11 +174,11 @@ const KpiDetailModal: React.FC<{
                                                 </td>
                                                 <td className="px-6 py-3 text-center">
                                                     <div className="flex flex-col items-center">
-                                                        <span className={`text-[10px] font-black uppercase ${isSuccess ? 'text-blue-600' : 'text-red-500'}`}>
+                                                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${isSuccess ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
                                                             {type === 'positivacao' ? `${((rep.positivacao / (rep.totalClientes || 1)) * 100).toFixed(1)}%` : `${achievement.toFixed(1)}%`}
                                                         </span>
                                                         <div className="w-12 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                                                            <div className={`h-full ${isSuccess ? 'bg-blue-600' : 'bg-red-500'}`} style={{ width: `${Math.min(achievement, 100)}%` }}></div>
+                                                            <div className={`h-full ${isSuccess ? 'bg-blue-600' : 'bg-red-600'}`} style={{ width: `${Math.min(achievement, 100)}%` }}></div>
                                                         </div>
                                                     </div>
                                                 </td>
@@ -515,7 +515,7 @@ export const ManagerDashboard: React.FC = () => {
                                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Meta OK (&gt;= 100%)</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 bg-red-500 rounded-full legend-dot-export shrink-0"></div>
+                                    <div className="w-2 h-2 bg-red-600 rounded-full legend-dot-export shrink-0"></div>
                                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Abaixo (&lt; 100%)</span>
                                 </div>
                              </div>
@@ -551,7 +551,7 @@ export const ManagerDashboard: React.FC = () => {
                                         </div>
 
                                         <div 
-                                            className={`w-full max-w-[44px] rounded-t-2xl transition-all duration-1000 ease-out shadow-lg relative ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-50 shadow-red-100'}`}
+                                            className={`w-full max-w-[44px] rounded-t-2xl transition-all duration-1000 ease-out shadow-lg relative ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-600 shadow-red-100'}`}
                                             style={{ height: `${barHeightPct}%` }}
                                         >
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent rounded-t-2xl"></div>

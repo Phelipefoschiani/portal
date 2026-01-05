@@ -297,7 +297,7 @@ export const RepAnalysisScreen: React.FC = () => {
                 </div>
                 <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Atingimento</p>
-                    <h3 className={`text-2xl font-black ${kpis.reach >= 100 ? 'text-blue-600' : 'text-red-500'}`}>{kpis.reach.toFixed(1)}%</h3>
+                    <h3 className={`text-2xl font-black ${kpis.reach >= 100 ? 'text-blue-600' : 'text-red-600'}`}>{kpis.reach.toFixed(1)}%</h3>
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><TrendingUp className="w-16 h-16 text-blue-600" /></div>
                 </div>
                 <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl flex items-center justify-center gap-3">
@@ -350,7 +350,7 @@ export const RepAnalysisScreen: React.FC = () => {
                                 <div className="relative w-full flex-1 flex flex-col justify-end items-center">
                                     <div className="w-full max-w-[32px] bg-slate-50 rounded-t-xl border border-slate-100 absolute bottom-0 transition-all duration-700" style={{ height: `${Math.max(targetHeight, 2)}%` }}></div>
                                     <div 
-                                        className={`w-full max-w-[32px] rounded-t-xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-500 shadow-red-50'}`} 
+                                        className={`w-full max-w-[32px] rounded-t-xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-600 shadow-red-100'}`} 
                                         style={{ height: `${Math.max(salesHeight, 2)}%` }}
                                     >
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent rounded-t-xl group-hover:bg-white/10 transition-all"></div>
@@ -400,7 +400,7 @@ export const RepAnalysisScreen: React.FC = () => {
                                     </td>
                                     <td className="px-8 py-4 text-center">
                                         {m.sales > 0 ? (
-                                            <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                                            <div className={`flex items-center justify-center gap-1 text-[10px] font-black ${growth >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                                                 {growth >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                                                 {Math.abs(growth).toFixed(1)}%
                                             </div>

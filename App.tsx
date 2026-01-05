@@ -52,7 +52,6 @@ const App: React.FC = () => {
       setIsHydrated(false); 
       setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
       
-      // Inicia timer para notificações importantes (5 minutos)
       if (role === 'rep') {
           const timer = setTimeout(() => checkImportantNotices(id), 5 * 60 * 1000);
           return () => clearTimeout(timer);
@@ -60,7 +59,6 @@ const App: React.FC = () => {
     }
     setIsCheckingAuth(false);
 
-    // Listener para navegação entre telas via CustomEvent
     const handleNav = (e: any) => {
         if (e.detail) setCurrentView(e.detail);
     };
@@ -135,17 +133,17 @@ const App: React.FC = () => {
         onToggle={setIsSidebarOpen}
       />
 
-      {/* Header Mobile */}
-      <header className="lg:hidden bg-slate-900 text-white p-4 flex items-center justify-between sticky top-0 z-[40] shadow-md">
+      {/* Header Mobile - AGORA FIXO */}
+      <header className="lg:hidden bg-slate-900/95 backdrop-blur-md text-white p-4 flex items-center justify-between sticky top-0 z-[100] shadow-xl border-b border-white/5">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-sm">CN</div>
-          <span className="font-bold text-sm tracking-tight">Portal Centro-Norte</span>
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-sm shadow-lg shadow-blue-500/20">CN</div>
+          <span className="font-black text-xs uppercase tracking-tighter italic">Portal <span className="text-blue-500">CN</span></span>
         </div>
         <button 
           onClick={() => setIsSidebarOpen(true)}
-          className="p-2 hover:bg-slate-800 rounded-xl transition-colors"
+          className="p-2.5 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/10"
         >
-          <Menu className="w-6 h-6 text-slate-200" />
+          <Menu className="w-5 h-5 text-slate-200" />
         </button>
       </header>
 
@@ -181,7 +179,7 @@ const App: React.FC = () => {
       )}
 
       <main className="flex-1 min-h-screen bg-slate-50 lg:ml-64 transition-all duration-300">
-        <div className="p-4 md:p-8">
+        <div className="p-3 md:p-8">
            {userRole === 'rep' && (
                <>
                 {currentView === 'dashboard' && <Dashboard />}

@@ -195,7 +195,7 @@ export const Dashboard: React.FC = () => {
             <span className="font-black text-slate-900 text-lg md:text-xl">{formatCurrency(data.faturado)}</span>
           </div>
           <div className="h-3 md:h-4 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/60 shadow-inner">
-            <div className={`h-full rounded-full transition-all duration-1000 ease-out ${percentualAtingido >= 100 ? 'bg-blue-600' : 'bg-red-50'}`} style={{ width: `${Math.min(percentualAtingido, 100)}%` }}></div>
+            <div className={`h-full rounded-full transition-all duration-1000 ease-out ${percentualAtingido >= 100 ? 'bg-blue-600' : 'bg-red-600'}`} style={{ width: `${Math.min(percentualAtingido, 100)}%` }}></div>
           </div>
         </div>
       </div>

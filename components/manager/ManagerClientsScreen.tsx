@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info } from 'lucide-react';
+import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info, CalendarClock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ClientDetailModal } from '../ClientDetailModal';
 import { totalDataStore } from '../../lib/dataStore';
 
 export const ManagerClientsScreen: React.FC = () => {
+    const now = new Date();
     const [isLoading, setIsLoading] = useState(false);
     const [selectedRep, setSelectedRep] = useState('all');
     const [selectedChannel, setSelectedChannel] = useState('all');
@@ -46,19 +47,27 @@ export const ManagerClientsScreen: React.FC = () => {
 
         const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
 
-        // Mapear faturamento individual
-        const salesMap = new Map<string, number>();
+        // Mapear faturamento individual e última data de compra
+        const statsMap = new Map<string, { faturamento: number; lastDate: string }>();
         relevantSales.forEach(s => {
             const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
-            salesMap.set(cleanCnpj, (salesMap.get(cleanCnpj) || 0) + (Number(s.faturamento) || 0));
+            const current = statsMap.get(cleanCnpj) || { faturamento: 0, lastDate: '0000-00-00' };
+            statsMap.set(cleanCnpj, {
+                faturamento: current.faturamento + (Number(s.faturamento) || 0),
+                lastDate: s.data > current.lastDate ? s.data : current.lastDate
+            });
         });
 
         // Enriquecer lista final
         const ranking = filteredClientsBase.map(c => {
-            const fat = salesMap.get(String(c.cnpj || '').replace(/\D/g, '')) || 0;
+            const stats = statsMap.get(String(c.cnpj || '').replace(/\D/g, ''));
+            const fat = stats?.faturamento || 0;
+            const lastDate = stats?.lastDate || null;
+            
             return {
                 ...c,
                 totalPurchase: fat,
+                lastPurchase: lastDate,
                 repName: usersMap.get(c.usuario_id) || 'Sem Rep.',
                 participation: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0
             };
@@ -71,6 +80,20 @@ export const ManagerClientsScreen: React.FC = () => {
     }, [selectedRep, selectedChannel, searchTerm]);
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
+
+    const checkLastPurchaseStatus = (dateStr: string | null) => {
+        if (!dateStr || dateStr === '0000-00-00') return { label: 'S/ REGISTRO', isOld: true };
+        
+        const lastDate = new Date(dateStr + 'T00:00:00');
+        const diffTime = Math.abs(now.getTime() - lastDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        return {
+            label: lastDate.toLocaleDateString('pt-BR'),
+            isOld: diffDays > 90,
+            days: diffDays
+        };
+    };
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-12">
@@ -146,6 +169,7 @@ export const ManagerClientsScreen: React.FC = () => {
                          <thead className="bg-slate-50 border-b border-slate-200">
                             <tr className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
                                 <th className="px-8 py-5">Cliente / Local</th>
+                                <th className="px-6 py-5">Última Compra</th>
                                 <th className="px-6 py-5">Representante</th>
                                 <th className="px-6 py-5">Canal</th>
                                 <th className="px-6 py-5 text-right">Faturamento Anual</th>
@@ -154,42 +178,53 @@ export const ManagerClientsScreen: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {processedData.ranking.map((client, idx) => (
-                                <tr key={client.id} className="hover:bg-slate-50 cursor-pointer group transition-all" onClick={() => setSelectedClient(client)}>
-                                    <td className="px-8 py-5">
-                                        <div>
-                                            <p className="font-black text-slate-800 group-hover:text-blue-600 transition-colors uppercase tracking-tight text-xs">{client.nome_fantasia}</p>
-                                            <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5 tracking-wider">{client.city || 'S/ CIDADE'} • {client.cnpj}</p>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-5">
-                                        <span className="font-bold text-slate-600 text-[10px] uppercase bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">{client.repName}</span>
-                                    </td>
-                                    <td className="px-6 py-5">
-                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{client.canal_vendas || 'GERAL'}</span>
-                                    </td>
-                                    <td className="px-6 py-5 text-right font-black text-slate-900 tabular-nums">{formatCurrency(client.totalPurchase)}</td>
-                                    <td className="px-8 py-5">
-                                        <div className="flex flex-col items-end gap-1.5">
-                                            <span className={`text-[11px] font-black tabular-nums ${client.participation > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
-                                                {client.participation.toFixed(2)}%
-                                            </span>
-                                            <div className="w-20 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(client.participation * 2, 100)}%` }}></div>
+                            {processedData.ranking.map((client, idx) => {
+                                const purchaseStatus = checkLastPurchaseStatus(client.lastPurchase);
+                                return (
+                                    <tr key={client.id} className="hover:bg-slate-50 cursor-pointer group transition-all" onClick={() => setSelectedClient(client)}>
+                                        <td className="px-8 py-5">
+                                            <div>
+                                                <p className="font-black text-slate-800 group-hover:text-blue-600 transition-colors uppercase tracking-tight text-xs">{client.nome_fantasia}</p>
+                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5 tracking-wider">{client.city || 'S/ CIDADE'} • {client.cnpj}</p>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-8 py-5 text-center">
-                                        <button className="p-2.5 bg-slate-50 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
-                                            <TrendingUp className="w-4 h-4" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black border uppercase tracking-wider ${purchaseStatus.isOld ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                                    <CalendarClock className="w-3 h-3" />
+                                                    {purchaseStatus.label}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <span className="font-bold text-slate-600 text-[10px] uppercase bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">{client.repName}</span>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{client.canal_vendas || 'GERAL'}</span>
+                                        </td>
+                                        <td className="px-6 py-5 text-right font-black text-slate-900 tabular-nums">{formatCurrency(client.totalPurchase)}</td>
+                                        <td className="px-8 py-5">
+                                            <div className="flex flex-col items-end gap-1.5">
+                                                <span className={`text-[11px] font-black tabular-nums ${client.participation > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                                                    {client.participation.toFixed(2)}%
+                                                </span>
+                                                <div className="w-20 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(client.participation, 100)}%` }}></div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-8 py-5 text-center">
+                                            <button className="p-2.5 bg-slate-50 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
+                                                <TrendingUp className="w-4 h-4" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
 
                             {processedData.ranking.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-32 text-center text-slate-400">
+                                    <td colSpan={7} className="px-6 py-32 text-center text-slate-400">
                                         <div className="flex flex-col items-center">
                                             <Building2 className="w-16 h-16 mb-4 opacity-10 text-blue-600" />
                                             <p className="font-black uppercase text-xs tracking-[0.3em]">Nenhum cliente mapeado para este critério.</p>
