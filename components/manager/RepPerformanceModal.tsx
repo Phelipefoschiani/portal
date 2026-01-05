@@ -98,8 +98,8 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                 return { month, sales: mSales, target: mTarget, prevSales: mPrevSales, investment: mInv, positive: mPositive };
             });
 
-            const monthsDone = monthly.filter(m => m.sales > 0);
-            const avgAchievement = monthsDone.length > 0 ? monthsDone.reduce((a, b) => a + (b.target > 0 ? b.sales / b.target : 0), 0) / monthsDone.length : 0;
+            const monthsDone = monthly.filter((m: any) => m.sales > 0);
+            const avgAchievement = monthsDone.length > 0 ? monthsDone.reduce((a: number, b: any) => a + (b.target > 0 ? b.sales / b.target : 0), 0) / monthsDone.length : 0;
             
             setData({ monthly, avgAchievement });
         } catch (e) { console.error(e); } finally { setIsLoading(false); }
@@ -255,7 +255,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                                     })}
                                 </svg>
                                 <div className="flex justify-between mt-6 px-1">
-                                    {filteredMonthlyData.map(m => (
+                                    {filteredMonthlyData.map((m: any) => (
                                         <span key={m.month} className="text-[10px] font-black text-slate-400 uppercase">{monthShort[m.month - 1]}</span>
                                     ))}
                                 </div>
