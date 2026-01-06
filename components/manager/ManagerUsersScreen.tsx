@@ -39,8 +39,12 @@ export const ManagerUsersScreen: React.FC = () => {
     const formatDateTime = (dateStr: string | null) => {
         if (!dateStr) return 'NUNCA ACESSOU';
         
-        // Garante que a data seja tratada como UTC se não houver indicação de timezone
-        const date = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
+        // Garante que a data seja tratada como UTC adicionando o 'Z' se não houver
+        const isoString = dateStr.endsWith('Z') || dateStr.includes('-') && dateStr.includes('+') 
+            ? dateStr 
+            : dateStr.replace(' ', 'T') + 'Z';
+
+        const date = new Date(isoString);
         
         return date.toLocaleString('pt-BR', {
             day: '2-digit',
@@ -48,7 +52,7 @@ export const ManagerUsersScreen: React.FC = () => {
             year: 'numeric',
             hour: '2-digit',
             minute: '2-digit',
-            timeZone: 'America/Sao_Paulo' // Força fuso de Brasília para evitar confusão com UTC do server
+            timeZone: 'America/Sao_Paulo'
         });
     };
 
@@ -110,7 +114,7 @@ export const ManagerUsersScreen: React.FC = () => {
                                     <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
                                         <td className="px-8 py-5">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-400 uppercase text-xs border border-slate-200 group-hover:bg-slate-900 group-hover:text-white transition-all">
+                                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-400 uppercase text-xs border border-slate-200 group-hover:bg-blue-600 group-hover:text-white transition-all">
                                                     {user.nome.charAt(0)}
                                                 </div>
                                                 <div>

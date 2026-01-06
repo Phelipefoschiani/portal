@@ -43,6 +43,8 @@ const App: React.FC = () => {
   const [showImportantNotice, setShowImportantNotice] = useState(false);
 
   useEffect(() => {
+    let noticeTimer: number | undefined;
+    
     const savedSession = sessionStorage.getItem('pcn_session');
     if (savedSession) {
       const { name, role, id } = JSON.parse(savedSession);
@@ -54,17 +56,22 @@ const App: React.FC = () => {
       setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
       
       if (role === 'rep') {
-          const timer = setTimeout(() => checkImportantNotices(id), 5 * 60 * 1000);
-          return () => clearTimeout(timer);
+          // Usamos window.setTimeout para evitar conflito com tipos de retorno
+          noticeTimer = window.setTimeout(() => checkImportantNotices(id), 5 * 60 * 1000);
       }
     }
+    
     setIsCheckingAuth(false);
 
     const handleNav = (e: any) => {
         if (e.detail) setCurrentView(e.detail);
     };
     window.addEventListener('pcn_navigate', handleNav);
-    return () => window.removeEventListener('pcn_navigate', handleNav);
+    
+    return () => {
+        window.removeEventListener('pcn_navigate', handleNav);
+        if (noticeTimer) window.clearTimeout(noticeTimer);
+    };
   }, []);
 
   const checkImportantNotices = async (uid: string) => {
@@ -131,7 +138,7 @@ const App: React.FC = () => {
         onToggle={setIsSidebarOpen}
       />
 
-      {/* Header Mobile - AGORA FIXO */}
+      {/* Header Mobile - FIXO */}
       <header className="lg:hidden bg-slate-900/95 backdrop-blur-md text-white p-4 flex items-center justify-between sticky top-0 z-[100] shadow-xl border-b border-white/5">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-sm shadow-lg shadow-blue-500/20">CN</div>
