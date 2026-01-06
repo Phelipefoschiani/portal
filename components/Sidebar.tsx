@@ -101,6 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-campaigns', label: 'Análise Campanhas', icon: ShieldCheck, hasAlert: investmentAlert },
     { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, hasAlert: forecastAlert },
     { id: 'admin-notifications', label: 'Gestão Notificações', icon: Bell },
+    { id: 'admin-users', label: 'Gestão Acessos', icon: Lock },
   ];
 
   const menuItems = userRole === 'admin' ? adminMenuItems : repMenuItems;
@@ -152,7 +153,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 <div className="flex items-center gap-1.5">
                   {item.hasAlert && <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>}
-                  {item.badge !== undefined && item.badge > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">{item.badge}</span>}
+                  {item.badge !== undefined && item.badge > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-50 text-[10px] font-bold text-white">{item.badge}</span>}
                 </div>
               </button>
             );

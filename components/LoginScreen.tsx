@@ -45,7 +45,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       await supabase
         .from('usuarios')
         .update({ 
-          status_online: true, 
           ultimo_acesso: new Date().toISOString() 
         })
         .eq('id', data.id);

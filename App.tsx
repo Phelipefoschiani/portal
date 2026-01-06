@@ -28,6 +28,7 @@ import { ManagerTargetsScreen } from './components/manager/ManagerTargetsScreen'
 import { ManagerImportScreen } from './components/manager/ManagerImportScreen';
 import { ManagerAnalysisScreen } from './components/manager/ManagerAnalysisScreen';
 import { ManagerDetailedAnalysisScreen } from './components/manager/ManagerDetailedAnalysisScreen';
+import { ManagerUsersScreen } from './components/manager/ManagerUsersScreen';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -97,9 +98,6 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    if (userId) {
-      await supabase.from('usuarios').update({ status_online: false }).eq('id', userId);
-    }
     sessionStorage.removeItem('pcn_session');
     setIsAuthenticated(false);
     setIsHydrated(false);
@@ -201,6 +199,7 @@ const App: React.FC = () => {
                 {currentView === 'admin-campaigns' && <ManagerCampaignsScreen />}
                 {currentView === 'admin-forecast' && <ManagerForecastScreen />}
                 {currentView === 'admin-notifications' && <ManagerNotificationsScreen />}
+                {currentView === 'admin-users' && <ManagerUsersScreen />}
                 {currentView === 'admin-clients' && <ManagerClientsScreen />}
                 {currentView === 'admin-targets' && <ManagerTargetsScreen />}
                </>
