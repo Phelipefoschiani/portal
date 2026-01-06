@@ -16,6 +16,7 @@ interface GroupData {
     quantidade: number;
     pedidos: number;
     parentTotal: number;
+    skuSet: Set<string>; // Armazena SKUs únicos para contagem
     children?: Map<string, GroupData>;
 }
 
@@ -25,22 +26,18 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const userRole = session.role as 'admin' | 'rep';
     const isAdmin = userRole === 'admin';
     
-    // 1. Estados de Filtros de Tempo
     const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const [showYearDropdown, setShowYearDropdown] = useState(false);
 
-    // 2. Estados de Filtros de Entidade
     const [filterReps, setFilterReps] = useState<string[]>([]);
     const [filterCanais, setFilterCanais] = useState<string[]>([]);
     const [filterGrupos, setFilterGrupos] = useState<string[]>([]);
     
-    // 3. Estados de Dropdown
     const [activeDropdown, setActiveDropdown] = useState<'dims' | 'reps' | 'canais' | 'grupos' | null>(null);
 
-    // 4. Estados de Estrutura
     const [rowDimensions, setRowDimensions] = useState<Dimension[]>([]);
     const [displayMode, setDisplayMode] = useState<'value' | 'percent'>('value');
     const [searchTerm, setSearchTerm] = useState('');
@@ -88,21 +85,17 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         setShowMonthDropdown(false);
     };
 
-    // PROCESSAMENTO DO BI HIERÁRQUICO COM BUSCA DE NOME POR CNPJ
     const processedBI = useMemo(() => {
         let sales = totalDataStore.sales;
-        if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0 } };
+        if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0 } };
 
         const usersMap = new Map(totalDataStore.users.map(u => [u.id, u.nome]));
-        
-        // Mapa de CNPJ -> Nome (da carteira de clientes) para garantir identificação
         const clientNameLookup = new Map();
         totalDataStore.clients.forEach(c => {
             const clean = String(c.cnpj || '').replace(/\D/g, '');
             clientNameLookup.set(clean, c.nome_fantasia);
         });
 
-        // Filtros Globais
         sales = sales.filter(s => {
             const d = new Date(s.data + 'T00:00:00');
             const m = d.getUTCMonth() + 1;
@@ -120,12 +113,16 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         const tree = new Map<string, GroupData>();
         let grandTotalFaturamento = 0;
         let grandTotalQuantidade = 0;
+        const grandTotalSkuSet = new Set<string>();
 
         sales.forEach(sale => {
             const fat = Number(sale.faturamento) || 0;
             const qtd = Number(sale.qtde_faturado) || 0;
+            const skuId = sale.codigo_produto || sale.produto || 'N/I';
+            
             grandTotalFaturamento += fat;
             grandTotalQuantidade += qtd;
+            grandTotalSkuSet.add(skuId);
 
             let currentLevel = tree;
             rowDimensions.forEach((dim, idx) => {
@@ -147,6 +144,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         quantidade: 0,
                         pedidos: 0,
                         parentTotal: 0,
+                        skuSet: new Set(),
                         children: idx < rowDimensions.length - 1 ? new Map() : undefined
                     });
                 }
@@ -155,6 +153,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 node.faturamento += fat;
                 node.quantidade += qtd;
                 node.pedidos += 1;
+                node.skuSet.add(skuId);
 
                 if (node.children) {
                     currentLevel = node.children;
@@ -170,6 +169,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 flatList.push({
                     ...node,
                     hierarchyLabels: currentLabels,
+                    skusCount: node.skuSet.size,
                     participation: parentTotalValue > 0 ? (node.faturamento / parentTotalValue) * 100 : 100
                 });
                 if (node.children) {
@@ -187,7 +187,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
         return {
             items: filteredList,
-            totals: { faturamento: grandTotalFaturamento, quantidade: grandTotalQuantidade }
+            totals: { faturamento: grandTotalFaturamento, quantidade: grandTotalQuantidade, skus: grandTotalSkuSet.size }
         };
     }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, rowDimensions, searchTerm, isAdmin]);
 
@@ -202,6 +202,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 obj[dim.toUpperCase()] = row.hierarchyLabels[idx] || '';
             });
             obj['FATURAMENTO'] = row.faturamento;
+            obj['QTD_SKU'] = row.skusCount;
             obj['VOLUME_UN'] = row.quantidade;
             obj['PART_NO_PAI_PERCENT'] = row.participation.toFixed(2) + '%';
             return obj;
@@ -390,6 +391,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                             <tr className="text-slate-400 text-[10px] font-black uppercase tracking-widest">
                                 <th className="px-8 py-5">Destrinchamento Hierárquico</th>
                                 <th className="px-6 py-5 text-right">Faturamento</th>
+                                <th className="px-6 py-5 text-center">Qtd de Sku</th>
                                 <th className="px-6 py-5 text-center">Volume (Un)</th>
                                 <th className="px-8 py-5 text-right">Part. no Pai (%)</th>
                             </tr>
@@ -397,7 +399,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         <tbody className="divide-y divide-slate-50">
                             {processedBI.items.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="px-8 py-40 text-center text-slate-300">
+                                    <td colSpan={5} className="px-8 py-40 text-center text-slate-300">
                                         <BarChart4 className="w-20 h-20 mx-auto opacity-10 mb-4" />
                                         <p className="text-[11px] font-black uppercase tracking-[0.4em]">
                                             {rowDimensions.length === 0 ? "Defina as camadas de linhas para processar" : "Sem dados para o período"}
@@ -425,6 +427,9 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                                     <span className="text-xs font-black text-blue-600">{row.participation.toFixed(2)}%</span>
                                                 )}
                                             </td>
+                                            <td className="px-6 py-4 text-center tabular-nums text-xs font-black text-slate-900">
+                                                {row.skusCount.toLocaleString()}
+                                            </td>
                                             <td className="px-6 py-4 text-center tabular-nums text-xs font-bold text-slate-500">
                                                 {row.quantidade.toLocaleString()}
                                             </td>
@@ -451,6 +456,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                             <p className="text-xs font-bold text-slate-400">{selectedMonths.length === 12 ? 'ANO COMPLETO' : `${selectedMonths.length} Meses`} • {selectedYear}</p>
                         </div>
                         <div className="flex items-center gap-16">
+                            <div className="text-right">
+                                <p className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Mix (Skus)</p>
+                                <p className="text-2xl font-black tabular-nums">{processedBI.totals.skus.toLocaleString()}</p>
+                            </div>
                             <div className="text-right">
                                 <p className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Volume (Un)</p>
                                 <p className="text-2xl font-black tabular-nums">{processedBI.totals.quantidade.toLocaleString()}</p>
@@ -482,6 +491,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                     <tr className="border-b-2 border-slate-200 bg-slate-50 text-slate-400 uppercase text-[10px] font-black tracking-[0.2em]">
                                         <th className="py-4 px-3">Hierarquia Selecionada</th>
                                         <th className="py-4 px-3 text-right">Faturamento</th>
+                                        <th className="py-4 px-3 text-center">Mix SKU</th>
                                         <th className="py-4 px-3 text-center">Quantidade</th>
                                         <th className="py-4 px-3 text-right">Part % (Pai)</th>
                                     </tr>
@@ -493,6 +503,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                                 <span className="text-[10px] font-black uppercase text-slate-800">{row.label}</span>
                                             </td>
                                             <td className="py-4 px-3 text-right font-black text-slate-900">{formatBRL(row.faturamento)}</td>
+                                            <td className="py-4 px-3 text-center font-black text-slate-900">{row.skusCount}</td>
                                             <td className="py-4 px-3 text-center text-slate-600">{row.quantidade.toLocaleString()}</td>
                                             <td className="py-4 px-3 text-right font-black text-blue-600">{row.participation.toFixed(2)}%</td>
                                         </tr>
