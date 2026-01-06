@@ -16,7 +16,7 @@ interface GroupData {
     quantidade: number;
     pedidos: number;
     parentTotal: number;
-    skuSet: Set<string>; // Armazena SKUs únicos para contagem
+    skuSet: Set<string>; 
     children?: Map<string, GroupData>;
 }
 
@@ -322,7 +322,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
                             </button>
                             {showMonthDropdown && (
-                                <div className="absolute top-full left-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
+                                <div className="absolute top-full right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
                                     <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between gap-2">
                                         <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[9px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg">Todos</button>
                                         <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[9px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg">Limpar</button>

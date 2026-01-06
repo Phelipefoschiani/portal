@@ -80,18 +80,18 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                     return d.getUTCMonth() + 1 === month;
                 }) || [];
 
-                const mSales = mSalesList.reduce((a, b) => a + Number(b.faturamento), 0);
+                const mSales = mSalesList.reduce((a: number, b: any) => a + Number(b.faturamento), 0);
                 const mTarget = targets?.find(t => t.mes === month)?.valor || 0;
                 
                 const mPrevSales = prevSales.filter(s => {
                     const d = new Date(s.data + 'T00:00:00');
                     return d.getUTCMonth() + 1 === month;
-                }).reduce((a, b) => a + Number(b.faturamento), 0) || 0;
+                }).reduce((a: number, b: any) => a + Number(b.faturamento), 0) || 0;
 
                 const mInv = investments?.filter(inv => {
                     const d = new Date(inv.data + 'T00:00:00');
                     return d.getUTCMonth() + 1 === month;
-                }).reduce((a, b) => a + Number(b.valor_total_investimento), 0) || 0;
+                }).reduce((a: number, b: any) => a + Number(b.valor_total_investimento), 0) || 0;
 
                 const mPositive = new Set(mSalesList.map(s => cleanCnpj(s.cnpj))).size;
 
@@ -322,7 +322,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                                             </td>
                                             <td className="px-6 py-6 text-right text-amber-400 tabular-nums">{formatBRL(totalInv)}</td>
                                             <td className="px-6 py-6 text-right">
-                                                <span className="text-slate-400">{filteredMonthlyData.reduce((acc, curr) => acc + curr.positive, 0)} TOTAL</span>
+                                                <span className="text-slate-400">{filteredMonthlyData.reduce((acc: number, curr: any) => acc + curr.positive, 0)} TOTAL</span>
                                             </td>
                                         </tr>
                                     </tfoot>
