@@ -1,13 +1,265 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, BarChart3 as BarIcon, Share2, CalendarDays } from 'lucide-react';
+import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, BarChart3 as BarIcon, Share2, CalendarDays, BarChart4, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { totalDataStore } from '../../lib/dataStore';
+import { Button } from '../Button';
 
 type KpiDetailType = 'meta' | 'faturado' | 'positivacao' | 'verba' | null;
+
+// --- NOVO MODAL DE ANÁLISE DE METAS (SAZONALIDADE E COMPARATIVO) ---
+const TargetsAnalysisModal: React.FC<{
+    year: number;
+    repId: string;
+    repName: string;
+    periodLabel: string;
+    onClose: () => void;
+    formatBRL: (v: number) => string;
+}> = ({ year, repId, repName, periodLabel, onClose, formatBRL }) => {
+    const [isExporting, setIsExporting] = useState(false);
+    const exportRef = useRef<HTMLDivElement>(null);
+
+    const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+    const analysisData = useMemo(() => {
+        const targets = totalDataStore.targets;
+        const sales = totalDataStore.sales;
+        
+        const filterByRep = (t: any) => repId === 'all' ? true : t.usuario_id === repId;
+
+        const currentYearTargets = targets.filter(t => t.ano === year && filterByRep(t));
+        const prevYearTargets = targets.filter(t => t.ano === (year - 1) && filterByRep(t));
+        
+        const prevYearRealSales = sales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            return d.getUTCFullYear() === (year - 1) && (repId === 'all' ? true : s.usuario_id === repId);
+        });
+
+        const annualTotal = currentYearTargets.reduce((acc, curr) => acc + Number(curr.valor), 0);
+        const prevAnnualTotal = prevYearTargets.reduce((acc, curr) => acc + Number(curr.valor), 0);
+        const prevAnnualRealSalesTotal = prevYearRealSales.reduce((acc, curr) => acc + Number(curr.faturamento), 0);
+
+        const rows = Array.from({ length: 12 }, (_, i) => {
+            const month = i + 1;
+            const mTarget = currentYearTargets.filter(t => t.mes === month).reduce((a, b) => a + Number(b.valor), 0);
+            const mPrevTarget = prevYearTargets.filter(t => t.mes === month).reduce((a, b) => a + Number(b.valor), 0);
+            
+            const mPrevRealSales = prevYearRealSales.filter(s => {
+                const d = new Date(s.data + 'T00:00:00');
+                return (d.getUTCMonth() + 1) === month;
+            }).reduce((a, b) => a + Number(b.faturamento), 0);
+            
+            return {
+                monthName: monthNames[i],
+                value: mTarget,
+                prevValue: mPrevTarget,
+                prevRealSales: mPrevRealSales,
+                refPercent: annualTotal > 0 ? (mTarget / annualTotal) * 100 : 0,
+                refVsPrevSales: mPrevRealSales > 0 ? ((mTarget / mPrevRealSales) - 1) * 100 : 0,
+                vsPrev: mPrevTarget > 0 ? ((mTarget / mPrevTarget) - 1) * 100 : 0,
+                hasPrev: mPrevTarget > 0,
+                hasPrevSales: mPrevRealSales > 0
+            };
+        });
+
+        return { rows, annualTotal, prevAnnualTotal, prevAnnualRealSalesTotal };
+    }, [year, repId]);
+
+    const handleDownloadPng = async () => {
+        if (!exportRef.current) return;
+        setIsExporting(true);
+        try {
+            await new Promise(r => setTimeout(r, 400));
+            const canvas = await html2canvas(exportRef.current, {
+                scale: 3,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                scrollX: 0,
+                scrollY: -window.scrollY,
+                onclone: (clonedDoc) => {
+                    const el = clonedDoc.getElementById('targets-analysis-export-root');
+                    if (el) {
+                        el.style.height = 'auto';
+                        el.style.maxHeight = 'none';
+                        el.style.overflow = 'visible';
+                        el.style.padding = '40px';
+                        const scrollArea = el.querySelector('.custom-scrollbar') as HTMLElement;
+                        if (scrollArea) {
+                            scrollArea.style.maxHeight = 'none';
+                            scrollArea.style.overflow = 'visible';
+                            scrollArea.style.height = 'auto';
+                        }
+                    }
+                }
+            });
+            const link = document.createElement('a');
+            link.download = `Analise_Estrategica_${repName.replace(/\s/g, '_')}_${year}.png`;
+            link.href = canvas.toDataURL('image/png', 1.0);
+            link.click();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const growthTotal = analysisData.prevAnnualTotal > 0 
+        ? ((analysisData.annualTotal / analysisData.prevAnnualTotal) - 1) * 100 
+        : 0;
+
+    const growthVsRealTotal = analysisData.prevAnnualRealSalesTotal > 0
+        ? ((analysisData.annualTotal / analysisData.prevAnnualRealSalesTotal) - 1) * 100
+        : 0;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-2 md:p-6 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+            <div className="bg-white w-full max-w-[1300px] rounded-[40px] shadow-2xl overflow-hidden animate-slideUp border border-white/20 flex flex-col max-h-[92vh]">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg">
+                            <BarChart4 className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Visão Analítica de Metas</h3>
+                            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1.5">{periodLabel}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={handleDownloadPng}
+                            disabled={isExporting}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all shadow-lg text-[10px] font-black uppercase tracking-widest"
+                        >
+                            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                            Salvar PNG Full
+                        </button>
+                        <button onClick={onClose} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-colors">
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto bg-white custom-scrollbar" ref={exportRef} id="targets-analysis-export-root">
+                    <div className="p-8 space-y-8 h-fit">
+                        {/* Título do Relatório */}
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b-2 border-slate-900 pb-6 gap-4">
+                            <div>
+                                <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.4em] block mb-2">Painel Estratégico de Planejamento Regional</span>
+                                <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">{repName}</h2>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2">Exercício Fiscal: {year} • Filtro: {periodLabel}</p>
+                            </div>
+                            <div className="flex gap-4">
+                                <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100 text-right min-w-[190px]">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Cota Projetada {year}</p>
+                                    <p className="text-xl font-black text-slate-900 tabular-nums">{formatBRL(analysisData.annualTotal)}</p>
+                                </div>
+                                <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100 text-right min-w-[190px]">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Realizado {year - 1}</p>
+                                    <p className="text-xl font-black text-slate-500 tabular-nums">{formatBRL(analysisData.prevAnnualRealSalesTotal)}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Tabela de Análise */}
+                        <div className="bg-white border border-slate-100 rounded-[32px] overflow-hidden shadow-sm">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    <tr className="border-b border-slate-200">
+                                        <th colSpan={3} className="px-8 py-3 text-left bg-white/50 border-r border-slate-100">Visão Planejada {year}</th>
+                                        <th colSpan={2} className="px-6 py-3 text-center bg-blue-100/30 text-blue-600 border-r border-slate-200 ring-inset ring-1 ring-blue-100">Referência Faturamento Ano Anterior</th>
+                                        <th colSpan={2} className="px-6 py-3 text-center bg-slate-100 text-slate-600">Referência Meta Ano Anterior</th>
+                                    </tr>
+                                    <tr className="border-b border-slate-200">
+                                        <th className="px-8 py-4">Mês Ref.</th>
+                                        <th className="px-6 py-4 text-right">Meta {year}</th>
+                                        <th className="px-6 py-4 text-center border-r border-slate-100">Ref. % Anual</th>
+                                        
+                                        <th className="px-6 py-4 text-center bg-blue-50/50 text-blue-700">Ref. Meta vs Ano ant</th>
+                                        <th className="px-6 py-4 text-right bg-blue-50/50 text-blue-700 border-r border-slate-200">Fat. Ano Ant.</th>
+                                        
+                                        <th className="px-6 py-4 text-center">Vs Meta Ant.</th>
+                                        <th className="px-8 py-4 text-right">Cota {year - 1}</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {analysisData.rows.map((row, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
+                                            <td className="px-8 py-4">
+                                                <span className="font-black text-slate-700 uppercase text-[11px] tracking-tight group-hover:text-blue-600">{row.monthName}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <span className="font-black text-slate-900 text-xs tabular-nums">{formatBRL(row.value)}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-center border-r border-slate-100">
+                                                <span className="text-[11px] font-black text-slate-400 tabular-nums">{row.refPercent.toFixed(2)}%</span>
+                                            </td>
+                                            
+                                            {/* Bloco Azul de Faturamento */}
+                                            <td className="px-6 py-4 text-center bg-blue-50/10">
+                                                {row.hasPrevSales ? (
+                                                    <div className={`inline-flex items-center gap-1 font-black text-[10px] tabular-nums ${row.refVsPrevSales >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                                                        {row.refVsPrevSales >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                                        {Math.abs(row.refVsPrevSales).toFixed(2)}%
+                                                    </div>
+                                                ) : <span className="text-slate-200">--</span>}
+                                            </td>
+                                            <td className="px-6 py-4 text-right bg-blue-50/10 border-r border-slate-200">
+                                                <span className="font-bold text-slate-500 text-xs tabular-nums">{formatBRL(row.prevRealSales)}</span>
+                                            </td>
+
+                                            {/* Bloco de Meta Anterior */}
+                                            <td className="px-6 py-4 text-center">
+                                                {row.hasPrev ? (
+                                                    <div className={`inline-flex items-center gap-1 font-black text-[10px] tabular-nums ${row.vsPrev >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                        {row.vsPrev >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                                        {Math.abs(row.vsPrev).toFixed(2)}%
+                                                    </div>
+                                                ) : <span className="text-slate-200">--</span>}
+                                            </td>
+                                            <td className="px-8 py-4 text-right">
+                                                <span className="font-bold text-slate-300 text-xs tabular-nums">{formatBRL(row.prevValue)}</span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="bg-slate-900 text-white border-t-4 border-blue-600">
+                                    <tr className="text-[11px] font-black uppercase tracking-widest">
+                                        <td className="px-8 py-6 text-blue-400">Total Acumulado</td>
+                                        <td className="px-6 py-6 text-right tabular-nums font-black">{formatBRL(analysisData.annualTotal)}</td>
+                                        <td className="px-6 py-6 text-center border-r border-white/5">100.00%</td>
+                                        <td className="px-6 py-6 text-center bg-blue-600/10">
+                                            <div className={`font-black tabular-nums ${growthVsRealTotal >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+                                                {growthVsRealTotal.toFixed(2)}% VS REAL
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-6 text-right bg-blue-600/10 border-r border-white/5 text-slate-400 tabular-nums">{formatBRL(analysisData.prevAnnualRealSalesTotal)}</td>
+                                        <td className="px-6 py-6 text-center">
+                                            <div className={`flex items-center justify-center gap-1 tabular-nums ${growthTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                {growthTotal.toFixed(2)}% VARIAÇÃO
+                                            </div>
+                                        </td>
+                                        <td className="px-8 py-6 text-right tabular-nums text-slate-400">{formatBRL(analysisData.prevAnnualTotal)}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        {/* Rodapé Interno */}
+                        <div className="flex justify-between items-center opacity-30 pt-4">
+                            <p className="text-[9px] font-black uppercase tracking-[0.5em] text-slate-500 italic">Portal Centro-Norte • Inteligência Competitiva v3.1</p>
+                            <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black">CN</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
 
 const KpiDetailModal: React.FC<{ 
     type: KpiDetailType; 
@@ -203,6 +455,7 @@ export const ManagerDashboard: React.FC = () => {
     const rankingRef = useRef<HTMLDivElement>(null);
     const [isExportingRanking, setIsExportingRanking] = useState(false);
     const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailType>(null);
+    const [showTargetsAnalysis, setShowTargetsAnalysis] = useState(false);
     const [teamDetails, setTeamDetails] = useState<any[]>([]);
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -295,8 +548,16 @@ export const ManagerDashboard: React.FC = () => {
 
     const getMonthsLabel = () => {
         if (selectedMonths.length === 0) return "Nenhum Selecionado";
-        if (selectedMonths.length === 1) return monthNames[selectedMonths[0] - 1].toUpperCase();
         if (selectedMonths.length === 12) return "ANO COMPLETO";
+        
+        const sorted = [...selectedMonths].sort((a,b) => a-b);
+        const isContinuous = sorted.every((val, i) => i === 0 || val === sorted[i-1] + 1);
+        
+        if (isContinuous && sorted.length > 1) {
+            return `${monthNames[sorted[0]-1].toUpperCase()}-${monthNames[sorted[sorted.length-1]-1].toUpperCase()}`;
+        }
+        
+        if (selectedMonths.length === 1) return monthNames[selectedMonths[0] - 1].toUpperCase();
         return `${selectedMonths.length} MESES SELECIONADOS`;
     };
 
@@ -351,15 +612,27 @@ export const ManagerDashboard: React.FC = () => {
         }
     };
 
+    const currentRepName = selectedRepId === 'all' ? 'Equipe Toda' : teamDetails.find(r => r.id === selectedRepId)?.nome || 'Representante';
+
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
-            <header className="flex flex-col lg:flex-row justify-between items-end gap-6">
-                <div>
-                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise Regional</h2>
-                    <p className="text-[10px] font-black text-slate-400 mt-2 flex items-center gap-2 uppercase tracking-widest text-left">
-                        <Calendar className="w-3.5 h-3.5 text-blue-500" /> 
-                        Período: {selectedMonths.length === 0 ? '---' : selectedMonths.sort((a,b) => a-b).map(m => monthShort[m-1]).join(', ')} de {selectedYear}
-                    </p>
+            <header className="flex flex-col lg:flex-row justify-between items-end gap-6 px-4">
+                <div className="flex flex-col md:flex-row items-center gap-4">
+                    <div className="min-w-[200px]">
+                        <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise Regional</h2>
+                        <p className="text-[10px] font-black text-slate-400 mt-2 flex items-center gap-2 uppercase tracking-widest text-left truncate max-w-[250px]">
+                            <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" /> 
+                            {getMonthsLabel()} de {selectedYear}
+                        </p>
+                    </div>
+                    {/* BOTÃO ANÁLISE DE METAS */}
+                    <button 
+                        onClick={() => setShowTargetsAnalysis(true)}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 text-[10px] font-black uppercase tracking-widest"
+                    >
+                        <Target className="w-4 h-4" />
+                        Análise de Metas
+                    </button>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
                     <div className="relative flex-1 lg:flex-none">
@@ -425,7 +698,12 @@ export const ManagerDashboard: React.FC = () => {
                                     {monthNames.map((m, i) => (
                                         <button 
                                             key={i} 
-                                            onClick={() => toggleTempMonth(i + 1)}
+                                            onClick={() => {
+                                                const mNum = i + 1;
+                                                setTempSelectedMonths(prev => 
+                                                    prev.includes(mNum) ? prev.filter(x => x !== mNum) : [...prev, mNum].sort((a,b) => a-b)
+                                                );
+                                            }}
                                             className={`flex items-center gap-2 p-2 rounded-xl text-[10px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
                                         >
                                             {tempSelectedMonths.includes(i + 1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
@@ -461,7 +739,7 @@ export const ManagerDashboard: React.FC = () => {
                     <h3 className={`text-2xl font-black ${pctMeta >= 100 ? 'text-blue-600' : 'text-red-600'}`}>{formatBRL(displayData.totalFaturado)}</h3>
                     <div className="mt-4 flex items-center justify-between">
                         <span className={`text-[10px] font-black uppercase ${pctMeta >= 100 ? 'text-blue-600' : 'text-red-600'}`}>
-                            {pctMeta.toFixed(1)}% Alcançado
+                            {pctMeta.toFixed(2)}% Alcançado
                         </span>
                     </div>
                 </div>
@@ -545,7 +823,7 @@ export const ManagerDashboard: React.FC = () => {
                                                 data-success={isSuccess ? 'true' : 'false'}
                                                 style={{ opacity: 1 }}
                                             >
-                                                {rep.pct.toFixed(1)}%
+                                                {rep.pct.toFixed(2)}%
                                             </span>
                                             <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter whitespace-nowrap">{formatBRL(rep.faturado)}</span>
                                         </div>
@@ -571,7 +849,7 @@ export const ManagerDashboard: React.FC = () => {
                     <div className="mt-12 pt-6 border-t border-slate-100 flex justify-center">
                         <div className="bg-slate-50 px-8 py-3 rounded-2xl border border-slate-100 shadow-sm">
                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                Eficiência Média Regional: <span className="text-blue-600 ml-1 text-xs">{pctMeta.toFixed(1)}%</span>
+                                Eficiência Média Regional: <span className="text-blue-600 ml-1 text-xs">{pctMeta.toFixed(2)}%</span>
                              </p>
                         </div>
                     </div>
@@ -587,6 +865,17 @@ export const ManagerDashboard: React.FC = () => {
                     periodLabel={getMonthsLabel()}
                 />,
                 document.body
+            )}
+
+            {showTargetsAnalysis && (
+                <TargetsAnalysisModal 
+                    year={selectedYear}
+                    repId={selectedRepId}
+                    repName={currentRepName}
+                    periodLabel={getMonthsLabel()}
+                    onClose={() => setShowTargetsAnalysis(false)}
+                    formatBRL={formatBRL}
+                />
             )}
         </div>
     );
