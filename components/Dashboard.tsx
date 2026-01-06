@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Users, AlertCircle, Calendar, DollarSign, RefreshCw, CheckCircle2, Award, ChevronDown, CheckSquare, Square, RotateCcw, Filter, CalendarDays } from 'lucide-react';
+import { Target, TrendingUp, Users, AlertCircle, Calendar, DollarSign, RefreshCw, CheckCircle2, Award, ChevronDown, CheckSquare, Square, RotateCcw, Filter, CalendarDays, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { NonPositivizedModal } from './NonPositivizedModal';
 import { PositivizedModal } from './PositivizedModal';
 import { RepPerformanceModal } from './manager/RepPerformanceModal';
@@ -59,11 +59,23 @@ export const Dashboard: React.FC = () => {
     const salesCnpjs = new Set(filteredSales.map(s => cleanCnpj(s.cnpj)));
     const positivadosCount = clients.filter(c => salesCnpjs.has(cleanCnpj(c.cnpj))).length;
 
+    // Cálculo Crescimento vs Ano Anterior (Mesmo Período)
+    const prevYearSales = sales.filter(s => {
+        const d = new Date(s.data + 'T00:00:00');
+        const m = d.getUTCMonth() + 1;
+        const y = d.getUTCFullYear();
+        return s.usuario_id === userId && selectedMonths.includes(m) && y === (selectedYear - 1);
+    });
+    const totalPrevFaturado = prevYearSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+    const growthPercent = totalPrevFaturado > 0 ? ((totalFaturado / totalPrevFaturado) - 1) * 100 : 0;
+
     return {
       meta: totalMeta,
       faturado: totalFaturado,
       clientesPositivados: positivadosCount,
-      totalClientes: clients.length
+      totalClientes: clients.length,
+      growthPercent,
+      hasPrevData: totalPrevFaturado > 0
     };
   }, [selectedMonths, selectedYear, userId]);
 
@@ -178,6 +190,13 @@ export const Dashboard: React.FC = () => {
             <div>
               <h3 className="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em]">Objetivo do Período</h3>
               <p className="text-2xl md:text-4xl font-black text-slate-900 leading-none mt-1 md:mt-2">{formatCurrency(data.meta)}</p>
+              
+              {data.hasPrevData && (
+                  <div className={`mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter ${data.growthPercent >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                    {data.growthPercent >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                    {Math.abs(data.growthPercent).toFixed(1)}% vs Ano Ant.
+                  </div>
+              )}
             </div>
           </div>
           <div className="w-full md:w-auto text-center md:text-right bg-slate-50 px-6 py-4 md:px-8 md:py-4 rounded-2xl md:rounded-3xl border border-slate-100">
@@ -203,7 +222,7 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <div onClick={() => setShowPositivizedModal(true)} className="bg-white rounded-[32px] md:rounded-[40px] p-6 md:p-8 shadow-sm border border-slate-200 flex items-center justify-between group cursor-pointer hover:border-blue-400 transition-all active:scale-95">
           <div className="min-w-0 flex-1">
-            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 md:mb-2">Positivados Únicos</p>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 md:mb-2">Positivados</p>
             <div className="flex items-baseline gap-2">
               <h4 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">{data.clientesPositivados}</h4>
               <span className="text-slate-400 font-bold text-base md:text-lg">/ {data.totalClientes}</span>
@@ -219,7 +238,7 @@ export const Dashboard: React.FC = () => {
 
         <div onClick={() => setShowNonPositivizedModal(true)} className="bg-white rounded-[32px] md:rounded-[40px] p-6 md:p-8 shadow-sm border border-slate-200 flex items-center justify-between group cursor-pointer hover:border-amber-400 transition-all active:scale-95">
           <div className="min-w-0 flex-1">
-            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 md:mb-2">Pendentes Únicos</p>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 md:mb-2">Pendentes</p>
             <h4 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">{data.totalClientes - data.clientesPositivados}</h4>
              <div className="mt-4 md:mt-5 inline-flex items-center text-[9px] md:text-[10px] font-black text-amber-700 bg-amber-50 px-3 py-2 md:px-4 rounded-xl border border-amber-100 uppercase tracking-widest">
               <AlertCircle className="w-3.5 h-3.5 mr-2 shrink-0" /> Detalhar Lista
@@ -231,8 +250,8 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {showNonPositivizedModal && <NonPositivizedModal onClose={() => setShowNonPositivizedModal(false)} />}
-      {showPositivizedModal && <PositivizedModal onClose={() => setShowPositivizedModal(false)} />}
+      {showNonPositivizedModal && <NonPositivizedModal onClose={() => setShowNonPositivizedModal(false)} selectedMonths={selectedMonths} selectedYear={selectedYear} />}
+      {showPositivizedModal && <PositivizedModal onClose={() => setShowPositivizedModal(false)} selectedMonths={selectedMonths} selectedYear={selectedYear} />}
       {showPerformanceModal && (
         <RepPerformanceModal 
           rep={{ id: userId, nome: userName }} 

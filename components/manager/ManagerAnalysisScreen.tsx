@@ -389,7 +389,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
             <header className="flex flex-col md:flex-row justify-between items-end gap-6 px-4">
                 <div>
-                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise de Performance</h2>
+                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise Comercial</h2>
                     <p className="text-[10px] font-black text-slate-400 uppercase mt-2 flex items-center gap-2 uppercase tracking-widest">
                         <BarChart3 className="w-3.5 h-3.5 text-blue-500" /> Evolução de Metas Regional
                     </p>
