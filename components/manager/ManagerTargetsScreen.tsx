@@ -1,433 +1,363 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Target, Users, Calendar, TrendingUp, ChevronRight, Loader2, Calculator, Percent, Save, CheckCircle2, AlertCircle, BarChart3, ChevronDown, ListTodo, Database, RefreshCw, ArrowRightLeft, Wand2, Building2, Search, Zap, CheckCircle, Cloud, DollarSign, Eye, X, Info, Download } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Target, Users, Calendar, TrendingUp, ChevronRight, Loader2, Calculator, Percent, Save, CheckCircle2, AlertCircle, BarChart3, ChevronDown, ListTodo, Database, RefreshCw, ArrowRightLeft, Wand2, Building2, Search, Zap, CheckCircle, Cloud, DollarSign, Eye, X, Info, Download, Wand, AlertTriangle, LayoutGrid, ArrowDown, User, Layers, History, Play } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
+import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
-import html2canvas from 'html2canvas';
 
 type TabType = 'team' | 'clients';
+
+const MonthlyCard: React.FC<{
+    month: string;
+    weight: number;
+    totalTarget: number;
+    onChangeWeight: (val: number) => void;
+    onChangeValue: (valStr: string) => void;
+}> = ({ month, weight, totalTarget, onChangeWeight, onChangeValue }) => {
+    const value = (weight / 100) * totalTarget;
+    const [localValue, setLocalValue] = useState('');
+
+    useEffect(() => {
+        setLocalValue(new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value));
+    }, [value]);
+
+    return (
+        <div className="bg-slate-50 p-4 rounded-[24px] border border-slate-100 flex flex-col gap-2 group hover:border-blue-200 transition-all">
+            <span className="text-[10px] font-black text-slate-400 uppercase text-center group-hover:text-blue-600">{month}</span>
+            <div className="flex items-center gap-1 bg-white rounded-xl px-2 py-1.5 border border-slate-200 shadow-sm">
+                <span className="text-[8px] font-black text-slate-300 uppercase">Peso</span>
+                <input type="number" step="0.01" value={weight || ''} onChange={(e) => onChangeWeight(Number(e.target.value))} className="w-full bg-transparent text-center text-xs font-black text-slate-900 outline-none" placeholder="0,00" />
+                <span className="text-[10px] font-bold text-slate-300">%</span>
+            </div>
+            <div className="flex items-center gap-1 bg-blue-600/5 rounded-xl px-2 py-1.5 border border-blue-100/50 focus-within:border-blue-400 focus-within:bg-white shadow-sm transition-all">
+                <span className="text-[8px] font-black text-blue-300 uppercase">R$</span>
+                <input type="text" value={localValue} onChange={(e) => { setLocalValue(e.target.value); onChangeValue(e.target.value); }} className="w-full bg-transparent text-center text-[10px] font-black text-blue-600 outline-none tabular-nums" placeholder="0,00" />
+            </div>
+        </div>
+    );
+};
 
 export const ManagerTargetsScreen: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabType>('team');
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [managerTotalTarget, setManagerTotalTarget] = useState<number>(0);
-    const [displayTarget, setDisplayTarget] = useState<string>('0,00');
-    const [isLoading, setIsLoading] = useState(false);
+    const [displayTarget, setDisplayTarget] = useState('0,00');
     
+    const [regionalMonthlyWeights, setRegionalMonthlyWeights] = useState<number[]>(new Array(12).fill(0));
     const [reps, setReps] = useState<any[]>([]);
     const [repShares, setRepShares] = useState<Record<string, number>>({}); 
-    const [monthlyWeights, setMonthlyWeights] = useState<Record<string, number[]>>({}); 
+    const [monthlyRepShares, setMonthlyRepShares] = useState<Record<string, number[]>>({}); 
     const [savedReps, setSavedReps] = useState<Set<string>>(new Set());
     const [expandedRepId, setExpandedRepId] = useState<string | null>(null);
-    const [isSavingAll, setIsSavingAll] = useState(false);
     const [isSavingId, setIsSavingId] = useState<string | null>(null);
 
     const [selectedRepId, setSelectedRepId] = useState<string>('');
-    const [clientData, setClientData] = useState<any[]>([]);
-    const [clientShares, setClientShares] = useState<Record<string, number>>({});
-    const [repAnnualHistory, setRepAnnualHistory] = useState({ year1: 0, year2: 0 });
-    const [isClientsLoading, setIsClientsLoading] = useState(false);
-    const [clientSearch, setClientSearch] = useState('');
-    const [previewClient, setPreviewClient] = useState<any | null>(null);
-    const [isExporting, setIsExporting] = useState(false);
-    const previewRef = useRef<HTMLDivElement>(null);
+    const [isGeneratingAll, setIsGeneratingAll] = useState(false);
+    const [genProgress, setGenProgress] = useState(0);
+    const [clientEngineeringData, setClientEngineeringData] = useState<any[]>([]);
+    const [isLoadingClients, setIsLoadingClients] = useState(false);
 
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
     const availableYears = [2024, 2025, 2026, 2027];
 
-    useEffect(() => {
-        fetchInitialData();
-    }, [selectedYear]);
+    useEffect(() => { fetchInitialData(); }, [selectedYear]);
+    useEffect(() => { if (activeTab === 'clients' && selectedRepId) fetchClientWeights(); }, [selectedRepId, activeTab, selectedYear]);
 
     useEffect(() => {
-        if (selectedRepId && activeTab === 'clients') {
-            fetchClientHistory();
-        }
-    }, [selectedRepId, selectedYear]);
-
-    // Lógica para capturar importação de Previsão enviada pelo Gestor
-    useEffect(() => {
-        const importDataRaw = sessionStorage.getItem('pcn_import_engineering');
-        if (importDataRaw) {
-            const data = JSON.parse(importDataRaw);
-            setSelectedRepId(data.repId);
-            setActiveTab('clients');
-            
-            // Note: O carregamento dos valores importados será feito dentro de fetchClientHistory
-            // após os dados de faturamento serem carregados para o rep correto.
-        }
-    }, []);
-
-    useEffect(() => {
-        const formatted = new Intl.NumberFormat('pt-BR', { 
-            minimumFractionDigits: 2, 
-            maximumFractionDigits: 2 
-        }).format(managerTotalTarget);
+        const formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(managerTotalTarget);
         setDisplayTarget(formatted);
     }, [managerTotalTarget]);
 
-    const handleDisplayTargetChange = (val: string) => {
-        const cleanValue = val.replace(/\D/g, '');
+    const handleDisplayTargetChange = (valStr: string) => {
+        const cleanValue = valStr.replace(/\D/g, '');
         const numericValue = parseFloat(cleanValue) / 100 || 0;
         setManagerTotalTarget(numericValue);
     };
 
     const fetchInitialData = async () => {
-        setIsLoading(true);
         try {
-            const { data: repsData } = await supabase
-                .from('usuarios')
-                .select('id, nome, nivel_acesso')
-                .not('nivel_acesso', 'ilike', 'admin')
-                .not('nivel_acesso', 'ilike', 'gerente')
-                .order('nome');
-
+            const { data: repsData } = await supabase.from('usuarios').select('id, nome, nivel_acesso').not('nivel_acesso', 'ilike', 'admin').not('nivel_acesso', 'ilike', 'gerente').order('nome');
             const { data: targetsData } = await supabase.from('metas_usuarios').select('*').eq('ano', selectedYear);
-            
             setReps(repsData || []);
-            const initialShares: Record<string, number> = {};
-            const initialWeights: Record<string, number[]> = {};
-            const syncedReps = new Set<string>();
-            
             const totalYear = targetsData?.reduce((acc, curr) => acc + Number(curr.valor), 0) || 0;
-            setManagerTotalTarget(totalYear);
-
+            if (totalYear > 0) {
+                setManagerTotalTarget(totalYear);
+                const regWeights = new Array(12).fill(0);
+                for(let i=0; i<12; i++) {
+                    const monthTotal = targetsData?.filter(t => t.mes === i+1).reduce((acc, curr) => acc + Number(curr.valor), 0) || 0;
+                    regWeights[i] = (monthTotal / totalYear) * 100;
+                }
+                setRegionalMonthlyWeights(regWeights);
+            }
+            const initialGlobalShares: Record<string, number> = {};
+            const initialMonthlyShares: Record<string, number[]> = {};
+            const syncedReps = new Set<string>();
             repsData?.forEach(rep => {
                 const repItems = targetsData?.filter(t => t.usuario_id === rep.id) || [];
                 if (repItems.length > 0) syncedReps.add(rep.id);
-                
                 const repTotal = repItems.reduce((acc, curr) => acc + Number(curr.valor), 0);
-                initialShares[rep.id] = totalYear > 0 ? Number(((repTotal / totalYear) * 100).toFixed(2)) : 0;
-                
-                const weights = new Array(12).fill(0);
+                initialGlobalShares[rep.id] = totalYear > 0 ? (repTotal / totalYear) * 100 : 0;
+                const shares = new Array(12).fill(0);
                 repItems.forEach(t => { 
-                    weights[t.mes - 1] = repTotal > 0 ? Number(((Number(t.valor) / repTotal) * 100).toFixed(2)) : 0; 
+                    const monthRegTotal = targetsData?.filter(mt => mt.mes === t.mes).reduce((acc, curr) => acc + Number(curr.valor), 0) || 0;
+                    shares[t.mes - 1] = monthRegTotal > 0 ? (Number(t.valor) / monthRegTotal) * 100 : 0; 
                 });
-                initialWeights[rep.id] = weights;
+                initialMonthlyShares[rep.id] = shares;
             });
-
-            setRepShares(initialShares);
-            setMonthlyWeights(initialWeights);
+            setRepShares(initialGlobalShares);
+            setMonthlyRepShares(initialMonthlyShares);
             setSavedReps(syncedReps);
-        } catch (e) { console.error(e); } finally { setIsLoading(false); }
+        } catch (e) { console.error(e); }
     };
 
-    const fetchAllSalesPaged = async (repId: string, start: string, end: string) => {
-        let allSales: any[] = [];
-        let from = 0;
-        let to = 999;
-        let hasMore = true;
-        while (hasMore) {
-            const { data, error } = await supabase.from('dados_vendas').select('faturamento, cnpj, data').eq('usuario_id', repId).gte('data', start).lte('data', end).range(from, to);
-            if (error) throw error;
-            if (data && data.length > 0) {
-                allSales = [...allSales, ...data];
-                if (data.length < 1000) hasMore = false;
-                from += 1000;
-                to += 1000;
-            } else { hasMore = false; }
-        }
-        return allSales;
-    };
-
-    const fetchClientHistory = async () => {
-        setIsClientsLoading(true);
+    const fetchClientWeights = async () => {
+        setIsLoadingClients(true);
         try {
-            const year1 = Number(selectedYear) - 1;
-            const year2 = Number(selectedYear) - 2;
-            const { data: clients } = await supabase.from('clientes').select('id, nome_fantasia, cnpj').eq('usuario_id', selectedRepId).order('nome_fantasia');
-            const salesArray = await fetchAllSalesPaged(selectedRepId, `${year2}-01-01`, `${year1}-12-31`);
-            const { data: existingClientTargets } = await supabase.from('metas_clientes').select('valor, cliente_id').eq('ano', selectedYear);
-
-            const totalRepYear1 = salesArray.filter(s => new Date(s.data + 'T00:00:00').getFullYear() === year1).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
-            const totalRepYear2 = salesArray.filter(s => new Date(s.data + 'T00:00:00').getFullYear() === year2).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
-            setRepAnnualHistory({ year1: totalRepYear1, year2: totalRepYear2 });
-
-            const repShareValue = Number(repShares[selectedRepId] || 0);
-            const repAnnualForRep = (repShareValue / 100) * managerTotalTarget;
-
-            // Verificar se temos uma importação pendente na sessão
-            const importDataRaw = sessionStorage.getItem('pcn_import_engineering');
-            let importedMap = new Map<string, number>();
-            if (importDataRaw) {
-                const data = JSON.parse(importDataRaw);
-                if (data.repId === selectedRepId) {
-                    data.clients.forEach((c: any) => importedMap.set(c.id, c.value));
-                    sessionStorage.removeItem('pcn_import_engineering'); // Limpa após usar
-                }
-            }
-
-            const clientStats = (clients || []).map(c => {
-                const cleanCnpj = c.cnpj.replace(/\D/g, '');
-                const salesValueYear1 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data + 'T00:00:00').getFullYear() === year1).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
-                const salesValueYear2 = salesArray.filter(s => s.cnpj.replace(/\D/g, '') === cleanCnpj && new Date(s.data + 'T00:00:00').getFullYear() === year2).reduce((acc: number, curr: any) => acc + (Number(curr.faturamento) || 0), 0);
-                
-                // Prioridade: 1. Valor importado agora, 2. Valor já salvo no banco
-                const savedTotal = importedMap.has(c.id) ? importedMap.get(c.id)! : ((existingClientTargets || []) as any[]).filter(t => t.cliente_id === c.id).reduce((acc: number, curr: any) => acc + (Number(curr.valor) || 0), 0);
-                
-                return {
-                    ...c,
-                    valYear1: salesValueYear1,
-                    valYear2: salesValueYear2,
-                    shareYear1: totalRepYear1 > 0 ? (salesValueYear1 / totalRepYear1) * 100 : 0,
-                    shareYear2: totalRepYear2 > 0 ? (salesValueYear2 / totalRepYear2) * 100 : 0,
-                    currentShare: repAnnualForRep > 0 ? (savedTotal / repAnnualForRep) * 100 : 0,
-                    isConfigured: savedTotal > 0
-                };
-            });
-
-            setClientData(clientStats);
-            const initialClientShares: Record<string, number> = {};
-            clientStats.forEach(c => { initialClientShares[c.id] = Number(c.currentShare.toFixed(2)); });
-            setClientShares(initialClientShares);
+            const prevYear = selectedYear - 1;
+            const sales = totalDataStore.sales;
+            const clients = totalDataStore.clients.filter(c => c.usuario_id === selectedRepId);
             
-            if (importedMap.size > 0) alert('Previsão do representante carregada com sucesso! Revise e sincronize.');
+            // Faturamento Total do Representante no ano anterior
+            const repTotalPrev = sales.filter(s => {
+                const d = new Date(s.data + 'T00:00:00');
+                return s.usuario_id === selectedRepId && d.getUTCFullYear() === prevYear;
+            }).reduce((a, b) => a + Number(b.faturamento), 0);
 
-        } catch (e) { console.error(e); } finally { setIsClientsLoading(false); }
+            const engineering = clients.map(client => {
+                const cleanCnpj = String(client.cnpj || '').replace(/\D/g, '');
+                const clientSalesPrev = sales.filter(s => {
+                    const d = new Date(s.data + 'T00:00:00');
+                    return String(s.cnpj || '').replace(/\D/g, '') === cleanCnpj && d.getUTCFullYear() === prevYear;
+                }).reduce((a, b) => a + Number(b.faturamento), 0);
+
+                const weight = repTotalPrev > 0 ? (clientSalesPrev / repTotalPrev) : 0;
+                return { ...client, salesPrev: clientSalesPrev, weight: weight };
+            }).filter(c => c.weight > 0).sort((a, b) => b.salesPrev - a.salesPrev);
+
+            setClientEngineeringData(engineering);
+        } catch (e) { console.error(e); } finally { setIsLoadingClients(false); }
     };
 
-    const handleApplyAverage = () => {
-        const newShares: Record<string, number> = {};
-        clientData.forEach(c => {
-            const avg = (c.shareYear1 + c.shareYear2) / 2;
-            newShares[c.id] = Number(avg.toFixed(2));
-        });
-        setClientShares(newShares);
-    };
-
-    const handleSaveClientTargets = async () => {
-        const totalShare = (Object.values(clientShares) as number[]).reduce((a, b) => a + (b || 0), 0);
-        if (totalShare < 99.9) {
-            alert(`A alocação deve ser no mínimo 100.00%. Atualmente: ${totalShare.toFixed(2)}%`);
+    const handleGenerateAll = async () => {
+        if (!selectedRepId) {
+            alert('Por favor, selecione um representante primeiro.');
             return;
         }
 
-        setIsSavingId('clients-all');
-        try {
-            const repShareValue = Number(repShares[selectedRepId] || 0);
-            const repAnnualValue = (repShareValue / 100) * managerTotalTarget;
-            const repWeights = monthlyWeights[selectedRepId] || new Array(12).fill(0);
-            
-            const inserts: any[] = [];
-            clientData.forEach(client => {
-                const share = Number(clientShares[client.id] || 0);
-                const clientAnnualTotal = (share / 100) * repAnnualValue;
-                
-                repWeights.forEach((weight, idx) => {
-                    const monthVal = (Number(weight) / 100) * clientAnnualTotal;
-                    inserts.push({
-                        cliente_id: client.id,
-                        mes: idx + 1,
-                        ano: selectedYear,
-                        valor: Math.round(monthVal * 100) / 100
-                    });
-                });
-            });
+        if (clientEngineeringData.length === 0) {
+            alert('Nenhum cliente com peso histórico encontrado para este representante.');
+            return;
+        }
 
-            const clientIds = clientData.map(c => c.id);
-            await supabase.from('metas_clientes').delete().in('cliente_id', clientIds).eq('ano', selectedYear);
-            
-            if (inserts.length > 0) {
-                const { error } = await supabase.from('metas_clientes').insert(inserts);
-                if (error) throw error;
+        // Abre o modal de progresso IMEDIATAMENTE
+        setIsGeneratingAll(true);
+        setGenProgress(0);
+
+        try {
+            // 1. Busca metas mensais do representante
+            const { data: repMonthlyTargets, error: repError } = await supabase
+                .from('metas_usuarios')
+                .select('mes, valor')
+                .eq('usuario_id', selectedRepId)
+                .eq('ano', selectedYear);
+
+            if (repError) throw repError;
+
+            if (!repMonthlyTargets || repMonthlyTargets.length === 0) {
+                setIsGeneratingAll(false);
+                alert('ERRO: O representante selecionado não possui metas salvas para ' + selectedYear + '. \n\nDefina as metas na aba "Metas por Equipe" antes de gerar a engenharia.');
+                return;
             }
-            await fetchClientHistory();
-            alert(`Engenharia de Carteira sincronizada com sucesso!`);
-        } catch (e) { console.error(e); alert('Erro ao salvar.'); }
-        finally { setIsSavingId(null); }
+
+            // 2. Prepara limpeza da carteira
+            const clientIds = clientEngineeringData.map(c => c.id);
+            await supabase.from('metas_clientes').delete().in('cliente_id', clientIds).eq('ano', selectedYear);
+
+            // 3. Processamento com Delay de UX (5 segundos)
+            const totalClients = clientEngineeringData.length;
+            const delayStep = 5000 / totalClients;
+
+            for (let i = 0; i < totalClients; i++) {
+                const client = clientEngineeringData[i];
+                
+                // Calcula meta para os 12 meses do cliente baseado no seu peso histórico
+                const inserts = repMonthlyTargets.map(t => ({
+                    cliente_id: client.id,
+                    mes: t.mes,
+                    ano: selectedYear,
+                    valor: Math.round(Number(t.valor) * client.weight * 100) / 100
+                })).filter(ins => ins.valor >= 0);
+
+                if (inserts.length > 0) {
+                    await supabase.from('metas_clientes').insert(inserts);
+                }
+
+                // Atualiza progresso e espera o delay para dar o efeito visual
+                setGenProgress(Math.round(((i + 1) / totalClients) * 100));
+                await new Promise(resolve => setTimeout(resolve, delayStep));
+            }
+
+            // Finaliza
+            setGenProgress(100);
+            setTimeout(() => {
+                setIsGeneratingAll(false);
+                alert('Engenharia de Carteira concluída com sucesso para ' + totalClients + ' clientes!');
+            }, 500);
+
+        } catch (e: any) {
+            console.error(e);
+            setIsGeneratingAll(false);
+            alert('Falha crítica na Engenharia: ' + e.message);
+        }
+    };
+
+    const handleGenerateSingle = async (client: any) => {
+        try {
+            const { data: repMonthlyTargets } = await supabase.from('metas_usuarios').select('mes, valor').eq('usuario_id', selectedRepId).eq('ano', selectedYear);
+            if (!repMonthlyTargets || repMonthlyTargets.length === 0) {
+                alert('Defina a meta do representante primeiro.');
+                return;
+            }
+            
+            const inserts = repMonthlyTargets.map(t => ({
+                cliente_id: client.id,
+                mes: t.mes,
+                ano: selectedYear,
+                valor: Math.round(Number(t.valor) * client.weight * 100) / 100
+            })).filter(i => i.valor > 0);
+
+            await supabase.from('metas_clientes').delete().eq('cliente_id', client.id).eq('ano', selectedYear);
+            if (inserts.length > 0) await supabase.from('metas_clientes').insert(inserts);
+            alert(`Metas projetadas para ${client.nome_fantasia}`);
+        } catch(e) { console.error(e); }
+    };
+
+    const handleRegionalWeightChange = (idx: number, val: number) => {
+        const newWeights = [...regionalMonthlyWeights];
+        newWeights[idx] = val;
+        setRegionalMonthlyWeights(newWeights);
+    };
+
+    const handleRegionalValueChange = (idx: number, valStr: string) => {
+        const cleanValue = valStr.replace(/\D/g, '');
+        const numericValue = parseFloat(cleanValue) / 100 || 0;
+        if (managerTotalTarget > 0) {
+            const newPct = (numericValue / managerTotalTarget) * 100;
+            handleRegionalWeightChange(idx, newPct);
+        }
     };
 
     const handleSaveIndividual = async (repId: string) => {
-        const share = Number(repShares[repId] || 0);
-        const weights = monthlyWeights[repId] || new Array(12).fill(0);
-        const sumWeights = weights.reduce((a, b) => a + (b || 0), 0);
-        if (share === 0) { alert('Defina um Share para o representante.'); return; }
-        if (Math.abs(sumWeights - 100) > 0.01) { alert(`A soma dos meses deve ser exatamente 100% (Atual: ${sumWeights.toFixed(2)}%)`); return; }
-        
+        const shares = monthlyRepShares[repId] || new Array(12).fill(0);
         setIsSavingId(repId);
         try {
-            const repAnnualValue = (share / 100) * managerTotalTarget;
-            const inserts = weights.map((pct, idx) => ({ 
-                usuario_id: repId, 
-                mes: idx + 1, 
-                ano: selectedYear, 
-                valor: Math.round((Number(pct) / 100) * repAnnualValue * 100) / 100 
-            })).filter(i => i.valor > 0);
+            const inserts = shares.map((pct, idx) => {
+                const regionalMonthValue = (regionalMonthlyWeights[idx] / 100) * managerTotalTarget;
+                return { usuario_id: repId, mes: idx + 1, ano: selectedYear, valor: Math.round((pct / 100) * regionalMonthValue * 100) / 100 };
+            }).filter(i => i.valor > 0);
+
             await supabase.from('metas_usuarios').delete().eq('usuario_id', repId).eq('ano', selectedYear);
             if (inserts.length > 0) await supabase.from('metas_usuarios').insert(inserts);
-            
             setSavedReps(prev => new Set(prev).add(repId));
-            alert('Sazonalidade do representante atualizada!');
+            alert('Metas salvas com sucesso!');
         } catch (e) { console.error(e); } finally { setIsSavingId(null); }
     };
 
-    const handleSaveAll = async () => {
-        const totalShare = (Object.values(repShares) as number[]).reduce((acc: number, curr: number) => acc + (curr || 0), 0);
-        if (totalShare < 99.9) { alert('A soma dos shares da equipe deve ser no mínimo 100.00%'); return; }
-        for (const rep of reps) {
-            const share = Number(repShares[rep.id] || 0);
-            if (share > 0) {
-                const weights = monthlyWeights[rep.id] || new Array(12).fill(0);
-                const sumW = weights.reduce((a, b) => a + (b || 0), 0);
-                if (Math.abs(sumW - 100) > 0.05) {
-                    alert(`O representante ${rep.nome} está com a soma mensal em ${sumW.toFixed(2)}%. Ajuste para 100% antes de sincronizar.`);
-                    return;
-                }
-            }
-        }
-        setIsSavingAll(true);
-        try {
-            const allInserts: any[] = [];
-            for (const rep of reps) {
-                const share = Number(repShares[rep.id] || 0);
-                const weights = monthlyWeights[rep.id] || new Array(12).fill(0);
-                const repAnnualValue = (share / 100) * managerTotalTarget;
-                weights.forEach((pct, idx) => {
-                    const val = Math.round((Number(pct) / 100) * repAnnualValue * 100) / 100;
-                    if (val > 0) allInserts.push({ usuario_id: rep.id, mes: idx + 1, ano: selectedYear, valor: val });
-                });
-            }
-            const repIds = reps.map(r => r.id);
-            await supabase.from('metas_usuarios').delete().in('usuario_id', repIds).eq('ano', selectedYear);
-            if (allInserts.length > 0) await supabase.from('metas_usuarios').insert(allInserts);
-            setSavedReps(new Set(reps.map(r => r.id)));
-            alert('Equipe Completa Sincronizada!');
-        } catch (error: any) { console.error(error); } finally { setIsSavingAll(false); }
-    };
-
-    const handleDownloadPreview = async () => {
-        if (!previewRef.current) return;
-        setIsExporting(true);
-        try {
-            const canvas = await html2canvas(previewRef.current, {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: '#ffffff',
-                logging: false,
-                onclone: (clonedDoc) => {
-                   const header = clonedDoc.getElementById('preview-header-export');
-                   if (header) header.style.display = 'block';
-                   const el = clonedDoc.getElementById('preview-export-container');
-                   if (el) {
-                       el.style.padding = '40px';
-                       el.style.borderRadius = '0';
-                   }
-                }
-            });
-            const link = document.createElement('a');
-            link.download = `Sazonalidade_${previewClient.nome_fantasia.replace(/\s/g, '_')}_${selectedYear}.png`;
-            link.href = canvas.toDataURL('image/png', 1.0);
-            link.click();
-        } catch (e) {
-            console.error('Erro ao exportar PNG:', e);
-        } finally {
-            setIsExporting(false);
-        }
-    };
-
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
-    const totalRepShare: number = (Object.values(repShares) as number[]).reduce((a: number, b: number) => (a || 0) + (b || 0), 0);
-    const totalClientShare: number = (Object.values(clientShares) as number[]).reduce((a: number, b: number) => (a || 0) + (b || 0), 0);
-
-    const pendingClients = clientData.filter(c => c.nome_fantasia.toLowerCase().includes(clientSearch.toLowerCase())).sort((a,b) => b.valYear1 - a.valYear1);
+    const sumRegionalWeights = Number(regionalMonthlyWeights.reduce((a, b) => a + (Number(b) || 0), 0).toFixed(2));
 
     return (
-        <div className="w-full max-w-6xl mx-auto space-y-4 animate-fadeIn pb-32 text-slate-900">
-            <div className="flex justify-center mb-6">
-                <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1">
-                    <button onClick={() => setActiveTab('team')} className={`px-8 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'team' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-                        Engenharia de Equipe
-                    </button>
-                    <button onClick={() => setActiveTab('clients')} className={`px-8 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'clients' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-                        Engenharia de Carteira
-                    </button>
+        <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-32 text-slate-900">
+            <header className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-8 justify-between">
+                <div className="flex items-center gap-4">
+                    <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl shadow-blue-100"><LayoutGrid className="w-6 h-6" /></div>
+                    <div>
+                        <h2 className="text-xl font-black tracking-tight uppercase leading-none">Regional Centro-Norte</h2>
+                        <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2 flex items-center">
+                            Ano Base: 
+                            <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="ml-2 bg-blue-50 text-blue-600 px-3 py-1 rounded-lg border-none font-black outline-none cursor-pointer text-[11px]">
+                                {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                        </div>
+                    </div>
                 </div>
-            </div>
+
+                <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0">
+                    <button onClick={() => setActiveTab('team')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'team' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Metas por Equipe</button>
+                    <button onClick={() => setActiveTab('clients')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'clients' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Metas por Cliente</button>
+                </div>
+
+                <div className="flex-1 max-w-sm w-full bg-slate-900 p-5 rounded-3xl text-white flex items-center justify-between border border-white/10 shadow-2xl">
+                    <div className="flex-1">
+                        <p className="text-[9px] font-black text-blue-400 uppercase mb-2 tracking-[0.3em]">Meta Regional Anual</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-xl font-black text-white/20">R$</span>
+                            <input type="text" value={displayTarget} onChange={(e) => handleDisplayTargetChange(e.target.value)} className="bg-transparent border-none text-2xl font-black outline-none w-full text-white p-0 focus:ring-0 tabular-nums" placeholder="0,00" />
+                        </div>
+                    </div>
+                </div>
+            </header>
 
             {activeTab === 'team' ? (
-                <>
-                    <header className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-8 justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl shadow-blue-100"><BarChart3 className="w-6 h-6" /></div>
-                            <div>
-                                <h2 className="text-xl font-black tracking-tight uppercase leading-none">Equipe Regional</h2>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2 flex items-center">
-                                    Ano Base: 
-                                    <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="ml-2 bg-blue-50 text-blue-600 px-3 py-1 rounded-lg border-none font-black outline-none cursor-pointer text-[11px]">
-                                        {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                                    </select>
-                                </p>
+                <div className="space-y-6 animate-slideUp">
+                    <div className="space-y-3 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-between px-2 mb-4">
+                            <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-blue-600" />
+                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sazonalidade Regional (Peso Mensal)</h3>
                             </div>
+                            <p className={`text-[10px] font-black tabular-nums ${Math.abs(sumRegionalWeights - 100) < 0.05 ? 'text-emerald-500' : 'text-red-400'}`}>Soma: {sumRegionalWeights.toFixed(2)}%</p>
                         </div>
-                        <div className="flex-1 max-w-lg w-full bg-slate-900 p-5 rounded-3xl text-white flex items-center justify-between border border-white/10 shadow-2xl">
-                            <div className="flex-1">
-                                <p className="text-[9px] font-black text-blue-400 uppercase mb-2 tracking-[0.3em]">Meta Total Anual Planejada</p>
-                                <div className="flex items-baseline gap-2">
-                                    <span className="text-xl font-black text-white/20">R$</span>
-                                    <input type="text" value={displayTarget} onChange={(e) => handleDisplayTargetChange(e.target.value)} className="bg-transparent border-none text-3xl font-black outline-none w-full text-white p-0 focus:ring-0 tabular-nums" placeholder="0,00" />
-                                </div>
-                            </div>
-                            <div className="text-right pl-6 border-l border-white/10 ml-4">
-                                <p className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Alocação</p>
-                                <p className={`text-xl font-black tabular-nums ${totalRepShare >= 99.9 ? 'text-emerald-400' : 'text-red-400'}`}>{totalRepShare.toFixed(2)}%</p>
-                            </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                            {months.map((m, i) => (
+                                <MonthlyCard key={i} month={m} weight={regionalMonthlyWeights[i] || 0} totalTarget={managerTotalTarget} onChangeWeight={(v) => handleRegionalWeightChange(i, v)} onChangeValue={(v) => handleRegionalValueChange(i, v)} />
+                            ))}
                         </div>
-                    </header>
+                    </div>
 
                     <div className="space-y-3">
                         {reps.map(rep => {
-                            const share = Number(repShares[rep.id] || 0);
-                            const repAnnual = (share / 100) * managerTotalTarget;
+                            const globalShare = repShares[rep.id] || 0;
                             const isExpanded = expandedRepId === rep.id;
-                            const currentWeights = monthlyWeights[rep.id] || new Array(12).fill(0);
+                            const monthlyShares = monthlyRepShares[rep.id] || new Array(12).fill(0);
                             const isSynced = savedReps.has(rep.id);
-                            const sumWeights = currentWeights.reduce((a, b) => a + (b || 0), 0);
                             return (
                                 <div key={rep.id} className={`bg-white rounded-[24px] border transition-all ${isExpanded ? 'border-blue-500 ring-4 ring-blue-50 shadow-xl' : isSynced ? 'border-emerald-100' : 'border-slate-200 shadow-sm'}`}>
                                     <div className="p-4 flex items-center justify-between gap-6">
                                         <div className="flex items-center gap-4 flex-1 min-w-0">
-                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm shadow-inner transition-colors ${isExpanded ? 'bg-blue-600 text-white' : isSynced ? 'bg-emerald-600 text-white' : 'bg-slate-50 text-slate-300'}`}>
-                                                {rep.nome.charAt(0)}
-                                            </div>
-                                            <div className="truncate">
-                                                <h4 className="font-black text-slate-800 uppercase text-xs truncate tracking-tight">{rep.nome}</h4>
-                                                <p className="text-[11px] font-bold text-blue-600 tabular-nums mt-0.5">{formatBRL(repAnnual)}</p>
-                                            </div>
+                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm transition-colors ${isExpanded ? 'bg-blue-600 text-white' : isSynced ? 'bg-emerald-600 text-white' : 'bg-slate-50 text-slate-300'}`}>{rep.nome.charAt(0)}</div>
+                                            <div className="truncate"><h4 className="font-black text-slate-800 uppercase text-xs truncate">{rep.nome}</h4><p className="text-[11px] font-bold text-blue-600 tabular-nums">{formatBRL((globalShare / 100) * managerTotalTarget)}/Ano</p></div>
                                         </div>
                                         <div className="flex items-center gap-6">
                                             <div className="flex flex-col items-end">
-                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Cota Individual (%)</p>
-                                                <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100 focus-within:border-blue-300 transition-all">
-                                                    <input type="number" step="0.01" value={share || ''} onChange={(e) => setRepShares(prev => ({ ...prev, [rep.id]: Number(e.target.value) }))} className="w-12 bg-transparent text-sm font-black text-slate-900 outline-none text-center p-0" placeholder="0" />
-                                                    <Percent className="w-3.5 h-3.5 text-slate-300" />
+                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Cota Global (%)</p>
+                                                <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100 focus-within:border-blue-300">
+                                                    <input type="number" step="0.01" value={globalShare ? Number(globalShare.toFixed(2)) : ''} onChange={(e) => setRepShares(prev => ({ ...prev, [rep.id]: Number(e.target.value) }))} className="w-12 bg-transparent text-sm font-black text-slate-900 outline-none text-center p-0" /><Percent className="w-3.5 h-3.5 text-slate-300" />
                                                 </div>
                                             </div>
-                                            <button onClick={() => setExpandedRepId(isExpanded ? null : rep.id)} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase transition-all shadow-sm ${isExpanded ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
-                                                SAZONALIDADE <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                                            </button>
+                                            <button onClick={() => setExpandedRepId(isExpanded ? null : rep.id)} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase transition-all shadow-sm ${isExpanded ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>SAZONALIDADE <ChevronDown className={`w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>
                                         </div>
                                     </div>
                                     {isExpanded && (
-                                        <div className="p-6 border-t border-slate-100 bg-slate-50/50 animate-fadeIn">
-                                            <div className="flex justify-between items-center mb-6">
-                                                <div>
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Distribuição de Peso Mensal</p>
-                                                    <p className={`text-[10px] font-black mt-1 uppercase ${Math.abs(sumWeights - 100) < 0.1 ? 'text-emerald-600' : 'text-red-500'}`}>Soma Atual: {sumWeights.toFixed(2)}% (Deve ser 100%)</p>
+                                        <div className="p-6 border-t border-slate-100 bg-slate-50/50 animate-fadeIn space-y-6">
+                                            <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+                                                <div className="flex items-center gap-4"><div className="p-2 bg-blue-50 text-blue-600 rounded-xl"><Info className="w-4 h-4" /></div><p className="text-[10px] font-bold text-slate-500 uppercase leading-relaxed">Defina a participação do representante sobre o <span className="text-blue-600 font-black">Regional</span>.</p></div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => setMonthlyRepShares(prev => ({ ...prev, [rep.id]: new Array(12).fill(globalShare) }))} className="flex items-center gap-2 px-6 py-3 bg-white border border-blue-100 text-blue-600 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-50"><ArrowDown className="w-4 h-4" /> Aplicar Share</button>
+                                                    <Button size="sm" onClick={() => handleSaveIndividual(rep.id)} isLoading={isSavingId === rep.id} className="rounded-2xl px-8 h-12 font-black text-[10px] uppercase shadow-lg">Salvar</Button>
                                                 </div>
-                                                <Button size="sm" onClick={() => handleSaveIndividual(rep.id)} disabled={Math.abs(sumWeights - 100) > 0.1 || isSavingId === rep.id} isLoading={isSavingId === rep.id} className="rounded-2xl px-6 py-3 font-black text-[10px] tracking-widest shadow-lg">
-                                                    {isSynced ? 'ATUALIZAR' : 'CONFIRMAR'}
-                                                </Button>
                                             </div>
-                                            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
                                                 {months.map((m, i) => (
-                                                    <div key={i} className="p-3 bg-white border border-slate-200 rounded-[20px] shadow-sm hover:border-blue-200 transition-all">
-                                                        <p className="text-[9px] font-black text-slate-400 uppercase mb-2 text-center tracking-widest">{m}</p>
-                                                        <div className="flex items-center justify-center gap-1 mb-2">
-                                                            <input type="number" step="0.01" value={currentWeights[i] || ''} onChange={(e) => { const newW = [...currentWeights]; newW[i] = Number(e.target.value); setMonthlyWeights(prev => ({ ...prev, [rep.id]: newW })); }} className="w-full bg-slate-50 rounded-lg py-1 px-2 text-center text-xs font-black text-slate-900 outline-none" placeholder="0" />
-                                                            <span className="text-[10px] font-bold text-slate-300">%</span>
+                                                    <div key={i} className="p-4 bg-white border border-slate-200 rounded-[24px] shadow-sm">
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-3 text-center">{m}</p>
+                                                        <div className="space-y-3">
+                                                            <div className="flex items-center gap-1 bg-slate-50 rounded-xl px-2 py-1.5 border border-slate-100 focus-within:border-blue-400">
+                                                                <input type="number" step="0.01" value={monthlyShares[i] ? Number(monthlyShares[i].toFixed(2)) : ''} onChange={(e) => { const next = [...monthlyShares]; next[i] = Number(e.target.value); setMonthlyRepShares(prev => ({ ...prev, [rep.id]: next })); }} className="w-full bg-transparent text-center text-xs font-black text-slate-900 outline-none" placeholder="0,00" /><span className="text-[10px] font-bold text-slate-300">%</span>
+                                                            </div>
+                                                            <div className="bg-blue-50/30 rounded-xl py-1.5 px-1 text-center"><p className="text-[9px] font-black text-blue-600 tabular-nums">{formatBRL((monthlyShares[i] / 100) * ((regionalMonthlyWeights[i] / 100) * managerTotalTarget))}</p></div>
                                                         </div>
-                                                        <p className="text-[9px] font-black text-blue-600 text-center truncate">{formatBRL((Number(currentWeights[i]) / 100) * repAnnual)}</p>
                                                     </div>
                                                 ))}
                                             </div>
@@ -437,165 +367,84 @@ export const ManagerTargetsScreen: React.FC = () => {
                             );
                         })}
                     </div>
-                </>
+                </div>
             ) : (
-                <>
-                    <header className="space-y-4">
-                        <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-8 justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl shadow-blue-100"><Building2 className="w-6 h-6" /></div>
-                                <div>
-                                    <h2 className="text-xl font-black tracking-tight uppercase leading-none">Carteira Estratégica</h2>
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Ano Meta: 
-                                        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="ml-2 bg-blue-50 text-blue-600 px-3 py-1 rounded-lg border-none font-black outline-none cursor-pointer">
-                                            {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                                        </select>
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex-1 max-sm">
-                                <select value={selectedRepId} onChange={(e) => setSelectedRepId(e.target.value)} className="w-full bg-slate-900 text-white border-none rounded-2xl px-6 py-4 text-xs font-black uppercase tracking-[0.2em] outline-none focus:ring-4 focus:ring-blue-100 shadow-2xl">
-                                    <option value="">SELECIONE O REPRESENTANTE...</option>
-                                    {reps.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+                <div className="space-y-6 animate-slideUp">
+                    <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-8">
+                        <div className="flex-1">
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center gap-3"><Building2 className="w-6 h-6 text-blue-600" /> Engenharia de Carteira</h3>
+                            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-2">Distribua a meta mensal do representante entre seus clientes baseada no faturamento histórico do ano anterior.</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <select value={selectedRepId} onChange={(e) => setSelectedRepId(e.target.value)} className="pl-10 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black uppercase outline-none focus:ring-4 focus:ring-blue-100 min-w-[240px]">
+                                    <option value="">Selecione o Representante...</option>
+                                    {reps.map(r => <option key={r.id} value={r.id}>{r.nome.toUpperCase()}</option>)}
                                 </select>
                             </div>
+                            <Button onClick={handleGenerateAll} disabled={!selectedRepId || isGeneratingAll} className="h-12 px-8 rounded-2xl font-black uppercase text-[10px] shadow-xl shadow-blue-500/20">
+                                <Zap className="w-4 h-4 mr-2" /> Gerar Todas as Metas da Carteira
+                            </Button>
                         </div>
-                    </header>
+                    </div>
 
-                    {selectedRepId && (
-                        <div className="bg-white p-5 rounded-[24px] border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
-                            <div className="relative flex-1 w-full">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input type="text" placeholder="Pesquisar cliente na carteira..." value={clientSearch} onChange={e => setClientSearch(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-12 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"/>
-                            </div>
-                            <button onClick={handleApplyAverage} className="w-full md:w-auto bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 border border-blue-100">
-                                <Wand2 className="w-4 h-4" /> Sugerir Automático
-                            </button>
-                        </div>
-                    )}
-
-                    {!selectedRepId ? (
-                        <div className="p-32 text-center bg-white rounded-[40px] border-2 border-slate-100 border-dashed animate-pulse">
-                            <Users className="w-16 h-16 text-slate-100 mx-auto mb-6" />
-                            <p className="text-slate-300 font-black uppercase text-xs tracking-[0.4em]">Selecione um representante para mapear carteira</p>
-                        </div>
-                    ) : isClientsLoading ? (
-                        <div className="p-32 text-center">
-                            <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
-                            <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Analisando volumes financeiros históricos...</p>
+                    {selectedRepId ? (
+                        <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    <tr><th className="px-8 py-6">Cliente / CNPJ</th><th className="px-6 py-6 text-right">Faturado {selectedYear - 1}</th><th className="px-6 py-6 text-center">Peso (%)</th><th className="px-8 py-6 text-right">Ação</th></tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {isLoadingClients ? (
+                                        <tr><td colSpan={4} className="px-8 py-20 text-center"><Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto" /></td></tr>
+                                    ) : clientEngineeringData.length === 0 ? (
+                                        <tr><td colSpan={4} className="px-8 py-20 text-center text-slate-300 font-bold uppercase text-[10px]">Nenhum cliente com histórico de faturamento encontrado.</td></tr>
+                                    ) : (
+                                        clientEngineeringData.map((client, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                                                <td className="px-8 py-5"><p className="font-black text-slate-800 uppercase text-xs">{client.nome_fantasia}</p><p className="text-[9px] text-slate-400 font-bold">{client.cnpj}</p></td>
+                                                <td className="px-6 py-5 text-right font-bold text-slate-500 text-xs tabular-nums">{formatBRL(client.salesPrev)}</td>
+                                                <td className="px-6 py-5">
+                                                    <div className="flex flex-col items-center gap-1.5"><span className="text-[11px] font-black text-blue-600">{(client.weight * 100).toFixed(2)}%</span><div className="w-20 h-1 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-blue-600" style={{ width: `${client.weight * 100}%` }}></div></div></div>
+                                                </td>
+                                                <td className="px-8 py-5 text-right"><button onClick={() => handleGenerateSingle(client)} className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all shadow-sm"><RefreshCw className="w-3.5 h-3.5" /></button></td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     ) : (
-                        <div className="space-y-8 pb-32">
-                            <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden border-b-0">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 border-b border-slate-100 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">
-                                        <tr>
-                                            <th className="px-8 py-5">Cliente / Entidade</th>
-                                            <th className="px-6 py-5 text-right">Faturado {Number(selectedYear) - 2}</th>
-                                            <th className="px-6 py-5 text-right">Faturado {Number(selectedYear) - 1}</th>
-                                            <th className="px-8 py-5 text-center bg-blue-50/50 text-blue-600">Alocação Meta (%)</th>
-                                            <th className="px-8 py-5 text-right">Ação</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {pendingClients.map(c => {
-                                            const share = Number(clientShares[c.id] || 0);
-                                            const repShareVal = Number(repShares[selectedRepId] || 0);
-                                            const repAnnual = (repShareVal / 100) * managerTotalTarget;
-                                            const projected = (share / 100) * repAnnual;
-
-                                            return (
-                                                <tr key={c.id} className="hover:bg-slate-50 transition-colors group">
-                                                    <td className="px-8 py-5">
-                                                        <p className="font-black text-slate-800 uppercase text-xs tracking-tight group-hover:text-blue-600 transition-colors">{c.nome_fantasia}</p>
-                                                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">{c.cnpj}</p>
-                                                    </td>
-                                                    <td className="px-6 py-5 text-right font-bold text-slate-400 tabular-nums text-xs">{formatBRL(c.valYear2)}</td>
-                                                    <td className="px-6 py-5 text-right font-bold text-slate-400 tabular-nums text-xs">{formatBRL(c.valYear1)}</td>
-                                                    <td className="px-8 py-5 text-center bg-blue-50/30">
-                                                        <div className="flex items-center justify-center gap-2">
-                                                            <input type="number" step="0.01" value={share || ''} onChange={e => setClientShares(prev => ({ ...prev, [c.id]: Number(e.target.value) }))} className="w-16 bg-white border border-blue-200 rounded-xl px-2 py-1.5 text-center font-black text-blue-600 outline-none focus:ring-4 focus:ring-blue-100 shadow-sm" />
-                                                            <span className="text-[10px] font-black text-blue-300">%</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-8 py-5 text-right">
-                                                        <div className="flex items-center justify-end gap-3">
-                                                            <div className="text-right mr-2">
-                                                                <p className="text-[10px] font-black text-slate-900 tabular-nums">{formatBRL(projected)}</p>
-                                                            </div>
-                                                            <button onClick={() => setPreviewClient(c)} className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm group/btn"><Eye className="w-4 h-4" /></button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                        <div className="bg-slate-50 rounded-[40px] p-24 text-center border-2 border-dashed border-slate-200">
+                             <User className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+                             <p className="text-slate-400 font-bold uppercase text-xs tracking-[0.3em]">Selecione um representante para iniciar a engenharia</p>
                         </div>
                     )}
-                </>
+                </div>
             )}
 
-            {previewClient && createPortal(
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden animate-slideUp flex flex-col">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">{previewClient.nome_fantasia}</h3>
-                                <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Sazonalidade Mensal Simulada</p>
-                            </div>
-                            <button onClick={() => setPreviewClient(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
-                                <X className="w-6 h-6" />
-                            </button>
+            {isGeneratingAll && createPortal(
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white w-full max-w-sm rounded-[32px] p-10 shadow-2xl text-center border border-white/20">
+                        <div className="w-20 h-20 bg-blue-600 rounded-[28px] flex items-center justify-center mx-auto mb-8 shadow-xl shadow-blue-500/20">
+                            <RefreshCw className="w-12 h-12 text-white animate-spin" />
                         </div>
-                        <div className="p-8 overflow-y-auto bg-white" ref={previewRef} id="preview-export-container">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                {months.map((m, i) => {
-                                    const repWeight = Number(monthlyWeights[selectedRepId]?.[i] || 0);
-                                    const repShareVal = Number(repShares[selectedRepId] || 0);
-                                    const repAnnualForThisRep = (repShareVal / 100) * managerTotalTarget;
-                                    const clientShareVal = Number(clientShares[previewClient.id] || 0);
-                                    const clientAnnual = (clientShareVal / 100) * repAnnualForThisRep;
-                                    const monthTargetValue = (repWeight / 100) * clientAnnual;
-
-                                    return (
-                                        <div key={i} className="p-3 bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-blue-200 transition-all group">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <span className="text-[9px] font-black text-slate-400 uppercase">{m}</span>
-                                                <span className="text-[8px] font-black text-blue-500 bg-blue-50 px-1.5 rounded">{repWeight.toFixed(1)}%</span>
-                                            </div>
-                                            <p className="text-xs font-black text-slate-800 group-hover:text-blue-600 transition-colors">
-                                                {formatBRL(monthTargetValue)}
-                                            </p>
-                                        </div>
-                                    );
-                                })}
+                        <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Processando Engenharia</h3>
+                        <p className="text-[10px] text-slate-500 mt-2 font-black uppercase tracking-widest">Distribuindo metas por peso histórico...</p>
+                        <div className="mt-8 space-y-3">
+                            <div className="flex justify-between text-[10px] font-black uppercase text-blue-600 tracking-tighter">
+                                <span>Sincronizando Carteira</span>
+                                <span>{genProgress}%</span>
                             </div>
-                        </div>
-                        <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-                            <Button onClick={() => setPreviewClient(null)} variant="outline" className="rounded-xl px-8 h-10 font-black text-[10px] uppercase">Fechar</Button>
+                            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
+                                <div className="h-full bg-blue-600 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(37,99,235,0.4)]" style={{ width: `${genProgress}%` }}></div>
+                            </div>
                         </div>
                     </div>
                 </div>,
                 document.body
             )}
-
-            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 z-[100]">
-                <div className="bg-slate-900/95 backdrop-blur-2xl p-5 rounded-[32px] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex items-center justify-between gap-6">
-                    <div className="text-white">
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Alocação Total {selectedYear}</p>
-                        <p className={`text-md font-black tabular-nums ${ (activeTab === 'team' ? totalRepShare : totalClientShare) >= 99.9 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {(activeTab === 'team' ? totalRepShare : totalClientShare).toFixed(2)}% de Alocação
-                        </p>
-                    </div>
-                    {activeTab === 'team' ? (
-                        <Button onClick={handleSaveAll} disabled={totalRepShare < 99.9 || isSavingAll} isLoading={isSavingAll} className="rounded-[20px] px-10 h-14 font-black uppercase text-[11px] tracking-[0.2em] bg-blue-600 hover:bg-blue-500 shadow-2xl shadow-blue-900/40">Sincronizar Meta Equipe</Button>
-                    ) : (
-                        <Button onClick={handleSaveClientTargets} disabled={!selectedRepId || totalClientShare < 99.9 || isSavingId === 'clients-all'} isLoading={isSavingId === 'clients-all'} className="rounded-[20px] px-10 h-14 font-black uppercase text-[11px] tracking-[0.2em] bg-blue-600 hover:bg-blue-500 shadow-2xl shadow-blue-900/40">Sincronizar Carteira</Button>
-                    )}
-                </div>
-            </div>
         </div>
     );
 };
