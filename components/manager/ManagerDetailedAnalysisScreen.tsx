@@ -157,11 +157,11 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0 } };
 
         const usersMap = new Map(totalDataStore.users.map(u => [u.id, u.nome]));
-        const clientCnpjToId = new Map();
+        const clientLookup = new Map();
         
         totalDataStore.clients.forEach(c => {
             const clean = String(c.cnpj || '').replace(/\D/g, '');
-            clientCnpjToId.set(clean, c.id);
+            clientLookup.set(clean, c.nome_fantasia);
         });
 
         let filteredSales = sales.filter(s => {
@@ -178,32 +178,30 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             return true;
         });
 
+        // Lógica de Ranking aplicada à massa de clientes da seleção
         if (topLimit !== 'all' && filterClients.length === 0) {
-            const clientRankingMap = new Map<string, number>();
+            const rankingMap = new Map<string, number>();
             filteredSales.forEach(s => {
-                const cnpj = String(s.cnpj || '').replace(/\D/g, '');
-                const cId = clientCnpjToId.get(cnpj);
-                if (cId) {
-                    clientRankingMap.set(cId, (clientRankingMap.get(cId) || 0) + (Number(s.faturamento) || 0));
-                }
+                const clean = String(s.cnpj || '').replace(/\D/g, '');
+                rankingMap.set(clean, (rankingMap.get(clean) || 0) + (Number(s.faturamento) || 0));
             });
 
-            const topClientIds = Array.from(clientRankingMap.entries())
+            const topCnpjs = Array.from(rankingMap.entries())
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, Number(topLimit))
-                .map(entry => entry[0]);
+                .map(e => e[0]);
 
-            filteredSales = filteredSales.filter(s => {
-                const cId = clientCnpjToId.get(String(s.cnpj || '').replace(/\D/g, ''));
-                return cId && topClientIds.includes(cId);
-            });
+            filteredSales = filteredSales.filter(s => topCnpjs.includes(String(s.cnpj || '').replace(/\D/g, '')));
         }
 
+        // Filtro de Clientes Manuais
         if (filterClients.length > 0) {
-            filteredSales = filteredSales.filter(s => {
-                const cId = clientCnpjToId.get(String(s.cnpj || '').replace(/\D/g, ''));
-                return cId && filterClients.includes(cId);
-            });
+            const selectedCnpjs = new Set(
+                totalDataStore.clients
+                    .filter(c => filterClients.includes(c.id))
+                    .map(c => String(c.cnpj || '').replace(/\D/g, ''))
+            );
+            filteredSales = filteredSales.filter(s => selectedCnpjs.has(String(s.cnpj || '').replace(/\D/g, '')));
         }
 
         const tree = new Map<string, GroupData>();
@@ -227,7 +225,9 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 else if (dim === 'canal') key = sale.canal_vendas || 'GERAL';
                 else if (dim === 'grupo') key = sale.grupo || 'SEM GRUPO';
                 else if (dim === 'cliente') {
-                    key = (sale.cliente_nome || `CNPJ: ${sale.cnpj}`).trim().toUpperCase();
+                    const cnpjClean = String(sale.cnpj || '').replace(/\D/g, '');
+                    const name = clientLookup.get(cnpjClean) || sale.cliente_nome;
+                    key = (name || `CNPJ: ${sale.cnpj}`).trim().toUpperCase();
                 }
                 else if (dim === 'produto') key = sale.produto ? sale.produto.trim().toUpperCase() : 'ITEM SEM DESCRIÇÃO';
 
@@ -286,7 +286,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
-    const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, isSimple = false, disabled = false }: any) => (
+    const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, isSimple = false, disabled = false, openUp = false }: any) => (
         <div className={`relative group/filter flex items-center gap-1 ${disabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
             <button 
                 type="button"
@@ -324,7 +324,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             )}
 
             {activeDropdown === id && !disabled && (
-                <div className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[300] overflow-hidden animate-slideUp">
+                <div className={`absolute ${openUp ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[300] overflow-hidden animate-slideUp`}>
                     <div className="p-3 bg-slate-50 border-b border-slate-100">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
                     </div>
@@ -359,7 +359,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     <div className="p-3.5 bg-blue-600 text-white rounded-2xl shadow-xl"><Layers className="w-6 h-6" /></div>
                     <div>
                         <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Construtor de BI</h2>
-                        <p className="text-[10px] font-black text-slate-400 uppercase mt-1.5 tracking-[0.2em]">Engenharia de Dados Comercial</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase mt-1.5 tracking-[0.2em]">Inteligência de Vendas Regional</p>
                     </div>
                 </div>
                 <div className="flex gap-2">
@@ -424,7 +424,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 ...(isAdmin ? [{ id: 'representante', label: 'Representante' }] : []),
                                 { id: 'canal', label: 'Canal de Vendas' },
                                 { id: 'grupo', label: 'Grupo Econômico' },
-                                { id: 'cliente', label: 'Cliente (Indiv.)' },
+                                { id: 'cliente', label: 'Cliente (Nome)' },
                                 { id: 'produto', label: 'Produto (SKU)' },
                             ]} 
                             selected={rowDimensions} 
@@ -444,7 +444,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                             <FilterDropdown id="grupos" label="Grupos" icon={Boxes} options={filterOptions.grupos} selected={filterGrupos} onToggle={(val: any) => toggleFilter(filterGrupos, setFilterGrupos, val)} onClear={() => setFilterGrupos([])} />
                         </div>
 
-                        {/* Filtro Dinâmico de Clientes e Ranking - Exibidos um abaixo do outro se houver representantes */}
                         {filterReps.length > 0 && (
                             <div className="flex flex-col gap-4 pt-4 border-t border-slate-50 animate-fadeIn">
                                 <div className="flex flex-col gap-2">
@@ -457,6 +456,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                         selected={filterClients} 
                                         onToggle={(val: any) => toggleFilter(filterClients, setFilterClients, val)} 
                                         onClear={() => setFilterClients([])}
+                                        openUp={true}
                                     />
                                 </div>
 
@@ -479,6 +479,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                         selected={topLimit} 
                                         onToggle={(val: any) => setTopLimit(val)} 
                                         onClear={() => setTopLimit('all')} 
+                                        openUp={true}
                                     />
                                 </div>
                             </div>

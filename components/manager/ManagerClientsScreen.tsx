@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info, CalendarClock } from 'lucide-react';
+import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info, CalendarClock, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ClientDetailModal } from '../ClientDetailModal';
 import { totalDataStore } from '../../lib/dataStore';
@@ -10,8 +10,11 @@ export const ManagerClientsScreen: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [selectedRep, setSelectedRep] = useState('all');
     const [selectedChannel, setSelectedChannel] = useState('all');
+    const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedClient, setSelectedClient] = useState<any | null>(null);
+
+    const availableYears = [2024, 2025, 2026, 2027];
 
     // 1. Extrair canais únicos da base hidratada
     const channels = useMemo(() => {
@@ -39,10 +42,13 @@ export const ManagerClientsScreen: React.FC = () => {
 
         const filteredCnpjs = new Set(filteredClientsBase.map(c => String(c.cnpj || '').replace(/\D/g, '')));
 
-        // Filtro B: Vendas APENAS dos clientes filtrados acima para definir o 100% do grupo
+        // Filtro B: Vendas APENAS dos clientes filtrados acima e no ANO selecionado
         const relevantSales = sales.filter(s => {
             const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
-            return filteredCnpjs.has(cleanCnpj);
+            const matchClient = filteredCnpjs.has(cleanCnpj);
+            const saleDate = new Date(s.data + 'T00:00:00');
+            const matchYear = selectedYear === 'all' ? true : saleDate.getUTCFullYear() === selectedYear;
+            return matchClient && matchYear;
         });
 
         const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
@@ -77,7 +83,7 @@ export const ManagerClientsScreen: React.FC = () => {
             ranking,
             totalGroupFaturamento
         };
-    }, [selectedRep, selectedChannel, searchTerm]);
+    }, [selectedRep, selectedChannel, searchTerm, selectedYear]);
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
@@ -133,6 +139,19 @@ export const ManagerClientsScreen: React.FC = () => {
                         </select>
                     </div>
 
+                    {/* Filtro de Ano */}
+                    <div className="relative flex-1 lg:flex-none">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                        <select 
+                            value={selectedYear}
+                            onChange={(e) => setSelectedYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+                        >
+                            <option value="all">HISTÓRICO TOTAL</option>
+                            {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                    </div>
+
                     {/* Busca */}
                     <div className="relative flex-1 min-w-[200px]">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -157,7 +176,7 @@ export const ManagerClientsScreen: React.FC = () => {
                     <div className="flex items-center gap-3 bg-white/5 px-6 py-3 rounded-2xl border border-white/5">
                         <Info className="w-4 h-4 text-blue-400" />
                         <p className="text-[10px] font-bold text-slate-400 leading-tight">
-                            A porcentagem de participação abaixo refere-se à fatia <br/> que o cliente ocupa neste montante filtrado.
+                            A porcentagem de participação abaixo refere-se à fatia <br/> que o cliente ocupa neste montante filtrado de {selectedYear === 'all' ? 'todo o período' : selectedYear}.
                         </p>
                     </div>
                 </div>
@@ -172,7 +191,7 @@ export const ManagerClientsScreen: React.FC = () => {
                                 <th className="px-6 py-5">Última Compra</th>
                                 <th className="px-6 py-5">Representante</th>
                                 <th className="px-6 py-5">Canal</th>
-                                <th className="px-6 py-5 text-right">Faturamento Anual</th>
+                                <th className="px-6 py-5 text-right">Faturamento No Ano</th>
                                 <th className="px-8 py-5 text-right">Participação (%)</th>
                                 <th className="px-8 py-5 text-center">Ver</th>
                             </tr>
@@ -209,7 +228,8 @@ export const ManagerClientsScreen: React.FC = () => {
                                                     {client.participation.toFixed(2)}%
                                                 </span>
                                                 <div className="w-20 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(client.participation, 100)}%` }}></div>
+                                                    {/* Fixed malformed className and style attribute */}
+                                                    <div className="h-full bg-blue-500" style={{ width: `${Math.min(client.participation, 100)}%` }}></div>
                                                 </div>
                                             </div>
                                         </td>

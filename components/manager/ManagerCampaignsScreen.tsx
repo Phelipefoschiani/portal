@@ -140,7 +140,10 @@ export const ManagerCampaignsScreen: React.FC = () => {
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saldo de Investimento por Representante</span>
                         </div>
                         <select value={filterYear} onChange={e => setFilterYear(Number(e.target.value))} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-black uppercase outline-none">
-                            <option value={2024}>Ano 2024</option><option value={2025}>Ano 2025</option>
+                            <option value={2024}>Ano 2024</option>
+                            <option value={2025}>Ano 2025</option>
+                            <option value={2026}>Ano 2026</option>
+                            <option value={2027}>Ano 2027</option>
                         </select>
                     </div>
                     <div className="overflow-x-auto rounded-2xl border border-slate-100">

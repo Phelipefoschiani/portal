@@ -1,10 +1,11 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, FileDown, Package, Filter, Loader2 } from 'lucide-react';
+import { X, FileDown, Package, Filter, Loader2, FileSpreadsheet } from 'lucide-react';
 import { Button } from './Button';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx';
 
 interface ClientProductsModalProps {
   client: {
@@ -37,6 +38,26 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
     }
     return batches;
   }, [sortedProducts]);
+
+  const handleDownloadExcel = () => {
+    if (sortedProducts.length === 0) return;
+    
+    const excelData = sortedProducts.map(p => ({
+        "Produto": p.name,
+        "QTD": p.quantity,
+        "Valor Total": p.totalValue
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Mix de Produtos");
+    
+    // Auto-ajuste das colunas
+    const colWidths = [{ wch: 40 }, { wch: 10 }, { wch: 15 }];
+    ws['!cols'] = colWidths;
+
+    XLSX.writeFile(wb, `mix_produtos_${client.name.replace(/\s/g, '_')}.xlsx`);
+  };
 
   const handleDownloadPDF = async () => {
     if (sortedProducts.length === 0) return;
@@ -74,20 +95,20 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
     }
   };
 
-  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
   return createPortal(
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
       <div className="bg-white w-full max-w-4xl rounded-[32px] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-white/20">
         
-        <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+        <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-purple-100 text-purple-600 rounded-2xl shadow-sm">
               <Package className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-slate-800 tracking-tight">Mix de Produtos Ativo</h3>
-              <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">{client.name}</p>
+              <h3 className="text-xl font-black text-slate-800 tracking-tight uppercase">Mix de Produtos Ativo</h3>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{client.name}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
@@ -95,24 +116,34 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
           </button>
         </div>
 
-        <div className="p-4 bg-white border-b border-slate-100 flex justify-between items-center px-8">
+        <div className="p-4 bg-white border-b border-slate-100 flex justify-between items-center px-8 shrink-0">
             <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                <Filter className="w-4 h-4 text-purple-500" />
-               {sortedProducts.length} itens encontrados no ano
+               {sortedProducts.length} itens encontrados
             </div>
             
-            <Button 
-                variant="secondary" 
-                onClick={handleDownloadPDF} 
-                isLoading={isExporting}
-                className="h-11 px-8 rounded-xl text-[10px] font-black shadow-purple-100 uppercase tracking-widest bg-purple-600 hover:bg-purple-700"
-            >
-                <FileDown className="w-4 h-4 mr-2" />
-                Gerar Relatório PDF
-            </Button>
+            <div className="flex gap-2">
+                <Button 
+                    variant="outline" 
+                    onClick={handleDownloadExcel}
+                    className="h-11 px-8 rounded-xl text-[10px] font-black border-emerald-200 text-emerald-600 hover:bg-emerald-50 uppercase tracking-widest"
+                >
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Gerar Excel
+                </Button>
+                <Button 
+                    variant="secondary" 
+                    onClick={handleDownloadPDF} 
+                    isLoading={isExporting}
+                    className="h-11 px-8 rounded-xl text-[10px] font-black shadow-purple-100 uppercase tracking-widest bg-purple-600 hover:bg-purple-700"
+                >
+                    <FileDown className="w-4 h-4 mr-2" />
+                    Gerar PDF
+                </Button>
+            </div>
         </div>
 
-        <div className="overflow-y-auto p-6 bg-slate-50 flex-1">
+        <div className="overflow-y-auto p-6 bg-slate-50 flex-1 custom-scrollbar">
             <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 overflow-hidden">
                 <table className="w-full text-left text-sm border-collapse">
                     <thead className="bg-slate-100 border-b border-slate-200">
@@ -129,7 +160,7 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
                             const participation = totalFaturado > 0 ? (product.totalValue / totalFaturado) * 100 : 0;
                             return (
                                 <tr key={product.id} className="hover:bg-slate-50 transition-colors group">
-                                    <td className="py-4 px-8 text-center text-slate-300 font-bold text-xs">{idx + 1}</td>
+                                    <td className="py-4 px-8 text-center text-slate-300 font-black text-xs">{idx + 1}</td>
                                     <td className="py-4 px-6">
                                         <p className="font-black text-slate-800 text-xs uppercase tracking-tight group-hover:text-purple-600 transition-colors">{product.name}</p>
                                     </td>
@@ -170,7 +201,7 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
 
             <div className="flex-1">
                 <div className="mb-6 flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faturamento Anual Acumulado</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faturamento Acumulado</span>
                     <span className="text-xl font-black text-purple-600">{formatCurrency(totalFaturado)}</span>
                 </div>
 
