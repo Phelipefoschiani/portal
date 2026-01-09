@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Search, Users, Calendar, ChevronRight, BarChart3, Filter, Building2, Tag, CalendarClock, TrendingUp, Info } from 'lucide-react';
+import { Search, Users, Calendar, ChevronRight, BarChart3, Filter, Building2, Tag, CalendarClock, TrendingUp, Info, MapPin } from 'lucide-react';
 import { ClientDetailModal } from './ClientDetailModal';
 import { totalDataStore } from '../lib/dataStore';
 
@@ -83,39 +83,40 @@ export const ClientsScreen: React.FC = () => {
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-12">
-      {/* Header Estratégico */}
-      <div className="flex flex-col lg:flex-row justify-between items-end gap-6">
+    <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 animate-fadeIn pb-20">
+      
+      {/* Header Estratégico Adaptável */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 px-2">
         <div className="w-full lg:w-auto">
-          <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Minha Carteira</h2>
-          <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-2 flex items-center gap-2 text-left">
-             <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
+          <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Minha Carteira</h2>
+          <p className="text-slate-500 text-[8px] md:text-[10px] font-black uppercase tracking-widest mt-2 flex items-center gap-2 text-left">
+             <TrendingUp className="w-3 md:w-3.5 h-3 md:h-3.5 text-blue-600" />
              {selectedChannel === 'all' ? 'Ranking Geral de Faturamento' : `Análise de Participação: ${selectedChannel}`}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-          {/* Busca */}
-          <div className="relative flex-1 lg:min-w-[260px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <div className="grid grid-cols-2 md:flex md:flex-wrap items-center gap-2 w-full lg:w-auto">
+          {/* Busca - Ocupa largura total no mobile */}
+          <div className="relative col-span-2 md:flex-1 md:min-w-[260px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input 
               type="text" 
               placeholder="Buscar cliente ou CNPJ..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
+              className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
             />
           </div>
 
-          {/* Filtro de Canal / Grupo */}
+          {/* Filtro de Canal */}
           <div className="relative">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-               <Tag className="w-3.5 h-3.5" />
+               <Tag className="w-3 h-3" />
             </div>
             <select 
               value={selectedChannel}
               onChange={(e) => setSelectedChannel(e.target.value)}
-              className="pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+              className="w-full pl-8 pr-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
             >
               <option value="all">TODOS OS CANAIS</option>
               {channels.map(ch => <option key={ch} value={ch}>{ch.toUpperCase()}</option>)}
@@ -125,12 +126,12 @@ export const ClientsScreen: React.FC = () => {
           {/* Filtro de Ano */}
           <div className="relative">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-               <Calendar className="w-3.5 h-3.5" />
+               <Calendar className="w-3 h-3" />
             </div>
             <select 
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              className="pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+              className="w-full pl-8 pr-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
             >
               <option value="all">HISTÓRICO TOTAL</option>
               {years.map(y => <option key={y} value={y}>{y}</option>)}
@@ -139,24 +140,24 @@ export const ClientsScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Resumo do Filtro Aplicado */}
+      {/* Resumo do Filtro Aplicado - Mobile Otimizado */}
       {processedData.totalGroupFaturamento > 0 && (
-          <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-2xl flex flex-col md:flex-row justify-between items-center gap-6 border-b-4 border-blue-600">
-              <div>
-                  <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.3em] mb-1">Base de Cálculo (100%)</p>
-                  <h3 className="text-2xl font-black">{formatCurrency(processedData.totalGroupFaturamento)}</h3>
+          <div className="mx-2 bg-slate-900 p-4 md:p-6 rounded-[24px] md:rounded-[32px] text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-4 md:gap-6 border-b-4 border-blue-600">
+              <div className="text-center md:text-left">
+                  <p className="text-[7px] md:text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] md:tracking-[0.3em] mb-1">Base de Cálculo (100%)</p>
+                  <h3 className="text-lg md:text-2xl font-black">{formatCurrency(processedData.totalGroupFaturamento)}</h3>
               </div>
-              <div className="flex items-center gap-3 bg-white/5 px-6 py-3 rounded-2xl border border-white/5">
-                  <Info className="w-4 h-4 text-blue-400" />
-                  <p className="text-[10px] font-bold text-slate-400 leading-tight">
-                      A porcentagem "% Ref" de cada cliente abaixo refere-se à sua <br/> participação exclusiva neste montante de {selectedYear === 'all' ? 'todo o período' : selectedYear}.
+              <div className="flex items-center gap-3 bg-white/5 px-4 py-2 md:px-6 md:py-3 rounded-xl md:rounded-2xl border border-white/5">
+                  <Info className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <p className="text-[7px] md:text-[10px] font-bold text-slate-400 leading-tight">
+                      A porcentagem "% Ref" baseia-se no montante filtrado <br className="hidden md:block" /> de {selectedYear === 'all' ? 'todo o período' : selectedYear}.
                   </p>
               </div>
           </div>
       )}
 
-      {/* Tabela de Clientes */}
-      <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
+      {/* Tabela de Clientes (Desktop) */}
+      <div className="hidden md:block bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden mx-4">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -221,20 +222,69 @@ export const ClientsScreen: React.FC = () => {
                   </td>
                 </tr>
               ))}
-              
-              {processedData.ranking.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-6 py-32 text-center text-slate-400">
-                    <div className="flex flex-col items-center">
-                      <Building2 className="w-16 h-16 mb-4 opacity-10 text-blue-600" />
-                      <p className="font-black uppercase text-xs tracking-[0.3em]">Nenhum cliente mapeado para este critério.</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Lista Mobile (Cards Verticais) */}
+      <div className="md:hidden space-y-3 px-2">
+        {processedData.ranking.length === 0 ? (
+          <div className="py-20 text-center text-slate-300 bg-white rounded-2xl border border-dashed border-slate-200 mx-2">
+            <Building2 className="w-12 h-12 mx-auto mb-4 opacity-10" />
+            <p className="text-[10px] font-black uppercase tracking-widest">Nenhum cliente filtrado</p>
+          </div>
+        ) : (
+          processedData.ranking.map((client, idx) => (
+            <div 
+              key={client.id} 
+              onClick={() => setSelectedClient(client)}
+              className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm active:scale-[0.98] transition-all relative overflow-hidden"
+            >
+              {/* Rank Badge */}
+              <div className={`absolute top-0 left-0 px-2.5 py-1 rounded-br-xl text-[8px] font-black text-white ${idx < 3 ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                #{idx + 1}
+              </div>
+
+              <div className="flex justify-between items-start mb-4 pt-2">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-black text-slate-800 uppercase text-xs tracking-tight truncate leading-tight">{client.nome_fantasia}</h3>
+                  <div className="flex items-center gap-1 mt-1">
+                    <MapPin className="w-2.5 h-2.5 text-slate-300" />
+                    <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{client.city || 'CIDADE N/I'}</span>
+                  </div>
+                </div>
+                <div className="text-right ml-4 shrink-0">
+                  <p className="text-xs font-black text-blue-600 tabular-nums">{client.participation.toFixed(2)}%</p>
+                  <p className="text-[7px] text-slate-400 font-black uppercase tracking-widest">% de Ref</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Faturamento</p>
+                  <p className="text-[11px] font-black text-slate-700">{formatCurrency(client.faturamentoPeriodo)}</p>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Última Compra</p>
+                  <p className="text-[11px] font-black text-slate-700">
+                    {client.lastPurchase ? new Date(client.lastPurchase + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/I'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                   <Tag className="w-3 h-3 text-blue-500" />
+                   <span className="text-[8px] font-black text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded-md">{client.canal_vendas || 'GERAL'}</span>
+                </div>
+                <div className="flex items-center gap-1 text-[8px] font-black text-blue-600 uppercase">
+                   Detalhar <ChevronRight className="w-3 h-3" />
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {selectedClient && (

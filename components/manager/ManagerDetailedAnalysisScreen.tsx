@@ -107,7 +107,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         }
     }, [filterReps]);
 
-    // Se selecionar clientes específicos, o top ranking deve ser forçado para 'all'
     useEffect(() => {
         if (filterClients.length > 0) setTopLimit('all');
     }, [filterClients]);
@@ -178,7 +177,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             return true;
         });
 
-        // Lógica de Ranking aplicada à massa de clientes da seleção
         if (topLimit !== 'all' && filterClients.length === 0) {
             const rankingMap = new Map<string, number>();
             filteredSales.forEach(s => {
@@ -194,7 +192,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             filteredSales = filteredSales.filter(s => topCnpjs.includes(String(s.cnpj || '').replace(/\D/g, '')));
         }
 
-        // Filtro de Clientes Manuais
         if (filterClients.length > 0) {
             const selectedCnpjs = new Set(
                 totalDataStore.clients
@@ -353,30 +350,43 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     );
 
     return (
-        <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-32" ref={dropdownRef}>
-            <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-center gap-6">
-                <div className="flex items-center gap-4">
-                    <div className="p-3.5 bg-blue-600 text-white rounded-2xl shadow-xl"><Layers className="w-6 h-6" /></div>
+        <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 animate-fadeIn pb-32" ref={dropdownRef}>
+            
+            {/* Header Responsivo */}
+            <div className="bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="flex items-center gap-4 w-full md:w-auto">
+                    <div className="p-2.5 md:p-3.5 bg-blue-600 text-white rounded-2xl shadow-xl"><Layers className="w-5 h-5 md:w-6 md:h-6" /></div>
                     <div>
-                        <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Construtor de BI</h2>
-                        <p className="text-[10px] font-black text-slate-400 uppercase mt-1.5 tracking-[0.2em]">Inteligência de Vendas Regional</p>
+                        <h2 className="text-lg md:text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Construtor de BI</h2>
+                        <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase mt-1 tracking-widest md:tracking-[0.2em]">Inteligência Regional de Vendas</p>
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={resetAllFilters} className="h-10 px-6 rounded-xl text-[10px] font-black border border-red-100 text-red-500 hover:bg-red-50 transition-all uppercase flex items-center gap-2"><RotateCcw className="w-4 h-4" /> Resetar Consulta</button>
-                    <div className="w-px h-10 bg-slate-100 mx-2"></div>
-                    <Button onClick={() => setIsExporting('excel')} className="h-10 px-6 rounded-xl text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 uppercase shadow-none"><FileSpreadsheet className="w-4 h-4 mr-2" /> Excel</Button>
+                <div className="flex gap-2 w-full md:w-auto">
+                    <button onClick={resetAllFilters} className="flex-1 md:flex-none h-10 px-4 md:px-6 rounded-xl text-[9px] md:text-[10px] font-black border border-red-100 text-red-500 hover:bg-red-50 transition-all uppercase flex items-center justify-center gap-2">
+                        <RotateCcw className="w-3.5 h-3.5" /> 
+                        <span className="md:inline">Resetar</span>
+                    </button>
+                    <Button onClick={() => setIsExporting('excel')} className="flex-1 md:flex-none h-10 px-4 md:px-6 rounded-xl text-[9px] md:text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 uppercase shadow-none flex items-center justify-center">
+                        <FileSpreadsheet className="w-3.5 h-3.5 mr-2" /> 
+                        Excel
+                    </Button>
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm space-y-6 relative">
-                <div className="flex flex-wrap items-center gap-8 pb-5 border-b border-slate-100">
-                    <div className="flex items-center gap-3"><CalendarDays className="w-4 h-4 text-blue-600" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ano e Meses</span></div>
-                    <div className="flex gap-3" ref={monthDropdownRef}>
-                        <div className="relative" ref={yearDropdownRef}>
-                            <button onClick={() => setShowYearDropdown(!showYearDropdown)} className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-3 min-w-[120px] justify-between">
-                                <span>ANO {selectedYear}</span>
-                                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showYearDropdown ? 'rotate-180' : ''}`} />
+            {/* Filtros e Controles */}
+            <div className="bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-slate-200 shadow-sm space-y-6 relative">
+                
+                {/* Seleção de Tempo - Mobile amigável */}
+                <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8 pb-5 border-b border-slate-100">
+                    <div className="flex items-center gap-3">
+                        <CalendarDays className="w-4 h-4 text-blue-600" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Período de Análise</span>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <div className="relative flex-1 md:flex-none" ref={yearDropdownRef}>
+                            <button onClick={() => setShowYearDropdown(!showYearDropdown)} className="w-full bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-3 min-w-[100px] justify-between">
+                                <span>{selectedYear}</span>
+                                <ChevronDown className={`w-3 h-3 transition-transform ${showYearDropdown ? 'rotate-180' : ''}`} />
                             </button>
                             {showYearDropdown && (
                                 <div className="absolute top-full left-0 mt-2 w-32 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[250] overflow-hidden">
@@ -387,27 +397,27 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                             )}
                         </div>
 
-                        <div className="relative">
-                            <button onClick={() => { setTempSelectedMonths([...selectedMonths]); setShowMonthDropdown(!showMonthDropdown); }} className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-3 min-w-[180px] justify-between">
-                                <span>{selectedMonths.length === 12 ? 'ANO COMPLETO' : selectedMonths.length === 1 ? monthNames[selectedMonths[0]-1].toUpperCase() : `${selectedMonths.length} MESES`}</span>
-                                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
+                        <div className="relative flex-1 md:flex-none" ref={monthDropdownRef}>
+                            <button onClick={() => { setTempSelectedMonths([...selectedMonths]); setShowMonthDropdown(!showMonthDropdown); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-3 min-w-[150px] justify-between">
+                                <span className="truncate">{selectedMonths.length === 12 ? 'ANO COMPLETO' : selectedMonths.length === 1 ? monthNames[selectedMonths[0]-1].toUpperCase() : `${selectedMonths.length} MESES`}</span>
+                                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
                             </button>
                             {showMonthDropdown && (
-                                <div className="absolute top-full right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[250] overflow-hidden">
+                                <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[250] overflow-hidden">
                                     <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between gap-2">
-                                        <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[9px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg">Marcar Todos</button>
-                                        <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[9px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg">Limpar</button>
+                                        <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[8px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg">Todos</button>
+                                        <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[8px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg">Limpar</button>
                                     </div>
-                                    <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                    <div className="p-2 grid grid-cols-2 gap-1 max-h-60 overflow-y-auto custom-scrollbar">
                                         {monthNames.map((m, i) => (
-                                            <button key={i} onClick={() => { const val = i+1; setTempSelectedMonths(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]); }} className={`flex items-center gap-2 p-2 rounded-xl text-[10px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i+1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                            <button key={i} onClick={() => { const val = i+1; setTempSelectedMonths(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]); }} className={`flex items-center gap-2 p-2 rounded-xl text-[9px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i+1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
                                                 {tempSelectedMonths.includes(i+1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 opacity-20" />}
                                                 {m}
                                             </button>
                                         ))}
                                     </div>
                                     <div className="p-3 bg-slate-50 border-t border-slate-100">
-                                        <button onClick={() => { setSelectedMonths([...tempSelectedMonths]); setShowMonthDropdown(false); }} className="w-full bg-blue-600 text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100">Aplicar Período</button>
+                                        <button onClick={() => { setSelectedMonths([...tempSelectedMonths]); setShowMonthDropdown(false); }} className="w-full bg-blue-600 text-white py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100">Aplicar</button>
                                     </div>
                                 </div>
                             )}
@@ -415,9 +425,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-start gap-10">
-                    <div className="flex flex-col gap-3">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] px-1">1. Camadas da Tabela</span>
+                {/* Configuração de Camadas e Filtros em Massa */}
+                <div className="flex flex-col md:flex-row items-start gap-6 md:gap-10">
+                    <div className="flex flex-col gap-3 w-full md:w-auto">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">1. Camadas da Tabela</span>
                         <FilterDropdown 
                             id="dims" label="Escolher Níveis" icon={Layers} 
                             options={[
@@ -435,72 +446,100 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     
                     <div className="w-px h-16 bg-slate-100 hidden md:block"></div>
 
-                    <div className="flex-1 flex flex-col gap-4">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] px-1">2. Filtros em Massa (Opcional)</span>
+                    <div className="flex-1 flex flex-col gap-4 w-full">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">2. Filtros Dinâmicos (Opcional)</span>
                         
-                        <div className="flex flex-wrap gap-4 items-center">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-3 items-center">
                             {isAdmin && <FilterDropdown id="reps" label="Equipe" icon={User} options={filterOptions.reps} selected={filterReps} onToggle={(val: any) => toggleFilter(filterReps, setFilterReps, val)} onClear={() => setFilterReps([])} />}
                             <FilterDropdown id="canais" label="Canais" icon={Tag} options={filterOptions.canais} selected={filterCanais} onToggle={(val: any) => toggleFilter(filterCanais, setFilterCanais, val)} onClear={() => setFilterCanais([])} />
                             <FilterDropdown id="grupos" label="Grupos" icon={Boxes} options={filterOptions.grupos} selected={filterGrupos} onToggle={(val: any) => toggleFilter(filterGrupos, setFilterGrupos, val)} onClear={() => setFilterGrupos([])} />
+                            <FilterDropdown 
+                                id="clients" 
+                                label="Clientes" 
+                                icon={Building2} 
+                                disabled={filterReps.length === 0 && isAdmin}
+                                options={filterOptions.clients} 
+                                selected={filterClients} 
+                                onToggle={(val: any) => toggleFilter(filterClients, setFilterClients, val)} 
+                                onClear={() => setFilterClients([])}
+                                openUp={true}
+                            />
                         </div>
-
-                        {filterReps.length > 0 && (
-                            <div className="flex flex-col gap-4 pt-4 border-t border-slate-50 animate-fadeIn">
-                                <div className="flex flex-col gap-2">
-                                    <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest px-1">Mapeamento de Clientes da Equipe</span>
-                                    <FilterDropdown 
-                                        id="clients" 
-                                        label="Selecionar Clientes Manuais" 
-                                        icon={Building2} 
-                                        options={filterOptions.clients} 
-                                        selected={filterClients} 
-                                        onToggle={(val: any) => toggleFilter(filterClients, setFilterClients, val)} 
-                                        onClear={() => setFilterClients([])}
-                                        openUp={true}
-                                    />
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Limitar Ranking da Base</span>
-                                        {filterClients.length > 0 && (
-                                            <span className="flex items-center gap-1 text-[7px] font-black text-amber-500 uppercase bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
-                                                <AlertCircle className="w-2.5 h-2.5" /> Desativado (Clientes selecionados manualmente)
-                                            </span>
-                                        )}
-                                    </div>
-                                    <FilterDropdown 
-                                        id="top" 
-                                        label="Top Ranking (Sugerido)" 
-                                        icon={Hash} 
-                                        isSimple={true}
-                                        disabled={filterClients.length > 0}
-                                        options={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, { id: 'all', label: 'Ver Tudo' }]} 
-                                        selected={topLimit} 
-                                        onToggle={(val: any) => setTopLimit(val)} 
-                                        onClear={() => setTopLimit('all')} 
-                                        openUp={true}
-                                    />
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
 
-            <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
-                <div className="p-5 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+            {/* Área Principal de Dados */}
+            <div className="bg-white rounded-[24px] md:rounded-[32px] border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
+                
+                {/* Controles de Visualização */}
+                <div className="p-4 md:p-5 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
                     <div className="relative flex-1 w-full max-w-sm">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input type="text" placeholder="Filtrar nesta visualização..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
+                        <input type="text" placeholder="Filtrar dados..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
                     </div>
-                    <div className="flex items-center gap-4 bg-white p-1.5 rounded-xl border border-slate-200">
-                        <button onClick={() => setDisplayMode('value')} className={`px-5 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${displayMode === 'value' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Visualizar em Reais</button>
-                        <button onClick={() => setDisplayMode('percent')} className={`px-5 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${displayMode === 'percent' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Visualizar em %</button>
+                    <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 w-full md:w-auto">
+                        <button onClick={() => setDisplayMode('value')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase transition-all ${displayMode === 'value' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400'}`}>Em Reais</button>
+                        <button onClick={() => setDisplayMode('percent')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase transition-all ${displayMode === 'percent' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400'}`}>Em %</button>
                     </div>
                 </div>
 
-                <div className="overflow-x-auto flex-1">
+                {/* LISTA MOBILE (BLOCK MD:HIDDEN) */}
+                <div className="md:hidden flex-1 divide-y divide-slate-100 bg-white">
+                    {processedBI.items.length === 0 ? (
+                        <div className="px-8 py-32 text-center text-slate-300">
+                            <BarChart4 className="w-16 h-16 mx-auto opacity-10 mb-4" />
+                            <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed">
+                                {rowDimensions.length === 0 ? "Escolha os níveis para processar" : "Sem dados no período"}
+                            </p>
+                        </div>
+                    ) : (
+                        processedBI.items.map((row, idx) => {
+                            const isRoot = row.level === 0;
+                            const paddingLeft = row.level * 16 + 12;
+                            const barColor = row.level === 0 ? 'bg-blue-600' : row.level === 1 ? 'bg-indigo-500' : 'bg-purple-500';
+
+                            return (
+                                <div 
+                                    key={idx} 
+                                    className={`p-4 transition-all ${isRoot ? 'bg-slate-50/50 border-l-4 border-blue-600' : 'bg-white'}`}
+                                    style={{ paddingLeft: `${paddingLeft}px` }}
+                                >
+                                    <div className="flex items-start justify-between gap-4 mb-2">
+                                        <div className="min-w-0">
+                                            <span className={`text-[10px] font-black uppercase tracking-tight block truncate ${isRoot ? 'text-slate-900' : 'text-slate-600'}`}>
+                                                {row.label}
+                                            </span>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Nível {row.level + 1}</span>
+                                                <span className="w-1 h-1 rounded-full bg-slate-200"></span>
+                                                <span className="text-[7px] font-black text-blue-600 uppercase">{row.skusCount} SKUs</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            {displayMode === 'value' ? (
+                                                <p className={`text-xs font-black ${isRoot ? 'text-slate-900' : 'text-slate-700'}`}>{formatBRL(row.faturamento)}</p>
+                                            ) : (
+                                                <p className="text-xs font-black text-blue-600">{row.participation.toFixed(2)}%</p>
+                                            )}
+                                            <p className="text-[7px] font-black text-slate-400 uppercase mt-0.5">{row.quantidade.toLocaleString()} Unidades</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                            <div className={`h-full ${barColor}`} style={{ width: `${Math.min(row.participation, 100)}%` }}></div>
+                                        </div>
+                                        <span className="text-[8px] font-black text-slate-400 tabular-nums">{row.participation.toFixed(1)}%</span>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+
+                {/* TABELA DESKTOP (HIDDEN MD:BLOCK) */}
+                <div className="hidden md:block overflow-x-auto flex-1">
                     <table className="w-full text-left border-collapse min-w-[900px]">
                         <thead className="bg-white sticky top-0 z-10 border-b border-slate-200 shadow-sm">
                             <tr className="text-slate-400 text-[10px] font-black uppercase tracking-widest">
@@ -564,24 +603,25 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     </table>
                 </div>
 
+                {/* Footer Consolidado Responsivo */}
                 {processedBI.items.length > 0 && (
-                    <div className="p-8 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-center gap-10 px-12 border-t-4 border-blue-600 shadow-2xl">
-                        <div>
-                            <span className="text-[9px] font-black uppercase tracking-[0.4em] text-blue-400 block mb-1.5">Massa de Dados Processada</span>
-                            <p className="text-xs font-bold text-slate-400">{selectedMonths.length === 12 ? 'ANO COMPLETO' : `${selectedMonths.length} Meses`} • {selectedYear}</p>
+                    <div className="p-6 md:p-8 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-center gap-6 md:gap-10 px-8 md:px-12 border-t-4 border-blue-600 shadow-2xl">
+                        <div className="text-center md:text-left">
+                            <span className="text-[8px] md:text-[9px] font-black uppercase tracking-[0.4em] text-blue-400 block mb-1.5">Resultado da Consulta</span>
+                            <p className="text-[10px] md:text-xs font-bold text-slate-400">{selectedMonths.length === 12 ? 'ANO COMPLETO' : `${selectedMonths.length} MESES`} • {selectedYear}</p>
                         </div>
-                        <div className="flex items-center gap-16">
-                            <div className="text-right">
-                                <p className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Mix (Skus)</p>
-                                <p className="text-2xl font-black tabular-nums">{processedBI.totals.skus.toLocaleString()}</p>
+                        <div className="grid grid-cols-3 gap-6 md:gap-16 w-full md:w-auto">
+                            <div className="text-center md:text-right">
+                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">SKUS</p>
+                                <p className="text-sm md:text-2xl font-black tabular-nums">{processedBI.totals.skus.toLocaleString()}</p>
                             </div>
-                            <div className="text-right">
-                                <p className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Volume (Un)</p>
-                                <p className="text-2xl font-black tabular-nums">{processedBI.totals.quantidade.toLocaleString()}</p>
+                            <div className="text-center md:text-right">
+                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">VOLUME</p>
+                                <p className="text-sm md:text-2xl font-black tabular-nums">{processedBI.totals.quantidade.toLocaleString()}</p>
                             </div>
-                            <div className="text-right">
-                                <p className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Receita Bruta</p>
-                                <p className="text-3xl font-black text-blue-400 tabular-nums">{formatBRL(processedBI.totals.faturamento)}</p>
+                            <div className="text-center md:text-right">
+                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">RECEITA</p>
+                                <p className="text-sm md:text-3xl font-black text-blue-400 tabular-nums">{formatBRL(processedBI.totals.faturamento)}</p>
                             </div>
                         </div>
                     </div>

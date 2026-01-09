@@ -20,8 +20,6 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   
-  const exportPagesRef = useRef<HTMLDivElement>(null);
-
   const sortedProducts = useMemo(() => {
     return [...client.products].sort((a, b) => {
       return new Date(a.lastPurchaseDate).getTime() - new Date(b.lastPurchaseDate).getTime();
@@ -45,294 +43,123 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
 
   const redItems = sortedProducts.filter(p => isRedItem(p));
   const whiteItems = sortedProducts.filter(p => !isRedItem(p));
-
   const isAllRedSelected = redItems.length > 0 && redItems.every(p => selectedProductIds.includes(p.id));
   const isAllWhiteSelected = whiteItems.length > 0 && whiteItems.every(p => selectedProductIds.includes(p.id));
 
   const toggleProduct = (id: string) => {
-    setSelectedProductIds(prev => 
-      prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
-    );
+    setSelectedProductIds(prev => prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]);
   };
 
-  const toggleRedCategory = () => {
-    const redIds = redItems.map(p => p.id);
-    if (isAllRedSelected) {
-      setSelectedProductIds(prev => prev.filter(id => !redIds.includes(id)));
-    } else {
-      setSelectedProductIds(prev => Array.from(new Set([...prev, ...redIds])));
-    }
-  };
-
-  const toggleWhiteCategory = () => {
-    const whiteIds = whiteItems.map(p => p.id);
-    if (isAllWhiteSelected) {
-      setSelectedProductIds(prev => prev.filter(id => !whiteIds.includes(id)));
-    } else {
-      setSelectedProductIds(prev => Array.from(new Set([...prev, ...whiteIds])));
-    }
-  };
-
-  const selectedProductsData = sortedProducts.filter(p => selectedProductIds.includes(p.id));
-  const ITEMS_PER_PAGE = 15;
-  const productBatches = useMemo(() => {
-    const batches = [];
-    for (let i = 0; i < selectedProductsData.length; i += ITEMS_PER_PAGE) {
-      batches.push(selectedProductsData.slice(i, i + ITEMS_PER_PAGE));
-    }
-    return batches;
-  }, [selectedProductsData]);
-
-  const handleDownloadExcel = () => {
-    if (selectedProductIds.length === 0) return;
-    
-    const excelData = selectedProductsData.map(p => ({
-        "Produto": p.name,
-        "Última Compra": new Date(p.lastPurchaseDate).toLocaleDateString('pt-BR'),
-        "Dias Sem Compra": getDaysSince(p.lastPurchaseDate),
-        "Última Qtd": p.quantity,
-        "Último Valor": p.totalValue
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(excelData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sugestão Reposição");
-    
-    // Auto-ajuste das colunas
-    const colWidths = [{ wch: 40 }, { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 15 }];
-    ws['!cols'] = colWidths;
-
-    XLSX.writeFile(wb, `reposicao_${client.name.replace(/\s/g, '_')}.xlsx`);
-  };
-
-  const handleDownloadPDF = async () => {
-    if (selectedProductIds.length === 0) return;
-    setIsExporting(true);
-    try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      
-      const pageElements = exportPagesRef.current?.querySelectorAll('.pdf-page-container');
-      if (!pageElements) return;
-
-      for (let i = 0; i < pageElements.length; i++) {
-        const canvas = await html2canvas(pageElements[i] as HTMLElement, { 
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          windowWidth: 800
-        });
-
-        const imgData = canvas.toDataURL('image/png');
-        const imgHeightInPDF = (canvas.height * pdfWidth) / canvas.width;
-        
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeightInPDF);
-      }
-
-      pdf.save(`sugestao_reposicao_${client.name.replace(/\s/g, '_')}.pdf`);
-    } catch (err) {
-      console.error(err);
-      alert('Erro ao gerar o PDF. Verifique se o navegador possui permissões de download.');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const formatQty = (val: number) => new Intl.NumberFormat('pt-BR').format(val);
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
   return createPortal(
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
-      <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-white/20">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-4 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
+      <div className="bg-white w-full max-w-5xl rounded-[28px] md:rounded-3xl shadow-2xl flex flex-col max-h-[94vh] md:max-h-[90vh] overflow-hidden border border-white/20">
         
-        <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-amber-100 text-amber-600 rounded-2xl shadow-sm">
-              <History className="w-6 h-6" />
+        <div className="p-5 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 shrink-0">
+          <div className="flex items-center gap-3 md:gap-4 min-w-0">
+            <div className="p-2.5 md:p-3 bg-amber-100 text-amber-600 rounded-xl md:rounded-2xl shadow-sm shrink-0">
+              <History className="w-5 h-5 md:w-6 md:h-6" />
             </div>
-            <div>
-              <h3 className="text-xl font-black text-slate-800 tracking-tight uppercase">Análise de Produtos</h3>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{client.name}</p>
+            <div className="min-w-0">
+              <h3 className="text-lg md:text-xl font-black text-slate-800 tracking-tight uppercase truncate">Sugestão de Reposição</h3>
+              <p className="text-[8px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest truncate">{client.name}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
-            <X className="w-6 h-6" />
+          <button onClick={onClose} className="p-1.5 md:p-2 hover:bg-slate-200 rounded-full text-slate-400">
+            <X className="w-5 h-5 md:w-6 md:h-6" />
           </button>
         </div>
 
-        <div className="p-4 bg-white border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 px-8 shrink-0">
-            <div className="flex items-center gap-6">
+        <div className="p-4 bg-white border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 px-4 md:px-8 shrink-0">
+            <div className="flex items-center gap-4 md:gap-6 w-full sm:w-auto">
                 <button 
-                    onClick={toggleWhiteCategory}
-                    className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${isAllWhiteSelected ? 'text-blue-600' : 'text-slate-500 hover:text-blue-500'}`}
+                    onClick={() => { const ids = whiteItems.map(p => p.id); setSelectedProductIds(prev => isAllWhiteSelected ? prev.filter(id => !ids.includes(id)) : Array.from(new Set([...prev, ...ids]))); }}
+                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 text-[8px] md:text-[9px] font-black uppercase px-3 py-2 rounded-xl border transition-all ${isAllWhiteSelected ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-slate-100 text-slate-400'}`}
                 >
-                    {isAllWhiteSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-slate-300" />}
-                    Selecionar Brancos
+                    {isAllWhiteSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 opacity-30" />} Brancos
                 </button>
                 <button 
-                    onClick={toggleRedCategory}
-                    className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${isAllRedSelected ? 'text-red-600' : 'text-slate-500 hover:text-blue-500'}`}
+                    onClick={() => { const ids = redItems.map(p => p.id); setSelectedProductIds(prev => isAllRedSelected ? prev.filter(id => !ids.includes(id)) : Array.from(new Set([...prev, ...ids]))); }}
+                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 text-[8px] md:text-[9px] font-black uppercase px-3 py-2 rounded-xl border transition-all ${isAllRedSelected ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-100 text-slate-400'}`}
                 >
-                    {isAllRedSelected ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-slate-300" />}
-                    Selecionar Vermelhos
+                    {isAllRedSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 opacity-30" />} Vermelhos
                 </button>
             </div>
             
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-                <span className="text-[10px] font-black text-slate-400 uppercase mr-2">{selectedProductIds.length} selecionados</span>
-                <Button 
-                    variant="outline" 
-                    onClick={handleDownloadExcel}
-                    disabled={selectedProductIds.length === 0}
-                    className="h-11 px-6 rounded-xl text-[10px] font-black border-emerald-200 text-emerald-600 hover:bg-emerald-50 uppercase tracking-widest"
-                >
-                    <FileSpreadsheet className="w-4 h-4 mr-2" />
-                    Excel
-                </Button>
-                <Button 
-                    variant="primary" 
-                    onClick={handleDownloadPDF} 
-                    disabled={selectedProductIds.length === 0}
-                    isLoading={isExporting}
-                    className="h-11 text-[10px] font-black shadow-blue-100 uppercase tracking-widest px-8"
-                >
-                    <FileDown className="w-4 h-4 mr-2" />
-                    Gerar PDF
+            <div className="flex items-center justify-between w-full sm:w-auto gap-2">
+                <span className="text-[9px] font-black text-slate-400 uppercase">{selectedProductIds.length} Sel.</span>
+                <Button variant="outline" className="h-9 md:h-11 px-6 rounded-xl text-[9px] md:text-[10px] font-black border-emerald-200 text-emerald-600 uppercase">
+                    <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Excel
                 </Button>
             </div>
         </div>
 
         <div className="overflow-y-auto bg-slate-50 flex-1 custom-scrollbar">
-            {sortedProducts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-32 text-slate-300">
-                    <AlertTriangle className="w-12 h-12 mb-2 opacity-20" />
-                    <p className="font-bold uppercase text-xs tracking-widest">Nenhum histórico encontrado</p>
-                </div>
-            ) : (
-                <table className="w-full text-left text-sm border-collapse min-w-[800px]">
-                    <thead className="bg-slate-100 sticky top-0 z-10">
-                        <tr className="text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-200">
-                            <th className="py-4 px-8 w-16 text-center">#</th>
-                            <th className="py-4 px-6">Produto</th>
+            {/* Desktop View */}
+            <div className="hidden md:block">
+                <table className="w-full text-left text-sm border-collapse">
+                    <thead className="bg-slate-100 sticky top-0 z-10 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
+                        <tr>
+                            <th className="py-4 px-8 w-16 text-center">Sel.</th>
+                            <th className="py-4 px-6">Item</th>
                             <th className="py-4 px-6">Última Compra</th>
-                            <th className="py-4 px-6 text-right">Preço Unit.</th>
-                            <th className="py-4 px-6 text-center">Última Qtd</th>
+                            <th className="py-4 px-6 text-center">Qtd</th>
                             <th className="py-4 px-8 text-right">Último Valor</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                        {sortedProducts.map((product) => {
-                            const isSelected = selectedProductIds.includes(product.id);
-                            const isRed = isRedItem(product);
-                            const unitPrice = product.quantity > 0 ? product.totalValue / product.quantity : 0;
-                            const daysSince = getDaysSince(product.lastPurchaseDate);
-                            
+                        {sortedProducts.map((p, idx) => {
+                            const isSelected = selectedProductIds.includes(p.id);
+                            const isRed = isRedItem(p);
                             return (
-                                <tr 
-                                    key={product.id} 
-                                    className={`hover:bg-slate-50 transition-all cursor-pointer ${isSelected ? 'bg-blue-50/40' : ''}`}
-                                    onClick={() => toggleProduct(product.id)}
-                                >
-                                    <td className="py-4 px-8 text-center">
-                                        <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center mx-auto transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'border-slate-200'}`}>
-                                            {isSelected && <span className="text-[10px] font-bold">✓</span>}
-                                        </div>
-                                    </td>
+                                <tr key={idx} className={`hover:bg-slate-50 cursor-pointer ${isSelected ? 'bg-blue-50/40' : ''}`} onClick={() => toggleProduct(p.id)}>
+                                    <td className="py-4 px-8 text-center"><div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center mx-auto transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200'}`}>{isSelected && '✓'}</div></td>
                                     <td className="py-4 px-6">
-                                        <p className="font-black text-slate-800 text-xs uppercase tracking-tight">{product.name}</p>
-                                        {isRed && (
-                                            <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded-lg text-[9px] font-black bg-red-50 text-red-500 border border-red-100 uppercase tracking-widest">
-                                                Sem compra há {daysSince} dias
-                                            </span>
-                                        )}
+                                        <p className="font-black text-slate-800 text-xs uppercase">{p.name}</p>
+                                        {isRed && <span className="text-[8px] font-black text-red-500 uppercase">Parado há {getDaysSince(p.lastPurchaseDate)} dias</span>}
                                     </td>
-                                    <td className="py-4 px-6 text-slate-500 font-bold uppercase text-[10px]">
-                                        <div className="flex items-center gap-2">
-                                            <CalendarClock className="w-4 h-4 text-slate-300" />
-                                            {new Date(product.lastPurchaseDate).toLocaleDateString('pt-BR')}
-                                        </div>
-                                    </td>
-                                    <td className="py-4 px-6 text-right font-bold text-slate-600 tabular-nums">
-                                        {formatCurrency(unitPrice)}
-                                    </td>
-                                    <td className="py-4 px-6 text-center font-black text-slate-900">{formatQty(product.quantity)}</td>
-                                    <td className="py-4 px-8 text-right font-black text-slate-900 tabular-nums">
-                                        {formatCurrency(product.totalValue)}
-                                    </td>
+                                    <td className="py-4 px-6 text-[10px] font-bold text-slate-500">{new Date(p.lastPurchaseDate).toLocaleDateString('pt-BR')}</td>
+                                    <td className="py-4 px-6 text-center font-black text-slate-700">{p.quantity}</td>
+                                    <td className="py-4 px-8 text-right font-black text-slate-900">{formatCurrency(p.totalValue)}</td>
                                 </tr>
                             );
                         })}
                     </tbody>
                 </table>
-            )}
+            </div>
+
+            {/* Mobile View (Cards) */}
+            <div className="md:hidden p-3 space-y-2">
+                {sortedProducts.map((p, idx) => {
+                    const isSelected = selectedProductIds.includes(p.id);
+                    const isRed = isRedItem(p);
+                    return (
+                        <div 
+                            key={idx} 
+                            onClick={() => toggleProduct(p.id)}
+                            className={`bg-white p-4 rounded-2xl border transition-all flex items-start gap-3 shadow-sm ${isSelected ? 'border-blue-500 ring-2 ring-blue-50' : 'border-slate-100'}`}
+                        >
+                            <div className={`mt-1 w-5 h-5 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all ${isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'border-slate-200'}`}>
+                                {isSelected && <span className="text-[10px] font-bold">✓</span>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h4 className="text-[10px] font-black text-slate-800 uppercase leading-tight line-clamp-2">{p.name}</h4>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-lg border ${isRed ? 'bg-red-50 text-red-500 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                        Última: {new Date(p.lastPurchaseDate).toLocaleDateString('pt-BR')}
+                                    </span>
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tabular-nums">{p.quantity} UN</span>
+                                </div>
+                                <div className="mt-2 text-right">
+                                    <span className="text-[11px] font-black text-slate-900">{formatCurrency(p.totalValue)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
-      </div>
-
-      <div className="fixed top-0 left-[-9999px] w-[800px]" ref={exportPagesRef}>
-        {productBatches.map((batch, pageIdx) => (
-          <div key={pageIdx} className="pdf-page-container bg-white p-12 text-slate-900 min-h-[1120px] flex flex-col">
-            <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
-                <div>
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-600 mb-1">Análise de Produtos • Página {pageIdx + 1}/{productBatches.length}</p>
-                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">{client.name}</h1>
-                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-1">Inteligência Comercial Centro-Norte</p>
-                </div>
-                <div className="text-right">
-                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Data do Relatório</p>
-                    <p className="text-lg font-black text-slate-800">{new Date().toLocaleDateString('pt-BR')}</p>
-                </div>
-            </div>
-
-            <div className="flex-1">
-                <table className="w-full text-left text-sm border-collapse">
-                    <thead>
-                        <tr className="border-b-2 border-slate-200 bg-slate-50 text-slate-400 uppercase text-[10px] font-black tracking-[0.2em]">
-                            <th className="py-4 px-2">Item / Descrição</th>
-                            <th className="py-4 px-2 text-right">Última Compra</th>
-                            <th className="py-4 px-2 text-right">Preço Unit.</th>
-                            <th className="py-4 px-2 text-center">Última Qtd</th>
-                            <th className="py-4 px-2 text-right">Último Valor</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {batch.map((product) => {
-                            const unitPrice = product.quantity > 0 ? product.totalValue / product.quantity : 0;
-                            const daysSince = getDaysSince(product.lastPurchaseDate);
-                            const isRed = isRedItem(product);
-
-                            return (
-                                <tr key={product.id} className="border-b border-slate-100">
-                                    <td className="py-4 px-2">
-                                        <p className="font-black text-slate-800 text-sm uppercase leading-tight">{product.name}</p>
-                                        {isRed && (
-                                            <p className="text-[10px] font-black text-red-500 uppercase mt-1">
-                                                * Crítico: Sem compra há {daysSince} dias
-                                            </p>
-                                        )}
-                                    </td>
-                                    <td className="py-4 px-2 text-right font-bold text-slate-600 text-xs">{new Date(product.lastPurchaseDate).toLocaleDateString('pt-BR')}</td>
-                                    <td className="py-4 px-2 text-right font-black text-slate-900 text-xs">
-                                        {formatCurrency(unitPrice)}
-                                    </td>
-                                    <td className="py-4 px-2 text-center font-black text-slate-900 text-sm">{formatQty(product.quantity)}</td>
-                                    <td className="py-4 px-2 text-right font-black text-slate-800 text-sm">
-                                       {formatCurrency(product.totalValue)}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
-
-            <div className="mt-12 pt-8 border-t border-slate-100 flex justify-between items-center opacity-40">
-                <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400 italic">Portal Centro-Norte • Este documento é exclusivo para suporte comercial.</p>
-                <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black">CN</div>
-            </div>
-          </div>
-        ))}
       </div>
     </div>,
     document.body
