@@ -79,29 +79,35 @@ const RepVerbaDetailModal: React.FC<{
                             <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
                                 <tr>
                                     <th className="px-8 py-5">Cliente</th>
-                                    <th className="px-6 py-5 text-right">Total que já comprou</th>
+                                    <th className="px-6 py-5 text-right">Total Comprado no Ano</th>
                                     <th className="px-6 py-5 text-right">Total Investimento</th>
                                     <th className="px-8 py-5 text-right">% de Ref</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {clientData.map((c, i) => {
-                                    const refPct = c.purchased > 0 ? (c.invested / c.purchased) * 100 : 100;
-                                    return (
-                                        <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                                            <td className="px-8 py-4">
-                                                <span className="font-black text-slate-700 uppercase text-[11px] truncate block max-w-[300px]">{c.name}</span>
-                                            </td>
-                                            <td className="px-6 py-4 text-right font-bold text-slate-400 text-xs tabular-nums">{formatBRL(c.purchased)}</td>
-                                            <td className="px-6 py-4 text-right font-black text-slate-900 text-xs tabular-nums">{formatBRL(c.invested)}</td>
-                                            <td className="px-8 py-4 text-right">
-                                                <span className={`text-[11px] font-black tabular-nums ${refPct > 7 ? 'text-red-500' : 'text-blue-600'}`}>
-                                                    {refPct.toFixed(2)}%
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                {clientData.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={4} className="px-8 py-10 text-center text-slate-300 font-bold uppercase text-[10px]">Sem investimentos registrados</td>
+                                    </tr>
+                                ) : (
+                                    clientData.map((c, i) => {
+                                        const refPct = c.purchased > 0 ? (c.invested / c.purchased) * 100 : 100;
+                                        return (
+                                            <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                                                <td className="px-8 py-4">
+                                                    <span className="font-black text-slate-700 uppercase text-[11px] truncate block max-w-[300px]">{c.name}</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-bold text-slate-400 text-xs tabular-nums">{formatBRL(c.purchased)}</td>
+                                                <td className="px-6 py-4 text-right font-black text-slate-900 text-xs tabular-nums">{formatBRL(c.invested)}</td>
+                                                <td className="px-8 py-4 text-right">
+                                                    <span className={`text-[11px] font-black tabular-nums ${refPct > 7 ? 'text-red-500' : 'text-blue-600'}`}>
+                                                        {refPct.toFixed(2)}%
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -582,11 +588,12 @@ export const ManagerDashboard: React.FC = () => {
         if (selectedMonths.length === 0) return "Nenhum Selecionado";
         if (selectedMonths.length === 12) return "ANO COMPLETO";
         const sorted = [...selectedMonths].sort((a,b) => a-b);
-        if (selectedMonths.length === 1) return monthNames[selectedMonths[0] - 1].toUpperCase();
+        const monthNamesArr = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        if (selectedMonths.length === 1) return monthNamesArr[selectedMonths[0] - 1].toUpperCase();
         return `${selectedMonths.length} MESES SELECIONADOS`;
     };
 
-    const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const monthNamesArr = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
@@ -659,7 +666,7 @@ export const ManagerDashboard: React.FC = () => {
                                     <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[9px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg hover:bg-red-100 transition-all">Limpar</button>
                                 </div>
                                 <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto custom-scrollbar">
-                                    {monthNames.map((m, i) => (
+                                    {monthNamesArr.map((m, i) => (
                                         <button 
                                             key={i} 
                                             onClick={() => toggleTempMonth(i + 1)}
@@ -742,7 +749,7 @@ export const ManagerDashboard: React.FC = () => {
                         <div className="flex flex-col items-end gap-2 border-r border-slate-100 pr-6">
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Meta OK (>= 100%)</span>
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Meta OK ({`&gt;=`} 100%)</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 bg-red-600 rounded-full"></div>
