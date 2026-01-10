@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Table2, Filter, ChevronRight, FileSpreadsheet, Percent, Calculator, Search, User, Boxes, Tag, Package, Building2, BarChart4, Download, Layers, CheckSquare, Square, X, ChevronDown, ListFilter, ArrowRight, Calendar, FileText, Loader2, Trash2, ListChecks, CalendarDays, Hash, RotateCcw, AlertCircle } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Button } from '../Button';
@@ -64,7 +64,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const [rowDimensions, setRowDimensions] = useState<Dimension[]>(initialState.rowDimensions);
     const [displayMode, setDisplayMode] = useState<'value' | 'percent'>(initialState.displayMode);
     const [searchTerm, setSearchTerm] = useState(initialState.searchTerm);
-    const [isExporting, setIsExporting] = useState<'excel' | 'pdf' | null>(null);
+    const [isExporting, setIsExporting] = useState(false);
 
     const dropdownRef = useRef<HTMLDivElement>(null);
     const monthDropdownRef = useRef<HTMLDivElement>(null);
@@ -99,17 +99,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
-
-    useEffect(() => {
-        if (filterReps.length === 0) {
-            setFilterClients([]);
-            setTopLimit('all');
-        }
-    }, [filterReps]);
-
-    useEffect(() => {
-        if (filterClients.length > 0) setTopLimit('all');
-    }, [filterClients]);
 
     const resetAllFilters = () => {
         if (!confirm('Deseja zerar todos os filtros e camadas desta consulta?')) return;
@@ -176,30 +165,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             
             return true;
         });
-
-        if (topLimit !== 'all' && filterClients.length === 0) {
-            const rankingMap = new Map<string, number>();
-            filteredSales.forEach(s => {
-                const clean = String(s.cnpj || '').replace(/\D/g, '');
-                rankingMap.set(clean, (rankingMap.get(clean) || 0) + (Number(s.faturamento) || 0));
-            });
-
-            const topCnpjs = Array.from(rankingMap.entries())
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, Number(topLimit))
-                .map(e => e[0]);
-
-            filteredSales = filteredSales.filter(s => topCnpjs.includes(String(s.cnpj || '').replace(/\D/g, '')));
-        }
-
-        if (filterClients.length > 0) {
-            const selectedCnpjs = new Set(
-                totalDataStore.clients
-                    .filter(c => filterClients.includes(c.id))
-                    .map(c => String(c.cnpj || '').replace(/\D/g, ''))
-            );
-            filteredSales = filteredSales.filter(s => selectedCnpjs.has(String(s.cnpj || '').replace(/\D/g, '')));
-        }
 
         const tree = new Map<string, GroupData>();
         let grandTotalFaturamento = 0;
@@ -283,6 +248,136 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
+    const handleExportExcel = () => {
+        if (processedBI.items.length === 0) {
+            alert('Não há dados para exportar.');
+            return;
+        }
+
+        setIsExporting(true);
+        try {
+            const leafLevel = rowDimensions.length - 1;
+            const exportItems = processedBI.items.filter(item => item.level === leafLevel);
+
+            if (exportItems.length === 0) {
+                alert('Selecione camadas antes de exportar.');
+                setIsExporting(false);
+                return;
+            }
+
+            const monthsStr = selectedMonths.length === 12 ? 'ANO COMPLETO' : selectedMonths.map(m => monthNames[m-1]).join(', ');
+            const filterLabel = `RELATÓRIO BI CENTRO-NORTE | PERÍODO: ${monthsStr} ${selectedYear} | CAMADAS: ${rowDimensions.map(d => d.toUpperCase()).join(' > ')}`;
+
+            // Cabeçalhos (6 colunas)
+            const headers = [
+                "ESTRUTURA COMPLETA",     // Col 0 (A)
+                "ITEM FINAL ANALISADO",   // Col 1 (B)
+                "FATURAMENTO (R$)",       // Col 2 (C)
+                "MIX SKU",                // Col 3 (D)
+                "VOLUME (UN)",            // Col 4 (E)
+                "PART. NO TOTAL (%)"      // Col 5 (F)
+            ];
+
+            // Matriz de Dados
+            const dataMatrix = [
+                [filterLabel], // Linha 1 (R=0)
+                headers,       // Linha 2 (R=1)
+                ...exportItems.map(item => [
+                    item.hierarchyLabels.join(' > '), // Col A
+                    item.label,                       // Col B
+                    item.faturamento,                 // Col C
+                    item.skusCount,                   // Col D
+                    item.quantidade,                  // Col E
+                    (item.participation / 100)        // Col F (decimal para % do Excel)
+                ])
+            ];
+
+            const ws = XLSX.utils.aoa_to_sheet(dataMatrix);
+
+            // --- DEFINIÇÃO DE ESTILOS ---
+            const titleStyle = {
+                font: { bold: true, color: { rgb: "1E40AF" }, sz: 12 },
+                alignment: { horizontal: "left", vertical: "center" }
+            };
+
+            const headerStyle = {
+                font: { bold: true, color: { rgb: "000000" }, sz: 10 },
+                fill: { fgColor: { rgb: "F1F5F9" } }, // Fundo suave (slate-100)
+                alignment: { horizontal: "center", vertical: "center" },
+                border: {
+                    bottom: { style: "thin", color: { rgb: "CBD5E1" } },
+                    top: { style: "thin", color: { rgb: "CBD5E1" } },
+                    left: { style: "thin", color: { rgb: "CBD5E1" } },
+                    right: { style: "thin", color: { rgb: "CBD5E1" } }
+                }
+            };
+
+            // Aplicar estilo ao título do relatório (A1)
+            if (ws['A1']) ws['A1'].s = titleStyle;
+
+            // APLICAR NEGRITO E ESTILO NOS TÍTULOS (Linha 2 -> Índice R=1)
+            for (let C = 0; C <= 5; C++) {
+                const cellRef = XLSX.utils.encode_cell({r: 1, c: C});
+                if (ws[cellRef]) {
+                    ws[cellRef].s = headerStyle;
+                }
+            }
+
+            // --- APLICAR FORMATAÇÃO NUMÉRICA NAS CÉLULAS DE DADOS ---
+            const range = XLSX.utils.decode_range(ws['!ref']!);
+            for (let R = 2; R <= range.e.r; ++R) { // Começa na linha 3 (índice 2)
+                
+                // Coluna C: Faturamento (Moeda)
+                const cellC = ws[XLSX.utils.encode_cell({r: R, c: 2})];
+                if (cellC) {
+                    cellC.t = 'n';
+                    cellC.z = '"R$" #,##0.00';
+                }
+
+                // Coluna D: Mix (Número com separador)
+                const cellD = ws[XLSX.utils.encode_cell({r: R, c: 3})];
+                if (cellD) {
+                    cellD.t = 'n';
+                    cellD.z = '#,##0';
+                }
+
+                // Coluna E: Volume (Número com separador)
+                const cellE = ws[XLSX.utils.encode_cell({r: R, c: 4})];
+                if (cellE) {
+                    cellE.t = 'n';
+                    cellE.z = '#,##0';
+                }
+
+                // Coluna F: Participação (Porcentagem)
+                const cellF = ws[XLSX.utils.encode_cell({r: R, c: 5})];
+                if (cellF) {
+                    cellF.t = 'n';
+                    cellF.z = '0.00%';
+                }
+            }
+
+            // Ajustar larguras de colunas
+            ws['!cols'] = [
+                { wch: 60 }, // Estrutura
+                { wch: 40 }, // Item
+                { wch: 20 }, // Fat
+                { wch: 10 }, // Mix
+                { wch: 15 }, // Vol
+                { wch: 18 }  // Part
+            ];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Dados BI");
+            
+            XLSX.writeFile(wb, `BI_CENTRONORTE_${new Date().getTime()}.xlsx`);
+        } catch (e) {
+            console.error('Erro Excel:', e);
+            alert('Falha ao gerar o arquivo. Verifique se os níveis de camada estão definidos.');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, isSimple = false, disabled = false, openUp = false }: any) => (
         <div className={`relative group/filter flex items-center gap-1 ${disabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
             <button 
@@ -352,7 +447,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     return (
         <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 animate-fadeIn pb-32" ref={dropdownRef}>
             
-            {/* Header Responsivo */}
             <div className="bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-4 w-full md:w-auto">
                     <div className="p-2.5 md:p-3.5 bg-blue-600 text-white rounded-2xl shadow-xl"><Layers className="w-5 h-5 md:w-6 md:h-6" /></div>
@@ -366,17 +460,18 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         <RotateCcw className="w-3.5 h-3.5" /> 
                         <span className="md:inline">Resetar</span>
                     </button>
-                    <Button onClick={() => setIsExporting('excel')} className="flex-1 md:flex-none h-10 px-4 md:px-6 rounded-xl text-[9px] md:text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 uppercase shadow-none flex items-center justify-center">
+                    <Button 
+                        onClick={handleExportExcel} 
+                        isLoading={isExporting}
+                        className="flex-1 md:flex-none h-10 px-4 md:px-6 rounded-xl text-[9px] md:text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 uppercase shadow-none flex items-center justify-center"
+                    >
                         <FileSpreadsheet className="w-3.5 h-3.5 mr-2" /> 
                         Excel
                     </Button>
                 </div>
             </div>
 
-            {/* Filtros e Controles */}
             <div className="bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-slate-200 shadow-sm space-y-6 relative">
-                
-                {/* Seleção de Tempo - Mobile amigável */}
                 <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8 pb-5 border-b border-slate-100">
                     <div className="flex items-center gap-3">
                         <CalendarDays className="w-4 h-4 text-blue-600" />
@@ -404,19 +499,19 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                             </button>
                             {showMonthDropdown && (
                                 <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[250] overflow-hidden">
-                                    <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between gap-2">
-                                        <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[8px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg">Todos</button>
-                                        <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[8px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg">Limpar</button>
+                                    <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-2">
+                                        <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[8px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">Todos</button>
+                                        <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[8px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg hover:bg-red-100 transition-all">Limpar</button>
                                     </div>
-                                    <div className="p-2 grid grid-cols-2 gap-1 max-h-60 overflow-y-auto custom-scrollbar">
+                                    <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto custom-scrollbar">
                                         {monthNames.map((m, i) => (
-                                            <button key={i} onClick={() => { const val = i+1; setTempSelectedMonths(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]); }} className={`flex items-center gap-2 p-2 rounded-xl text-[9px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i+1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-                                                {tempSelectedMonths.includes(i+1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 opacity-20" />}
+                                            <button key={i} onClick={() => setTempSelectedMonths(prev => prev.includes(i+1) ? prev.filter(x => x !== i+1) : [...prev, i+1])} className={`flex items-center gap-2 p-2 rounded-xl text-[9px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                                {tempSelectedMonths.includes(i + 1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 opacity-20" />}
                                                 {m}
                                             </button>
                                         ))}
                                     </div>
-                                    <div className="p-3 bg-slate-50 border-t border-slate-100">
+                                    <div className="p-3 border-t border-slate-100">
                                         <button onClick={() => { setSelectedMonths([...tempSelectedMonths]); setShowMonthDropdown(false); }} className="w-full bg-blue-600 text-white py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100">Aplicar</button>
                                     </div>
                                 </div>
@@ -425,7 +520,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Configuração de Camadas e Filtros em Massa */}
                 <div className="flex flex-col md:flex-row items-start gap-6 md:gap-10">
                     <div className="flex flex-col gap-3 w-full md:w-auto">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">1. Camadas da Tabela</span>
@@ -469,10 +563,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 </div>
             </div>
 
-            {/* Área Principal de Dados */}
             <div className="bg-white rounded-[24px] md:rounded-[32px] border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
-                
-                {/* Controles de Visualização */}
                 <div className="p-4 md:p-5 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
                     <div className="relative flex-1 w-full max-w-sm">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -484,61 +575,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     </div>
                 </div>
 
-                {/* LISTA MOBILE (BLOCK MD:HIDDEN) */}
-                <div className="md:hidden flex-1 divide-y divide-slate-100 bg-white">
-                    {processedBI.items.length === 0 ? (
-                        <div className="px-8 py-32 text-center text-slate-300">
-                            <BarChart4 className="w-16 h-16 mx-auto opacity-10 mb-4" />
-                            <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed">
-                                {rowDimensions.length === 0 ? "Escolha os níveis para processar" : "Sem dados no período"}
-                            </p>
-                        </div>
-                    ) : (
-                        processedBI.items.map((row, idx) => {
-                            const isRoot = row.level === 0;
-                            const paddingLeft = row.level * 16 + 12;
-                            const barColor = row.level === 0 ? 'bg-blue-600' : row.level === 1 ? 'bg-indigo-500' : 'bg-purple-500';
-
-                            return (
-                                <div 
-                                    key={idx} 
-                                    className={`p-4 transition-all ${isRoot ? 'bg-slate-50/50 border-l-4 border-blue-600' : 'bg-white'}`}
-                                    style={{ paddingLeft: `${paddingLeft}px` }}
-                                >
-                                    <div className="flex items-start justify-between gap-4 mb-2">
-                                        <div className="min-w-0">
-                                            <span className={`text-[10px] font-black uppercase tracking-tight block truncate ${isRoot ? 'text-slate-900' : 'text-slate-600'}`}>
-                                                {row.label}
-                                            </span>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Nível {row.level + 1}</span>
-                                                <span className="w-1 h-1 rounded-full bg-slate-200"></span>
-                                                <span className="text-[7px] font-black text-blue-600 uppercase">{row.skusCount} SKUs</span>
-                                            </div>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            {displayMode === 'value' ? (
-                                                <p className={`text-xs font-black ${isRoot ? 'text-slate-900' : 'text-slate-700'}`}>{formatBRL(row.faturamento)}</p>
-                                            ) : (
-                                                <p className="text-xs font-black text-blue-600">{row.participation.toFixed(2)}%</p>
-                                            )}
-                                            <p className="text-[7px] font-black text-slate-400 uppercase mt-0.5">{row.quantidade.toLocaleString()} Unidades</p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                            <div className={`h-full ${barColor}`} style={{ width: `${Math.min(row.participation, 100)}%` }}></div>
-                                        </div>
-                                        <span className="text-[8px] font-black text-slate-400 tabular-nums">{row.participation.toFixed(1)}%</span>
-                                    </div>
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
-
-                {/* TABELA DESKTOP (HIDDEN MD:BLOCK) */}
                 <div className="hidden md:block overflow-x-auto flex-1">
                     <table className="w-full text-left border-collapse min-w-[900px]">
                         <thead className="bg-white sticky top-0 z-10 border-b border-slate-200 shadow-sm">
@@ -556,7 +592,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                     <td colSpan={5} className="px-8 py-40 text-center text-slate-300">
                                         <BarChart4 className="w-20 h-20 mx-auto opacity-10 mb-4" />
                                         <p className="text-[11px] font-black uppercase tracking-[0.4em]">
-                                            {rowDimensions.length === 0 ? "Defina os níveis de análise para processar" : "Sem dados para o período selecionado"}
+                                            {rowDimensions.length === 0 ? "Defina os níveis de análise" : "Sem dados"}
                                         </p>
                                     </td>
                                 </tr>
@@ -564,8 +600,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 processedBI.items.map((row, idx) => {
                                     const isRoot = row.level === 0;
                                     const paddingLeft = row.level * 32 + 32;
-                                    const barColor = row.level === 0 ? 'bg-blue-600' : row.level === 1 ? 'bg-indigo-500' : 'bg-purple-500';
-
                                     return (
                                         <tr key={idx} className={`group transition-colors ${isRoot ? 'bg-slate-50/50' : 'hover:bg-slate-50/80'}`}>
                                             <td className="px-8 py-4" style={{ paddingLeft: `${paddingLeft}px` }}>
@@ -591,7 +625,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                                 <div className="flex flex-col items-end gap-1.5">
                                                     <span className="text-[10px] font-black text-slate-400 tabular-nums">{row.participation.toFixed(1)}%</span>
                                                     <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                        <div className={`h-full ${barColor}`} style={{ width: `${Math.min(row.participation, 100)}%` }}></div>
+                                                        <div className={`h-full bg-blue-600`} style={{ width: `${Math.min(row.participation, 100)}%` }}></div>
                                                     </div>
                                                 </div>
                                             </td>
@@ -603,11 +637,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     </table>
                 </div>
 
-                {/* Footer Consolidado Responsivo */}
                 {processedBI.items.length > 0 && (
                     <div className="p-6 md:p-8 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-center gap-6 md:gap-10 px-8 md:px-12 border-t-4 border-blue-600 shadow-2xl">
                         <div className="text-center md:text-left">
-                            <span className="text-[8px] md:text-[9px] font-black uppercase tracking-[0.4em] text-blue-400 block mb-1.5">Resultado da Consulta</span>
+                            <span className="text-[8px] md:text-[9px] font-black uppercase tracking-[0.4em] text-blue-400 block mb-1.5">Consolidado da Consulta</span>
                             <p className="text-[10px] md:text-xs font-bold text-slate-400">{selectedMonths.length === 12 ? 'ANO COMPLETO' : `${selectedMonths.length} MESES`} • {selectedYear}</p>
                         </div>
                         <div className="grid grid-cols-3 gap-6 md:gap-16 w-full md:w-auto">
@@ -616,8 +649,8 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 <p className="text-sm md:text-2xl font-black tabular-nums">{processedBI.totals.skus.toLocaleString()}</p>
                             </div>
                             <div className="text-center md:text-right">
-                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">VOLUME</p>
                                 <p className="text-sm md:text-2xl font-black tabular-nums">{processedBI.totals.quantidade.toLocaleString()}</p>
+                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">VOLUME</p>
                             </div>
                             <div className="text-center md:text-right">
                                 <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">RECEITA</p>
