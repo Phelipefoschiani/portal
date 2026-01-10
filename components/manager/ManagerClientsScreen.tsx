@@ -1,13 +1,15 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info, CalendarClock, Calendar } from 'lucide-react';
+import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info, CalendarClock, Calendar, FileSpreadsheet } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ClientDetailModal } from '../ClientDetailModal';
 import { totalDataStore } from '../../lib/dataStore';
+import * as XLSX from 'xlsx';
 
 export const ManagerClientsScreen: React.FC = () => {
     const now = new Date();
     const [isLoading, setIsLoading] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
     const [selectedRep, setSelectedRep] = useState('all');
     const [selectedChannel, setSelectedChannel] = useState('all');
     const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
@@ -24,6 +26,17 @@ export const ManagerClientsScreen: React.FC = () => {
         });
         return Array.from(set).sort();
     }, []);
+
+    // Helper para determinar a regional
+    const getRegional = (name: string) => {
+        const n = name.toLowerCase().trim();
+        const centroOeste = ["edegar feli", "everaldo", "fabio teles", "maria do carmo", "wantuir"];
+        const norte = ["antonio de lima", "auristela oliveira", "daniel machado", "maria santana", "rionaldo", "diego abreu"];
+        
+        if (centroOeste.some(rep => n.includes(rep))) return "CENTRO-OESTE";
+        if (norte.some(rep => n.includes(rep))) return "NORTE";
+        return "NÃO IDENTIFICADO";
+    };
 
     // 2. Motor de Processamento com Base Dinâmica
     const processedData = useMemo(() => {
@@ -101,6 +114,54 @@ export const ManagerClientsScreen: React.FC = () => {
         };
     };
 
+    const handleExportExcel = () => {
+        if (processedData.ranking.length === 0) {
+            alert('Não há dados para exportar.');
+            return;
+        }
+
+        setIsExporting(true);
+        try {
+            // RESOLUÇÃO DE INTEROPERAÇÃO: Captura o objeto XLSX correto para evitar undefined
+            const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
+            if (!X || !X.utils) {
+                throw new Error("Biblioteca XLSX não carregada corretamente.");
+            }
+
+            const dataToExport = processedData.ranking.map(client => ({
+                "REGIONAL": getRegional(client.repName),
+                "REPRESENTANTE": client.repName,
+                "CLIENTE": client.nome_fantasia,
+                "CANAL 2025": client.canal_vendas || 'GERAL',
+                "CANAL 2026": ""
+            }));
+
+            const ws = X.utils.json_to_sheet(dataToExport);
+
+            // Estilos básicos para cabeçalho
+            const range = X.utils.decode_range(ws['!ref']!);
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+                const cell = ws[X.utils.encode_cell({r: 0, c: C})];
+                if (cell) {
+                    cell.s = {
+                        font: { bold: true, color: { rgb: "FFFFFF" } },
+                        fill: { fgColor: { rgb: "1E40AF" } },
+                        alignment: { horizontal: "center" }
+                    };
+                }
+            }
+
+            const wb = X.utils.book_new();
+            X.utils.book_append_sheet(wb, ws, "Carteira_Total");
+            X.writeFile(wb, `Carteira_Total_CentroNorte_${new Date().getTime()}.xlsx`);
+        } catch (e) {
+            console.error('Erro Exportação Excel:', e);
+            alert('Falha ao gerar arquivo Excel.');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-12">
             <div className="flex flex-col lg:flex-row justify-between items-end gap-4">
@@ -112,14 +173,24 @@ export const ManagerClientsScreen: React.FC = () => {
                     </p>
                 </div>
                 
-                <div className="flex flex-wrap gap-3 w-full lg:w-auto">
+                <div className="flex flex-wrap gap-3 w-full lg:w-auto items-center">
+                    {/* Botão Excel */}
+                    <button 
+                        onClick={handleExportExcel}
+                        disabled={isExporting}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 text-[10px] font-black uppercase tracking-widest h-[42px]"
+                    >
+                        {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+                        Excel
+                    </button>
+
                     {/* Filtro Rep */}
                     <div className="relative flex-1 lg:flex-none">
                         <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                         <select 
                             value={selectedRep}
                             onChange={(e) => setSelectedRep(e.target.value)}
-                            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+                            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer h-[42px]"
                         >
                             <option value="all">TODOS REPRESENTANTES</option>
                             {totalDataStore.users.map(r => <option key={r.id} value={r.id}>{r.nome.toUpperCase()}</option>)}
@@ -132,7 +203,7 @@ export const ManagerClientsScreen: React.FC = () => {
                         <select 
                             value={selectedChannel}
                             onChange={(e) => setSelectedChannel(e.target.value)}
-                            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+                            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer h-[42px]"
                         >
                             <option value="all">TODOS OS CANAIS</option>
                             {channels.map(ch => <option key={ch} value={ch}>{ch.toUpperCase()}</option>)}
@@ -145,7 +216,7 @@ export const ManagerClientsScreen: React.FC = () => {
                         <select 
                             value={selectedYear}
                             onChange={(e) => setSelectedYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+                            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer h-[42px]"
                         >
                             <option value="all">HISTÓRICO TOTAL</option>
                             {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
@@ -160,7 +231,7 @@ export const ManagerClientsScreen: React.FC = () => {
                             placeholder="Buscar cliente ou CNPJ..." 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm h-[42px]"
                         />
                     </div>
                 </div>
@@ -228,7 +299,6 @@ export const ManagerClientsScreen: React.FC = () => {
                                                     {client.participation.toFixed(2)}%
                                                 </span>
                                                 <div className="w-20 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                    {/* Fixed malformed className and style attribute */}
                                                     <div className="h-full bg-blue-500" style={{ width: `${Math.min(client.participation, 100)}%` }}></div>
                                                 </div>
                                             </div>
