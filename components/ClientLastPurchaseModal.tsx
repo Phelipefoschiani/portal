@@ -5,7 +5,7 @@ import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle
 import { Button } from './Button';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 
 interface ClientLastPurchaseModalProps {
   client: {

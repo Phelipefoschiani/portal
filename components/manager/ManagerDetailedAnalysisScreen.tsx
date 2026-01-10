@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Table2, Filter, ChevronRight, FileSpreadsheet, Percent, Calculator, Search, User, Boxes, Tag, Package, Building2, BarChart4, Download, Layers, CheckSquare, Square, X, ChevronDown, ListFilter, ArrowRight, Calendar, FileText, Loader2, Trash2, ListChecks, CalendarDays, Hash, RotateCcw, AlertCircle } from 'lucide-react';
+import { Table2, Filter, ChevronRight, FileSpreadsheet, Percent, Calculator, Search, User, Boxes, Tag, Package, Building2, BarChart4, Download, Layers, CheckSquare, Square, X as XIcon, ChevronDown, ListFilter, ArrowRight, Calendar, FileText, Loader2, Trash2, ListChecks, CalendarDays, Hash, RotateCcw, AlertCircle } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Button } from '../Button';
@@ -256,6 +256,12 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
         setIsExporting(true);
         try {
+            // RESOLUÇÃO DE INTEROPERAÇÃO: Captura o objeto XLSX correto para evitar undefined
+            const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
+            if (!X || !X.utils) {
+                throw new Error("Biblioteca XLSX não carregada corretamente.");
+            }
+
             const leafLevel = rowDimensions.length - 1;
             const exportItems = processedBI.items.filter(item => item.level === leafLevel);
 
@@ -268,35 +274,31 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             const monthsStr = selectedMonths.length === 12 ? 'ANO COMPLETO' : selectedMonths.map(m => monthNames[m-1]).join(', ');
             const filterLabel = `RELATÓRIO BI CENTRO-NORTE | PERÍODO: ${monthsStr} ${selectedYear} | CAMADAS: ${rowDimensions.map(d => d.toUpperCase()).join(' > ')}`;
 
-            // Cabeçalhos (6 colunas)
             const headers = [
-                "ESTRUTURA COMPLETA",     // Col 0 (A)
-                "ITEM FINAL ANALISADO",   // Col 1 (B)
-                "FATURAMENTO (R$)",       // Col 2 (C)
-                "MIX SKU",                // Col 3 (D)
-                "VOLUME (UN)",            // Col 4 (E)
-                "PART. NO TOTAL (%)"      // Col 5 (F)
+                "ESTRUTURA COMPLETA",
+                "ITEM FINAL ANALISADO",
+                "FATURAMENTO (R$)",
+                "MIX SKU",
+                "VOLUME (UN)",
+                "PART. NO TOTAL (%)"
             ];
 
-            // Matriz de Dados Plano (Flat)
             const dataMatrix = [
-                [filterLabel], // Linha 1 (A1)
-                headers,       // Linha 2 (A2)
+                [filterLabel],
+                headers,
                 ...exportItems.map(item => [
-                    item.hierarchyLabels.join(' > '), // Col A
-                    item.label,                       // Col B
-                    item.faturamento,                 // Col C
-                    item.skusCount,                   // Col D
-                    item.quantidade,                  // Col E
-                    (item.participation / 100)        // Col F (decimal para % do Excel)
+                    item.hierarchyLabels.join(' > '),
+                    item.label,
+                    item.faturamento,
+                    item.skusCount,
+                    item.quantidade,
+                    (item.participation / 100)
                 ])
             ];
 
-            const ws = XLSX.utils.aoa_to_sheet(dataMatrix);
+            const ws = X.utils.aoa_to_sheet(dataMatrix);
 
-            // --- ESTILIZAÇÃO VIA XLSX-JS-STYLE ---
-            
-            // 1. Estilo para o Título (A1)
+            // Estilos para títulos (Linha 1 e 2)
             if (ws['A1']) {
                 ws['A1'].s = {
                     font: { bold: true, color: { rgb: "1E40AF" }, sz: 14 },
@@ -304,14 +306,13 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 };
             }
 
-            // 2. Estilo para os Cabeçalhos (Linha 2 -> A2 até F2)
             const headerCols = ['A', 'B', 'C', 'D', 'E', 'F'];
             headerCols.forEach(col => {
                 const cellRef = `${col}2`;
                 if (ws[cellRef]) {
                     ws[cellRef].s = {
                         font: { bold: true, color: { rgb: "000000" }, sz: 11 },
-                        fill: { fgColor: { rgb: "F1F5F9" } }, // Fundo cinza claro
+                        fill: { fgColor: { rgb: "F1F5F9" } },
                         alignment: { horizontal: "center", vertical: "center" },
                         border: {
                             bottom: { style: "medium", color: { rgb: "000000" } },
@@ -321,36 +322,28 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 }
             });
 
-            // 3. Formatação Numérica e Alinhamento dos Dados
-            const range = XLSX.utils.decode_range(ws['!ref']!);
-            for (let R = 2; R <= range.e.r; ++R) { // Começa na linha 3 (índice 2)
-                
-                // Coluna C: Faturamento (Moeda)
-                const cellC = ws[XLSX.utils.encode_cell({r: R, c: 2})];
+            // Formatação de dados
+            const range = X.utils.decode_range(ws['!ref']!);
+            for (let R = 2; R <= range.e.r; ++R) {
+                const cellC = ws[X.utils.encode_cell({r: R, c: 2})];
                 if (cellC) {
                     cellC.t = 'n';
                     cellC.z = '"R$" #,##0.00';
                     cellC.s = { alignment: { horizontal: "right" } };
                 }
-
-                // Coluna D: Mix (Número)
-                const cellD = ws[XLSX.utils.encode_cell({r: R, c: 3})];
+                const cellD = ws[X.utils.encode_cell({r: R, c: 3})];
                 if (cellD) {
                     cellD.t = 'n';
                     cellD.z = '#,##0';
                     cellD.s = { alignment: { horizontal: "center" } };
                 }
-
-                // Coluna E: Volume (Número)
-                const cellE = ws[XLSX.utils.encode_cell({r: R, c: 4})];
+                const cellE = ws[X.utils.encode_cell({r: R, c: 4})];
                 if (cellE) {
                     cellE.t = 'n';
                     cellE.z = '#,##0';
                     cellE.s = { alignment: { horizontal: "center" } };
                 }
-
-                // Coluna F: Participação (%)
-                const cellF = ws[XLSX.utils.encode_cell({r: R, c: 5})];
+                const cellF = ws[X.utils.encode_cell({r: R, c: 5})];
                 if (cellF) {
                     cellF.t = 'n';
                     cellF.z = '0.00%';
@@ -358,23 +351,16 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 }
             }
 
-            // Ajustar larguras das colunas
             ws['!cols'] = [
-                { wch: 65 }, // Estrutura
-                { wch: 45 }, // Item
-                { wch: 22 }, // Fat
-                { wch: 12 }, // Mix
-                { wch: 18 }, // Vol
-                { wch: 20 }  // Part
+                { wch: 65 }, { wch: 45 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 20 }
             ];
 
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "BI_CENTRONORTE");
-            
-            XLSX.writeFile(wb, `BI_CENTRONORTE_${new Date().getTime()}.xlsx`);
+            const wb = X.utils.book_new();
+            X.utils.book_append_sheet(wb, ws, "BI_CENTRONORTE");
+            X.writeFile(wb, `BI_CENTRONORTE_${new Date().getTime()}.xlsx`);
         } catch (e) {
             console.error('Erro Exportação Excel:', e);
-            alert('Falha ao processar arquivo. Verifique se o build está correto.');
+            alert('Falha ao processar arquivo Excel. Tente recarregar a página.');
         } finally {
             setIsExporting(false);
         }

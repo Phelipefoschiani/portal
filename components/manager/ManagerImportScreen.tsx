@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { FileSpreadsheet, Upload, CheckCircle2, AlertTriangle, ArrowRight, ShieldCheck, Loader2, Database, Users, BarChart3, X, UserPlus, RefreshCcw, CopyX } from 'lucide-react';
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 import { Button } from '../Button';
 import { supabase } from '../../lib/supabase';
 
@@ -52,7 +52,6 @@ export const ManagerImportScreen: React.FC = () => {
     return `${cleanCnpj(row.cnpj)}|${row.data}|${row.pedido}|${row.nota_fiscal}|${row.codigo_produto}|${row.faturamento}|${row.qtde_faturado}`;
   };
 
-  // Função para encontrar valor em colunas com nomes parecidos
   const getVal = (row: any, keys: string[]) => {
     const foundKey = Object.keys(row).find(k => keys.some(key => k.toLowerCase().trim() === key.toLowerCase().trim()));
     return foundKey ? row[foundKey] : null;
@@ -66,10 +65,16 @@ export const ManagerImportScreen: React.FC = () => {
     setStats({ totalRows: 0, uniqueClientsDetected: 0, newClientsInserted: 0, processedRows: 0, ignoredRows: 0 });
 
     try {
+      // INTEROPERAÇÃO: Captura o objeto XLSX correto
+      const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
+      if (!X || !X.utils || !X.read) {
+          throw new Error("Biblioteca de planilhas não foi inicializada.");
+      }
+
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
+      const workbook = X.read(data);
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData: any[] = X.utils.sheet_to_json(worksheet);
 
       if (jsonData.length === 0) throw new Error('A planilha está vazia.');
 
@@ -120,7 +125,6 @@ export const ManagerImportScreen: React.FC = () => {
       const clientsDetected = Array.from(uniqueClientsInFile.values());
       setStats(prev => ({ ...prev, totalRows: jsonData.length, uniqueClientsDetected: clientsDetected.length }));
 
-      // 1. Cadastrar clientes novos
       setCurrentAction('Sincronizando carteira de clientes...');
       const { data: existingClients } = await supabase.from('clientes').select('id, cnpj').eq('usuario_id', selectedRepId);
       const existingCnpjsMap = new Map(existingClients?.map(c => [cleanCnpj(c.cnpj), c.id]) || []);
@@ -130,12 +134,10 @@ export const ManagerImportScreen: React.FC = () => {
         await supabase.from('clientes').insert(newClients);
       }
 
-      // 2. Buscar TODOS os clientes (agora com os novos) para ter o cliente_id
       setCurrentAction('Vinculando registros...');
       const { data: allClients } = await supabase.from('clientes').select('id, cnpj').eq('usuario_id', selectedRepId);
       const cnpjToIdMap = new Map(allClients?.map(c => [cleanCnpj(c.cnpj), c.id]) || []);
 
-      // 3. Buscar vendas existentes para evitar duplicidade
       const { data: existingSales } = await supabase
         .from('dados_vendas')
         .select('cnpj, data, pedido, nota_fiscal, codigo_produto, faturamento, qtde_faturado')
@@ -144,7 +146,6 @@ export const ManagerImportScreen: React.FC = () => {
 
       const existingFingerprints = new Set(existingSales?.map(s => generateRowFingerprint(s)) || []);
 
-      // 4. Inserir vendas vinculadas
       setCurrentAction('Salvando faturamento detalhado...');
       const salesBatchSize = 200;
       let totalVendasSalvas = 0;
@@ -165,7 +166,7 @@ export const ManagerImportScreen: React.FC = () => {
           pedido: row.pedido,
           nota_fiscal: row.nota_fiscal,
           usuario_id: selectedRepId,
-          cliente_id: cnpjToIdMap.get(row.cnpj), // VÍNCULO OBRIGATÓRIO
+          cliente_id: cnpjToIdMap.get(row.cnpj),
           cnpj: row.cnpj,
           cliente_nome: row.nome,
           canal_vendas: row.canal !== 'null' ? row.canal : null,

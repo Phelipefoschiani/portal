@@ -5,7 +5,7 @@ import { X, FileDown, Package, Filter, Loader2, FileSpreadsheet, ChevronRight } 
 import { Button } from './Button';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 
 interface ClientProductsModalProps {
   client: {
@@ -39,11 +39,15 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
 
   const handleDownloadExcel = () => {
     if (sortedProducts.length === 0) return;
+    
+    const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
+    if (!X || !X.utils) return;
+
     const excelData = sortedProducts.map(p => ({ "Produto": p.name, "QTD": p.quantity, "Valor Total": p.totalValue }));
-    const ws = XLSX.utils.json_to_sheet(excelData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Mix");
-    XLSX.writeFile(wb, `mix_${client.name.replace(/\s/g, '_')}.xlsx`);
+    const ws = X.utils.json_to_sheet(excelData);
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, ws, "Mix");
+    X.writeFile(wb, `mix_${client.name.replace(/\s/g, '_')}.xlsx`);
   };
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
@@ -97,7 +101,7 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
                                 <tr key={idx} className="hover:bg-slate-50 transition-colors group">
                                     <td className="py-4 px-6 font-black text-slate-800 text-xs uppercase">{p.name}</td>
                                     <td className="py-4 px-6 text-center font-bold text-slate-600">{p.quantity}</td>
-                                    <td className="py-4 px-6 text-right font-black text-slate-900">{formatCurrency(p.totalValue)}</td>
+                                    <td className="py-4 px-6 text-right font-black text-slate-900 text-xs tabular-nums">{formatCurrency(p.totalValue)}</td>
                                     <td className="py-4 px-8 text-right"><span className="text-[10px] font-black text-purple-600">{part.toFixed(1)}%</span></td>
                                 </tr>
                             );
