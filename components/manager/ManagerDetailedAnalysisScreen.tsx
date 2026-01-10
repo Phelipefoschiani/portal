@@ -249,7 +249,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
     const handleExportExcel = () => {
-        if (processedBI.items.length === 0) {
+        if (!processedBI.items || processedBI.items.length === 0) {
             alert('Não há dados para exportar.');
             return;
         }
@@ -278,10 +278,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 "PART. NO TOTAL (%)"      // Col 5 (F)
             ];
 
-            // Matriz de Dados
+            // Matriz de Dados Plano (Flat)
             const dataMatrix = [
-                [filterLabel], // Linha 1 (R=0)
-                headers,       // Linha 2 (R=1)
+                [filterLabel], // Linha 1 (A1)
+                headers,       // Linha 2 (A2)
                 ...exportItems.map(item => [
                     item.hierarchyLabels.join(' > '), // Col A
                     item.label,                       // Col B
@@ -294,36 +294,34 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
             const ws = XLSX.utils.aoa_to_sheet(dataMatrix);
 
-            // --- DEFINIÇÃO DE ESTILOS ---
-            const titleStyle = {
-                font: { bold: true, color: { rgb: "1E40AF" }, sz: 12 },
-                alignment: { horizontal: "left", vertical: "center" }
-            };
-
-            const headerStyle = {
-                font: { bold: true, color: { rgb: "000000" }, sz: 10 },
-                fill: { fgColor: { rgb: "F1F5F9" } }, // Fundo suave (slate-100)
-                alignment: { horizontal: "center", vertical: "center" },
-                border: {
-                    bottom: { style: "thin", color: { rgb: "CBD5E1" } },
-                    top: { style: "thin", color: { rgb: "CBD5E1" } },
-                    left: { style: "thin", color: { rgb: "CBD5E1" } },
-                    right: { style: "thin", color: { rgb: "CBD5E1" } }
-                }
-            };
-
-            // Aplicar estilo ao título do relatório (A1)
-            if (ws['A1']) ws['A1'].s = titleStyle;
-
-            // APLICAR NEGRITO E ESTILO NOS TÍTULOS (Linha 2 -> Índice R=1)
-            for (let C = 0; C <= 5; C++) {
-                const cellRef = XLSX.utils.encode_cell({r: 1, c: C});
-                if (ws[cellRef]) {
-                    ws[cellRef].s = headerStyle;
-                }
+            // --- ESTILIZAÇÃO VIA XLSX-JS-STYLE ---
+            
+            // 1. Estilo para o Título (A1)
+            if (ws['A1']) {
+                ws['A1'].s = {
+                    font: { bold: true, color: { rgb: "1E40AF" }, sz: 14 },
+                    alignment: { horizontal: "left", vertical: "center" }
+                };
             }
 
-            // --- APLICAR FORMATAÇÃO NUMÉRICA NAS CÉLULAS DE DADOS ---
+            // 2. Estilo para os Cabeçalhos (Linha 2 -> A2 até F2)
+            const headerCols = ['A', 'B', 'C', 'D', 'E', 'F'];
+            headerCols.forEach(col => {
+                const cellRef = `${col}2`;
+                if (ws[cellRef]) {
+                    ws[cellRef].s = {
+                        font: { bold: true, color: { rgb: "000000" }, sz: 11 },
+                        fill: { fgColor: { rgb: "F1F5F9" } }, // Fundo cinza claro
+                        alignment: { horizontal: "center", vertical: "center" },
+                        border: {
+                            bottom: { style: "medium", color: { rgb: "000000" } },
+                            top: { style: "thin", color: { rgb: "CBD5E1" } }
+                        }
+                    };
+                }
+            });
+
+            // 3. Formatação Numérica e Alinhamento dos Dados
             const range = XLSX.utils.decode_range(ws['!ref']!);
             for (let R = 2; R <= range.e.r; ++R) { // Começa na linha 3 (índice 2)
                 
@@ -332,47 +330,51 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 if (cellC) {
                     cellC.t = 'n';
                     cellC.z = '"R$" #,##0.00';
+                    cellC.s = { alignment: { horizontal: "right" } };
                 }
 
-                // Coluna D: Mix (Número com separador)
+                // Coluna D: Mix (Número)
                 const cellD = ws[XLSX.utils.encode_cell({r: R, c: 3})];
                 if (cellD) {
                     cellD.t = 'n';
                     cellD.z = '#,##0';
+                    cellD.s = { alignment: { horizontal: "center" } };
                 }
 
-                // Coluna E: Volume (Número com separador)
+                // Coluna E: Volume (Número)
                 const cellE = ws[XLSX.utils.encode_cell({r: R, c: 4})];
                 if (cellE) {
                     cellE.t = 'n';
                     cellE.z = '#,##0';
+                    cellE.s = { alignment: { horizontal: "center" } };
                 }
 
-                // Coluna F: Participação (Porcentagem)
+                // Coluna F: Participação (%)
                 const cellF = ws[XLSX.utils.encode_cell({r: R, c: 5})];
                 if (cellF) {
                     cellF.t = 'n';
                     cellF.z = '0.00%';
+                    cellF.s = { alignment: { horizontal: "right" } };
                 }
             }
 
-            // Ajustar larguras de colunas
+            // Ajustar larguras das colunas
             ws['!cols'] = [
-                { wch: 60 }, // Estrutura
-                { wch: 40 }, // Item
-                { wch: 20 }, // Fat
-                { wch: 10 }, // Mix
-                { wch: 15 }, // Vol
-                { wch: 18 }  // Part
+                { wch: 65 }, // Estrutura
+                { wch: 45 }, // Item
+                { wch: 22 }, // Fat
+                { wch: 12 }, // Mix
+                { wch: 18 }, // Vol
+                { wch: 20 }  // Part
             ];
 
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Dados BI");
+            XLSX.utils.book_append_sheet(wb, ws, "BI_CENTRONORTE");
             
             XLSX.writeFile(wb, `BI_CENTRONORTE_${new Date().getTime()}.xlsx`);
         } catch (e) {
-            console.error('Erro Excel:', e);
-            alert('Falha ao gerar o arquivo. Verifique se os níveis de camada estão definidos.');
+            console.error('Erro Exportação Excel:', e);
+            alert('Falha ao processar arquivo. Verifique se o build está correto.');
         } finally {
             setIsExporting(false);
         }
@@ -495,7 +497,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         <div className="relative flex-1 md:flex-none" ref={monthDropdownRef}>
                             <button onClick={() => { setTempSelectedMonths([...selectedMonths]); setShowMonthDropdown(!showMonthDropdown); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-3 min-w-[150px] justify-between">
                                 <span className="truncate">{selectedMonths.length === 12 ? 'ANO COMPLETO' : selectedMonths.length === 1 ? monthNames[selectedMonths[0]-1].toUpperCase() : `${selectedMonths.length} MESES`}</span>
-                                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
+                                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
                             </button>
                             {showMonthDropdown && (
                                 <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[250] overflow-hidden">
@@ -503,10 +505,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                         <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[8px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">Todos</button>
                                         <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[8px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg hover:bg-red-100 transition-all">Limpar</button>
                                     </div>
-                                    <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                    <div className="p-2 grid grid-cols-2 gap-1 max-h-60 overflow-y-auto custom-scrollbar">
                                         {monthNames.map((m, i) => (
-                                            <button key={i} onClick={() => setTempSelectedMonths(prev => prev.includes(i+1) ? prev.filter(x => x !== i+1) : [...prev, i+1])} className={`flex items-center gap-2 p-2 rounded-xl text-[9px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-                                                {tempSelectedMonths.includes(i + 1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 opacity-20" />}
+                                            <button key={i} onClick={() => { const val = i+1; setTempSelectedMonths(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]); }} className={`flex items-center gap-2 p-2 rounded-xl text-[9px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i+1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                                {tempSelectedMonths.includes(i+1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 opacity-20" />}
                                                 {m}
                                             </button>
                                         ))}
@@ -565,7 +567,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
             <div className="bg-white rounded-[24px] md:rounded-[32px] border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
                 <div className="p-4 md:p-5 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div className="relative flex-1 w-full max-w-sm">
+                    <div className="relative flex-1 w-full max-sm:max-w-none max-w-sm">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input type="text" placeholder="Filtrar dados..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
                     </div>

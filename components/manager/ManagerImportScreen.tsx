@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { FileSpreadsheet, Upload, CheckCircle2, AlertTriangle, ArrowRight, ShieldCheck, Loader2, Database, Users, BarChart3, X, UserPlus, RefreshCcw, CopyX } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx';
 import { Button } from '../Button';
 import { supabase } from '../../lib/supabase';
 
