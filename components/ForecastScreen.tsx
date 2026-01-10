@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
 import { createPortal } from 'react-dom';
 
-type TabType = 'seasonality' | 'clients' | 'weekly';
+type TabType = 'seasonality' | 'weekly';
 
 interface DraftItem {
   clientId: string;
@@ -234,12 +234,12 @@ export const ForecastScreen: React.FC = () => {
         usuario_id: userId,
         data: `${selectedYear}-01-01`,
         previsao_total: Object.values(adjustedTargets).reduce((a,b) => a+b, 0),
-        status: 'pending',
-        observacao: `CONFIRMAÇÃO ANUAL: ${userName} aceitou a grade de ${selectedYear}.`
+        status: 'approved',
+        observacao: `CONFIRMAÇÃO ANUAL: ${userName} deu ciência nas metas de ${selectedYear}.`
       });
       
       setIsCotaConfirmed(true);
-      alert('Meta anual sincronizada!');
+      alert('Ciência confirmada com sucesso!');
     } catch (e: any) { alert(e.message); } finally { setIsSaving(false); }
   };
 
@@ -250,11 +250,8 @@ export const ForecastScreen: React.FC = () => {
       <div className="flex justify-center mb-8">
         <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1 overflow-x-auto no-scrollbar">
           <button onClick={() => setActiveTab('seasonality')} className={`px-6 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'seasonality' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>1. Previsão Anual</button>
-          <button onClick={() => isCotaConfirmed && setActiveTab('clients')} className={`px-6 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'clients' ? 'bg-blue-600 text-white shadow-lg' : isCotaConfirmed ? 'text-slate-400' : 'text-slate-200 cursor-not-allowed'}`}>
-            {!isCotaConfirmed && <Lock className="w-3.5 h-3.5" />} 2. Carteira Anual
-          </button>
           <button onClick={() => setActiveTab('weekly')} className={`px-6 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'weekly' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>
-            <MousePointer2 className="w-3.5 h-3.5" /> 3. Check-in Semanal
+            <MousePointer2 className="w-3.5 h-3.5" /> 2. Check-in Semanal
           </button>
         </div>
       </div>
@@ -401,26 +398,44 @@ export const ForecastScreen: React.FC = () => {
                 </div>
             </div>
         </div>
-      ) : activeTab === 'seasonality' ? (
+      ) : (
         <div className="space-y-6 animate-slideUp">
            <div className="bg-slate-900 p-8 rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-8 border-b-4 border-blue-600">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><BarChart3 className="w-40 h-40" /></div>
                 <div>
-                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-2">Previsão Acumulada {selectedYear}</p>
+                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-2">Previsão Anual {selectedYear}</p>
                     <h3 className="text-4xl font-black">{formatBRL(Object.values(adjustedTargets).reduce((a,b) => a+b, 0))}</h3>
                 </div>
                 <div className="bg-white/5 p-6 rounded-3xl border border-white/5 backdrop-blur-sm max-w-xs text-right">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Status da Validação</p>
-                    <p className="text-xs font-black uppercase text-blue-400">{confirmedMonths.size === 12 ? 'Grade Validada' : 'Aguardando Ciência Mensal'}</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Status da Meta</p>
+                    <p className={`text-xs font-black uppercase ${isCotaConfirmed ? 'text-emerald-400' : 'text-blue-400'}`}>
+                        {isCotaConfirmed ? 'Ciência Confirmada' : 'Aguardando Validação'}
+                    </p>
                 </div>
             </div>
-            <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
+
+            {isCotaConfirmed && (
+                <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[32px] flex items-center gap-4 animate-fadeIn">
+                    <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shrink-0">
+                        <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-black text-emerald-900 uppercase tracking-tight">Cota Validada</p>
+                        <p className="text-[10px] text-emerald-700 font-bold uppercase">Você já deu ciência nesta grade de faturamento anual. As edições estão bloqueadas.</p>
+                    </div>
+                </div>
+            )}
+
+            <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden relative">
+                {isCotaConfirmed && (
+                    <div className="absolute inset-0 z-10 bg-white/10 backdrop-blur-[1px] cursor-not-allowed"></div>
+                )}
                 <table className="w-full text-left">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                             <th className="px-8 py-6">Mês Referência</th>
                             <th className="px-6 py-6 text-right">Meta Regional</th>
-                            <th className="px-8 py-6 text-center">Decisão Comercial</th>
+                            <th className="px-8 py-6 text-center">Ação</th>
                             <th className="px-8 py-6 text-right">Minha Previsão</th>
                         </tr>
                     </thead>
@@ -435,7 +450,11 @@ export const ForecastScreen: React.FC = () => {
                                     <td className="px-8 py-5 font-black text-slate-700 uppercase text-xs">{m}</td>
                                     <td className="px-6 py-5 text-right font-bold text-slate-400 tabular-nums">{formatBRL(original)}</td>
                                     <td className="px-8 py-5 text-center">
-                                        <button onClick={() => setConfirmedMonths(prev => { const n = new Set(prev); if (n.has(monthNum)) n.delete(monthNum); else n.add(monthNum); return n; })} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase ${isConfirmed ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                                        <button 
+                                            disabled={isCotaConfirmed}
+                                            onClick={() => setConfirmedMonths(prev => { const n = new Set(prev); if (n.has(monthNum)) n.delete(monthNum); else n.add(monthNum); return n; })} 
+                                            className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${isConfirmed ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}
+                                        >
                                             {isConfirmed ? 'CIENTE' : 'CONFIRMAR'}
                                         </button>
                                     </td>
@@ -446,16 +465,14 @@ export const ForecastScreen: React.FC = () => {
                     </tbody>
                 </table>
             </div>
-            <div className="flex justify-end">
-                <Button onClick={confirmSeasonality} disabled={confirmedMonths.size < 12 || isSaving} isLoading={isSaving} className="rounded-2xl px-12 h-16 font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-blue-500/20">Sincronizar Meta Anual <ChevronRight className="w-5 h-5 ml-2" /></Button>
-            </div>
-        </div>
-      ) : (
-        <div className="space-y-6 animate-slideUp">
-           <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm text-center py-20 text-slate-300">
-               <Building2 className="w-16 h-16 mx-auto mb-4 opacity-10" />
-               <p className="font-black uppercase text-xs tracking-[0.3em]">Funcionalidade de mapeamento de carteira anual habilitada.</p>
-           </div>
+
+            {!isCotaConfirmed && (
+                <div className="flex justify-end">
+                    <Button onClick={confirmSeasonality} disabled={confirmedMonths.size < 12 || isSaving} isLoading={isSaving} className="rounded-2xl px-12 h-16 font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-blue-500/20">
+                        Confirmar Ciência e Enviar ao Gerente <ChevronRight className="w-5 h-5 ml-2" />
+                    </Button>
+                </div>
+            )}
         </div>
       )}
 

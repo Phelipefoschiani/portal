@@ -37,8 +37,7 @@ export const ManagerForecastScreen: React.FC = () => {
                 const { data } = await supabase
                     .from('previsoes')
                     .select('*, usuarios(nome)')
-                    .eq('status', 'pending')
-                    .not('observacao', 'ilike', 'WEEKLY_CHECKIN%')
+                    .ilike('observacao', 'CONFIRMAÇÃO ANUAL%')
                     .order('criado_em', { ascending: false });
                 setPrevisoes(data || []);
             } else if (view === 'weekly_checkin') {
@@ -128,7 +127,7 @@ export const ManagerForecastScreen: React.FC = () => {
                 .eq('id', reviewModalReport.id);
 
             await fetchData();
-            reviewModalReport(null);
+            setReviewModalReport(null);
             alert('Relatório enviado para correção.');
         } catch (e: any) {
             alert('Erro: ' + e.message);
@@ -237,26 +236,31 @@ export const ManagerForecastScreen: React.FC = () => {
             {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 text-slate-400"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>
             ) : view === 'mensais' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {previsoes.map(p => (
-                        <div key={p.id} className="bg-white p-8 rounded-[36px] border border-slate-200 shadow-sm group">
-                            <div className="flex justify-between items-start mb-6">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">{p.usuarios?.nome.charAt(0)}</div>
-                                    <div><h3 className="font-black text-slate-900 uppercase text-xs">{p.usuarios?.nome}</h3><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Regional</p></div>
+                <div className="space-y-4">
+                    <div className="flex items-center gap-3 px-2">
+                         <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Representantes Cientes das Metas Anuais</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {previsoes.length === 0 ? (
+                            <div className="col-span-full py-20 text-center bg-white border border-dashed border-slate-200 rounded-[32px]">
+                                <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest">Nenhuma ciência registrada até o momento</p>
+                            </div>
+                        ) : (
+                            previsoes.map(p => (
+                                <div key={p.id} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex items-center justify-between group hover:border-blue-500 transition-all">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black group-hover:bg-blue-600 transition-colors">{p.usuarios?.nome.charAt(0)}</div>
+                                        <div>
+                                            <h4 className="font-black text-slate-800 uppercase text-xs">{p.usuarios?.nome}</h4>
+                                            <p className="text-[9px] font-bold text-slate-400 uppercase tabular-nums">CIÊNCIA EM {new Date(p.criado_em).toLocaleDateString('pt-BR')}</p>
+                                        </div>
+                                    </div>
+                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase border border-emerald-100">Ciente</span>
                                 </div>
-                                <button onClick={() => handleDeleteForecast(p.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all"><Trash2 className="w-4 h-4" /></button>
-                            </div>
-                            <div className="mb-8">
-                                <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest mb-1">Previsão Proposta</p>
-                                <p className="text-2xl font-black text-slate-900 tabular-nums">{formatBRL(p.previsao_total)}</p>
-                            </div>
-                            <div className="flex gap-3 pt-4 border-t border-slate-50">
-                                <Button variant="outline" onClick={() => handlePrevisaoAction(p.id, 'rejected')} className="bg-white text-red-600 flex-1 h-12 rounded-xl font-black text-[10px] uppercase">Recusar</Button>
-                                <Button onClick={() => handlePrevisaoAction(p.id, 'approved')} className="flex-1 h-12 rounded-xl font-black text-[10px] uppercase shadow-lg shadow-blue-500/20">Aprovar</Button>
-                            </div>
-                        </div>
-                    ))}
+                            ))
+                        )}
+                    </div>
                 </div>
             ) : (
                 <div className="space-y-8 animate-slideUp">
