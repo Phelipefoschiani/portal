@@ -717,10 +717,9 @@ export const ManagerDashboard: React.FC = () => {
                 theme: 'striped',
                 styles: {
                     font: 'helvetica',
-                    fontSize: 5.8, // Fonte levemente reduzida para garantir espaço total
+                    fontSize: 5.5, // Fonte levemente reduzida para garantir espaço total e não quebrar
                     cellPadding: 0.8, // Padding reduzido para não quebrar linha
-                    overflow: 'visible',
-                    noWrap: true // FUNDAMENTAL: Garante que o texto não "pule" para baixo
+                    overflow: 'visible' // Garante que se o texto for grande, ele não seja forçado a pular linha no layout autotable
                 },
                 headStyles: {
                     fillColor: [15, 23, 42], // Slate-900 (Estilo PCN)
