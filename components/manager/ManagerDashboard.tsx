@@ -683,7 +683,7 @@ export const ManagerDashboard: React.FC = () => {
                 format: 'a4'
             });
 
-            // Adicionar Título (Reduzi a posição Y para ganhar espaço)
+            // Adicionar Título (Fonte grande e nítida)
             pdf.setFontSize(14);
             pdf.setFont('helvetica', 'bold');
             pdf.text(`COTA ANUAL CONSOLIDADA - EQUIPE CENTRO-NORTE - ${selectedYear}`, 14, 15);
@@ -713,17 +713,17 @@ export const ManagerDashboard: React.FC = () => {
                 head: headers,
                 body: body,
                 foot: footer,
-                startY: 22, // Ajustado para não sobrepor o título
+                startY: 20, // Posição Y logo após o título
                 theme: 'striped',
                 styles: {
                     font: 'helvetica',
-                    fontSize: 6, // Reduzido para caber tudo sem quebrar
-                    cellPadding: 1.2, // Padding reduzido
-                    overflow: 'visible', // Força o conteúdo a ignorar limites e não quebrar
-                    noWrap: true // EVITA QUE O NÚMERO PASSE PARA A LINHA DE BAIXO
+                    fontSize: 5.8, // Fonte levemente reduzida para garantir espaço total
+                    cellPadding: 0.8, // Padding reduzido para não quebrar linha
+                    overflow: 'visible',
+                    noWrap: true // FUNDAMENTAL: Garante que o texto não "pule" para baixo
                 },
                 headStyles: {
-                    fillColor: [15, 23, 42], // Slate-900
+                    fillColor: [15, 23, 42], // Slate-900 (Estilo PCN)
                     textColor: [255, 255, 255],
                     fontStyle: 'bold',
                     halign: 'center'
@@ -739,9 +739,9 @@ export const ManagerDashboard: React.FC = () => {
                     halign: 'right'
                 },
                 columnStyles: {
-                    0: { halign: 'left', fontStyle: 'bold', cellWidth: 38 }, // Largura fixa menor para o nome
+                    0: { halign: 'left', fontStyle: 'bold', cellWidth: 38 }, // Coluna Rep fixa
                 },
-                margin: { left: 10, right: 10 }
+                margin: { left: 5, right: 5 } // Margens reduzidas para ganhar largura
             });
 
             pdf.save(`Cota_Anual_Regional_${selectedYear}.pdf`);
