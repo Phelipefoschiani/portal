@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, BarChart3 as BarIcon, Share2, CalendarDays, BarChart4, ArrowUpRight, ArrowDownRight, Table, FileSpreadsheet } from 'lucide-react';
+import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, BarChart3 as BarIcon, Share2, CalendarDays, BarChart4, ArrowUpRight, ArrowDownRight, Table, FileSpreadsheet, File } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { totalDataStore } from '../../lib/dataStore';
 import { Button } from '../Button';
 import { RepPerformanceModal } from './RepPerformanceModal';
@@ -511,6 +512,7 @@ export const ManagerDashboard: React.FC = () => {
     const [selectedRepId, setSelectedRepId] = useState<string>('all');
     const [selectedRepForPerformance, setSelectedRepForPerformance] = useState<any | null>(null);
     const [isExportingMatrix, setIsExportingMatrix] = useState(false);
+    const [isExportingPdf, setIsExportingPdf] = useState(false);
     
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -668,6 +670,86 @@ export const ManagerDashboard: React.FC = () => {
             alert('Falha ao exportar excel.');
         } finally {
             setIsExportingMatrix(false);
+        }
+    };
+
+    const handleDownloadMatrixPdf = async () => {
+        if (matrixData.rows.length === 0) return;
+        setIsExportingPdf(true);
+        try {
+            const pdf = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            // Adicionar Título (Reduzi a posição Y para ganhar espaço)
+            pdf.setFontSize(14);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(`COTA ANUAL CONSOLIDADA - EQUIPE CENTRO-NORTE - ${selectedYear}`, 14, 15);
+
+            // Cabeçalhos da tabela
+            const headers = [
+                ['REPRESENTANTE', ...monthNamesArr.map(m => m.slice(0, 3).toUpperCase()), 'TOTAL ANUAL']
+            ];
+
+            // Linhas de dados dos representantes
+            const body = matrixData.rows.map(row => [
+                row.rep.nome.toUpperCase(),
+                ...row.monthlyTargets.map(val => val > 0 ? formatBRL(val) : '-'),
+                formatBRL(row.totalRep)
+            ]);
+
+            // Linha de totais regionais no rodapé
+            const footer = [
+                [
+                    'META REGIONAL TOTAL',
+                    ...matrixData.columnTotals.map(val => formatBRL(val)),
+                    formatBRL(matrixData.grandTotal)
+                ]
+            ];
+
+            autoTable(pdf, {
+                head: headers,
+                body: body,
+                foot: footer,
+                startY: 22, // Ajustado para não sobrepor o título
+                theme: 'striped',
+                styles: {
+                    font: 'helvetica',
+                    fontSize: 6, // Reduzido para caber tudo sem quebrar
+                    cellPadding: 1.2, // Padding reduzido
+                    overflow: 'visible', // Força o conteúdo a ignorar limites e não quebrar
+                    noWrap: true // EVITA QUE O NÚMERO PASSE PARA A LINHA DE BAIXO
+                },
+                headStyles: {
+                    fillColor: [15, 23, 42], // Slate-900
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center'
+                },
+                bodyStyles: {
+                    textColor: [51, 65, 85], // Slate-700
+                    halign: 'right'
+                },
+                footStyles: {
+                    fillColor: [37, 99, 235], // Blue-600
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'right'
+                },
+                columnStyles: {
+                    0: { halign: 'left', fontStyle: 'bold', cellWidth: 38 }, // Largura fixa menor para o nome
+                },
+                margin: { left: 10, right: 10 }
+            });
+
+            pdf.save(`Cota_Anual_Regional_${selectedYear}.pdf`);
+        } catch (e) {
+            console.error('Erro ao gerar PDF:', e);
+            alert('Falha ao gerar PDF.');
+        } finally {
+            setIsExportingPdf(false);
         }
     };
 
@@ -870,7 +952,7 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
             </div>
 
-            {/* TABELA MATRIZ DE METAS POR EQUIPE */}
+            {/* TABELA MATRIZ DE METAS POR EQUIPE (Cota Anual Consolidada) */}
             <div className="bg-white p-8 md:p-12 rounded-[48px] border border-slate-200 shadow-sm mx-4 animate-slideUp">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
                     <div className="flex items-center gap-4">
@@ -882,18 +964,28 @@ export const ManagerDashboard: React.FC = () => {
                             <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Grade de objetivos mensais por representante em {selectedYear}</p>
                         </div>
                     </div>
-                    <button 
-                        onClick={handleDownloadMatrixExcel}
-                        disabled={isExportingMatrix}
-                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 text-[10px] font-black uppercase tracking-widest h-14"
-                    >
-                        {isExportingMatrix ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-                        Exportar Excel
-                    </button>
+                    <div className="flex gap-3 no-print"> 
+                        <button 
+                            onClick={handleDownloadMatrixExcel}
+                            disabled={isExportingMatrix}
+                            className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 text-[10px] font-black uppercase tracking-widest h-14"
+                        >
+                            {isExportingMatrix ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                            Exportar Excel
+                        </button>
+                        <button 
+                            onClick={handleDownloadMatrixPdf}
+                            disabled={isExportingPdf}
+                            className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 text-[10px] font-black uppercase tracking-widest h-14"
+                        >
+                            {isExportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                            Exportar PDF
+                        </button>
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto rounded-3xl border border-slate-100">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full text-left border-collapse bg-white">
                         <thead className="bg-slate-50 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">
                             <tr>
                                 <th className="px-6 py-5 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Representante</th>
