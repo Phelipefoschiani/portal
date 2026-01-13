@@ -1,12 +1,13 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, BarChart3 as BarIcon, Share2, CalendarDays, BarChart4, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Target, TrendingUp, Users, Wallet, Calendar, RefreshCw, Loader2, DollarSign, CheckCircle2, X, ChevronRight, Database, RotateCcw, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, BarChart3 as BarIcon, Share2, CalendarDays, BarChart4, ArrowUpRight, ArrowDownRight, Table, FileSpreadsheet } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { totalDataStore } from '../../lib/dataStore';
 import { Button } from '../Button';
+import { RepPerformanceModal } from './RepPerformanceModal';
+import * as XLSX from 'xlsx';
 
 type KpiDetailType = 'meta' | 'faturado' | 'positivacao' | 'verba' | null;
 
@@ -121,7 +122,7 @@ const RepVerbaDetailModal: React.FC<{
     );
 };
 
-// --- MODAL DE ANÁLISE DE METAS (COMPONENT UNTOUCHED) ---
+// --- MODAL DE ANÁLISE DE METAS ---
 const TargetsAnalysisModal: React.FC<{
     year: number;
     repId: string;
@@ -358,7 +359,7 @@ const TargetsAnalysisModal: React.FC<{
     );
 };
 
-// --- MODAL DE DETALHAMENTO DE KPI (MODIFICADO SOMENTE O CASO DE VERBA) ---
+// --- MODAL DE DETALHAMENTO DE KPI ---
 const KpiDetailModal: React.FC<{ 
     type: KpiDetailType; 
     details: any[]; 
@@ -500,7 +501,6 @@ const KpiDetailModal: React.FC<{
 
 export const ManagerDashboard: React.FC = () => {
     const now = new Date();
-    const rankingRef = useRef<HTMLDivElement>(null);
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
@@ -509,6 +509,8 @@ export const ManagerDashboard: React.FC = () => {
     const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailType>(null);
     const [teamDetails, setTeamDetails] = useState<any[]>([]);
     const [selectedRepId, setSelectedRepId] = useState<string>('all');
+    const [selectedRepForPerformance, setSelectedRepForPerformance] = useState<any | null>(null);
+    const [isExportingMatrix, setIsExportingMatrix] = useState(false);
     
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -572,6 +574,7 @@ export const ManagerDashboard: React.FC = () => {
     }, [teamDetails, selectedRepId]);
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
+    
     const pctMeta = displayData.totalMeta > 0 ? (displayData.totalFaturado / displayData.totalMeta) * 100 : 0;
     const diff = displayData.totalFaturado - displayData.totalMeta;
 
@@ -594,6 +597,79 @@ export const ManagerDashboard: React.FC = () => {
     };
 
     const monthNamesArr = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+    // Cálculo da Matriz de Metas Anuais
+    const matrixData = useMemo(() => {
+        const reps = totalDataStore.users.sort((a, b) => a.nome.localeCompare(b.nome));
+        const allTargets = totalDataStore.targets.filter(t => t.ano === selectedYear);
+
+        const rows = reps.map(rep => {
+            const monthlyTargets = Array.from({ length: 12 }, (_, i) => {
+                const month = i + 1;
+                return allTargets.find(t => t.usuario_id === rep.id && t.mes === month)?.valor || 0;
+            });
+            const totalRep = monthlyTargets.reduce((a, b) => a + b, 0);
+            return { rep, monthlyTargets, totalRep };
+        });
+
+        const columnTotals = Array.from({ length: 12 }, (_, i) => {
+            const month = i + 1;
+            return allTargets.filter(t => t.mes === month).reduce((a, b) => a + Number(b.valor), 0);
+        });
+
+        const grandTotal = columnTotals.reduce((a, b) => a + b, 0);
+
+        return { rows, columnTotals, grandTotal };
+    }, [selectedYear]);
+
+    const handleDownloadMatrixExcel = () => {
+        if (matrixData.rows.length === 0) return;
+        setIsExportingMatrix(true);
+        try {
+            const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
+            if (!X || !X.utils) throw new Error("XLSX lib not found");
+
+            const dataToExport = matrixData.rows.map(row => {
+                const obj: any = { "Representante": row.rep.nome };
+                monthNamesArr.forEach((m, idx) => {
+                    obj[m] = row.monthlyTargets[idx];
+                });
+                obj["Total Anual"] = row.totalRep;
+                return obj;
+            });
+
+            // Adicionar linha de totais
+            const totalsObj: any = { "Representante": "META REGIONAL TOTAL" };
+            monthNamesArr.forEach((m, idx) => {
+                totalsObj[m] = matrixData.columnTotals[idx];
+            });
+            totalsObj["Total Anual"] = matrixData.grandTotal;
+            dataToExport.push(totalsObj);
+
+            const ws = X.utils.json_to_sheet(dataToExport);
+
+            // Formatação financeira para as colunas de valor
+            const range = X.utils.decode_range(ws['!ref']!);
+            for (let C = 1; C <= range.e.c; ++C) {
+                for (let R = 1; R <= range.e.r; ++R) {
+                    const cell = ws[X.utils.encode_cell({ r: R, c: C })];
+                    if (cell && typeof cell.v === 'number') {
+                        cell.t = 'n';
+                        cell.z = '"R$" #,##0.00';
+                    }
+                }
+            }
+
+            const wb = X.utils.book_new();
+            X.utils.book_append_sheet(wb, ws, "Cotas_Anuais");
+            X.writeFile(wb, `Cota_Anual_Regional_${selectedYear}.xlsx`);
+        } catch (e) {
+            console.error(e);
+            alert('Falha ao exportar excel.');
+        } finally {
+            setIsExportingMatrix(false);
+        }
+    };
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
@@ -742,8 +818,8 @@ export const ManagerDashboard: React.FC = () => {
                 <div className="flex justify-between items-start mb-16">
                     <div>
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em]">Ranking de Eficiência Regional</h3>
-                        <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Comparativo de batimento de meta por representante</p>
-                        <p className="text-[8px] font-black text-blue-600 uppercase mt-2">Portal Centro-Norte • {getMonthsLabel()}</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Ordenado do maior superávit percentual para o menor</p>
+                        <p className="text-[8px] font-black text-blue-600 uppercase mt-2">Clique na barra para ver o detalhamento mensal</p>
                     </div>
                     <div className="flex items-center gap-6">
                         <div className="flex flex-col items-end gap-2 border-r border-slate-100 pr-6">
@@ -763,24 +839,101 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
 
                 <div className="h-[400px] w-full flex items-end justify-between gap-4 px-2 overflow-x-auto no-scrollbar pt-20">
-                    {teamDetails.map((rep) => {
-                        const pct = rep.meta > 0 ? (rep.faturado / rep.meta) * 100 : 0;
-                        const isSuccess = pct >= 100;
-                        return (
-                            <div key={rep.id} className="flex-1 flex flex-col items-center group h-full min-w-[70px]">
-                                <div className="relative w-full flex-1 flex flex-col justify-end items-center">
-                                    <div className="absolute -top-12 flex flex-col items-center">
-                                        <span className={`text-[11px] font-black tabular-nums ${isSuccess ? 'text-blue-700' : 'text-red-700'}`}>{pct.toFixed(2)}%</span>
-                                        <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter">{formatBRL(rep.faturado)}</span>
+                    {teamDetails
+                        .sort((a, b) => {
+                            const pctA = a.meta > 0 ? a.faturado / a.meta : 0;
+                            const pctB = b.meta > 0 ? b.faturado / b.meta : 0;
+                            return pctB - pctA;
+                        })
+                        .map((rep) => {
+                            const pct = rep.meta > 0 ? (rep.faturado / rep.meta) * 100 : 0;
+                            const isSuccess = pct >= 100;
+                            return (
+                                <div 
+                                    key={rep.id} 
+                                    onClick={() => setSelectedRepForPerformance(rep)}
+                                    className="flex-1 flex flex-col items-center group h-full min-w-[70px] cursor-pointer hover:opacity-80 transition-all"
+                                >
+                                    <div className="relative w-full flex-1 flex flex-col justify-end items-center">
+                                        <div className="absolute -top-12 flex flex-col items-center">
+                                            <span className={`text-[11px] font-black tabular-nums ${isSuccess ? 'text-blue-700' : 'text-red-700'}`}>{pct.toFixed(2)}%</span>
+                                            <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter">{formatBRL(rep.faturado)}</span>
+                                        </div>
+                                        <div className={`w-full max-w-[36px] rounded-t-xl transition-all duration-1000 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-600 shadow-red-100'}`} style={{ height: `${Math.min(pct, 100)}%` }}>
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent rounded-t-xl"></div>
+                                        </div>
                                     </div>
-                                    <div className={`w-full max-w-[36px] rounded-t-xl transition-all duration-1000 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-600 shadow-red-100'}`} style={{ height: `${Math.min(pct, 100)}%` }}>
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent rounded-t-xl"></div>
-                                    </div>
+                                    <span className="mt-6 text-[9px] font-black text-slate-400 uppercase tracking-tight text-center leading-tight truncate w-full">{rep.nome.split(' ')[0]}</span>
                                 </div>
-                                <span className="mt-6 text-[9px] font-black text-slate-400 uppercase tracking-tight text-center leading-tight truncate w-full">{rep.nome.split(' ')[0]}</span>
-                            </div>
-                        );
-                    })}
+                            );
+                        })}
+                </div>
+            </div>
+
+            {/* TABELA MATRIZ DE METAS POR EQUIPE */}
+            <div className="bg-white p-8 md:p-12 rounded-[48px] border border-slate-200 shadow-sm mx-4 animate-slideUp">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-slate-100 text-slate-900 rounded-2xl">
+                            <Table className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em]">Cota Anual Consolidada</h3>
+                            <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Grade de objetivos mensais por representante em {selectedYear}</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={handleDownloadMatrixExcel}
+                        disabled={isExportingMatrix}
+                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 text-[10px] font-black uppercase tracking-widest h-14"
+                    >
+                        {isExportingMatrix ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                        Exportar Excel
+                    </button>
+                </div>
+
+                <div className="overflow-x-auto rounded-3xl border border-slate-100">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-slate-50 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">
+                            <tr>
+                                <th className="px-6 py-5 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Representante</th>
+                                {monthNamesArr.map(m => (
+                                    <th key={m} className="px-4 py-5 text-right">{m.slice(0, 3)}</th>
+                                ))}
+                                <th className="px-6 py-5 text-right bg-blue-50 text-blue-600 border-l border-blue-100">Total Ano</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                            {matrixData.rows.map((row, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                                    <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 font-black text-slate-700 uppercase text-[10px] truncate max-w-[150px]">
+                                        {row.rep.nome}
+                                    </td>
+                                    {row.monthlyTargets.map((val, midx) => (
+                                        <td key={midx} className="px-4 py-4 text-right font-bold text-slate-400 text-[10px] tabular-nums">
+                                            {val > 0 ? formatBRL(val) : '-'}
+                                        </td>
+                                    ))}
+                                    <td className="px-6 py-4 text-right bg-blue-50/20 font-black text-blue-700 text-[10px] tabular-nums border-l border-blue-50">
+                                        {formatBRL(row.totalRep)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        <tfoot className="bg-slate-900 text-white border-t-2 border-blue-600">
+                            <tr className="text-[10px] font-black uppercase tracking-[0.15em]">
+                                <td className="px-6 py-5 border-r border-white/5">Meta Regional</td>
+                                {matrixData.columnTotals.map((tot, idx) => (
+                                    <td key={idx} className="px-4 py-5 text-right tabular-nums text-blue-400">
+                                        {formatBRL(tot)}
+                                    </td>
+                                ))}
+                                <td className="px-6 py-5 text-right bg-blue-600 text-white tabular-nums">
+                                    {formatBRL(matrixData.grandTotal)}
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
                 </div>
             </div>
 
@@ -805,6 +958,15 @@ export const ManagerDashboard: React.FC = () => {
                     formatBRL={formatBRL}
                 />,
                 document.body
+            )}
+
+            {selectedRepForPerformance && (
+                <RepPerformanceModal 
+                    rep={selectedRepForPerformance} 
+                    year={selectedYear} 
+                    selectedMonths={selectedMonths}
+                    onClose={() => setSelectedRepForPerformance(null)} 
+                />
             )}
         </div>
     );
