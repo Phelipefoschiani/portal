@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { TrendingUp, CheckCircle2, XCircle, Loader2, X, Users, Trash2, ArrowRight, DollarSign, Building2, RefreshCw, Layers, History, MousePointer2, AlertTriangle, CheckSquare, ListTodo, ShieldCheck, UserX, RotateCcw, ChevronRight, Edit3, Save, AlertCircle, Search, MapPin } from 'lucide-react';
+import { TrendingUp, CheckCircle2, XCircle, Loader2, X, Users, Trash2, ArrowRight, DollarSign, Building2, RefreshCw, Layers, History, MousePointer2, AlertTriangle, CheckSquare, ListTodo, ShieldCheck, UserX, RotateCcw, ChevronRight, Edit3, Save, AlertCircle, Search, MapPin, MessageSquareText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { createPortal } from 'react-dom';
@@ -14,17 +14,13 @@ export const ManagerForecastScreen: React.FC = () => {
     const [showMissingRepsModal, setShowMissingRepsModal] = useState(false);
     const [showResetModal, setShowResetModal] = useState(false);
     
-    // Check-in Semanal
+    // Previsões Enviadas
     const [weeklyReports, setWeeklyReports] = useState<any[]>([]);
     const [isActionLoading, setIsActionLoading] = useState(false);
     
-    // Modal de Revisão Detalhada (Gerente ajustando valores)
-    const [reviewModalReport, setReviewModalReport] = useState<any | null>(null);
-    const [reviewItems, setReviewItems] = useState<any[]>([]);
+    // Modal de Recusa com Motivo
+    const [rejectionModalReport, setRejectionModalReport] = useState<any | null>(null);
     const [rejectionReason, setRejectionReason] = useState('');
-
-    // Modal de Detalhe do Histórico (Drill-down)
-    const [selectedHistoryReport, setSelectedHistoryReport] = useState<any | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -44,16 +40,16 @@ export const ManagerForecastScreen: React.FC = () => {
                 const { data } = await supabase
                     .from('previsoes')
                     .select(`
-                        *, 
-                        usuarios(nome),
-                        previsao_clientes (
-                            id,
-                            cliente_id,
-                            valor_previsto_cliente,
-                            clientes (nome_fantasia, cnpj)
-                        )
+                        id,
+                        usuario_id,
+                        data,
+                        previsao_total,
+                        status,
+                        observacao,
+                        criado_em,
+                        usuarios(nome)
                     `)
-                    .ilike('observacao', 'WEEKLY_CHECKIN%')
+                    .ilike('observacao', '%WEEKLY_CHECKIN%') // Busca flexível
                     .order('criado_em', { ascending: false });
                 
                 setWeeklyReports(data || []);
@@ -67,7 +63,6 @@ export const ManagerForecastScreen: React.FC = () => {
 
     const weeklyKPIs = useMemo(() => {
         const reports = weeklyReports;
-        // Agora soma PENDENTES e APROVADOS para dar a visão real da semana
         const totalValid = reports
             .filter(r => r.status === 'pending' || r.status === 'approved')
             .reduce((acc, curr) => acc + Number(curr.previsao_total), 0);
@@ -78,59 +73,53 @@ export const ManagerForecastScreen: React.FC = () => {
     }, [weeklyReports]);
 
     const handlePrevisaoAction = async (id: string, status: 'approved' | 'rejected') => {
+        if (status === 'rejected') {
+            const report = weeklyReports.find(r => r.id === id);
+            setRejectionModalReport(report);
+            setRejectionReason('');
+            return;
+        }
+
         setIsActionLoading(true);
         try {
-            await supabase.from('previsoes').update({ status }).eq('id', id);
-            
-            // Recarrega dados para atualizar UI e KPI
+            const { error } = await supabase.from('previsoes').update({ status }).eq('id', id);
+            if (error) throw error;
             await fetchData();
-            alert(status === 'approved' ? 'Previsão aprovada!' : 'Previsão enviada para revisão.');
-        } catch (e) { 
-            console.error(e); 
+            alert('Previsão aprovada com sucesso!');
+        } catch (e: any) { 
+            alert('Erro ao aprovar: ' + e.message);
         } finally { 
             setIsActionLoading(false); 
         }
     };
 
-    const openReviewModal = (report: any) => {
-        setReviewModalReport(report);
-        setReviewItems(report.previsao_clientes ? [...report.previsao_clientes] : []);
-        setRejectionReason('');
-    };
-
-    const handleUpdateReviewItem = (id: string, newVal: number) => {
-        setReviewItems(prev => prev.map(item => item.id === id ? { ...item, valor_previsto_cliente: newVal } : item));
-    };
-
-    const confirmRejectionWithAdjustments = async () => {
+    const confirmRejection = async () => {
         if (!rejectionReason.trim()) {
-            alert('Informe o motivo da revisão para o representante.');
+            alert('Informe o motivo da recusa.');
             return;
         }
         setIsActionLoading(true);
         try {
-            for (const item of reviewItems) {
-                await supabase
-                    .from('previsao_clientes')
-                    .update({ valor_previsto_cliente: item.valor_previsto_cliente })
-                    .eq('id', item.id);
-            }
+            // Importante: Manter o prefixo WEEKLY_CHECKIN para que o representante continue vendo o registro
+            const currentObs = rejectionModalReport.observacao || '';
+            const cleanObs = currentObs.replace(/\[REVISÃO GERENTE:.*?\]\s*/, '').replace('WEEKLY_CHECKIN:', '').trim();
+            const finalObs = `[REVISÃO GERENTE: ${rejectionReason.toUpperCase()}] WEEKLY_CHECKIN: ${cleanObs}`;
 
-            const newTotal = reviewItems.reduce((acc, curr) => acc + Number(curr.valor_previsto_cliente), 0);
-            await supabase
+            const { error } = await supabase
                 .from('previsoes')
                 .update({ 
                     status: 'rejected', 
-                    previsao_total: newTotal,
-                    observacao: `WEEKLY_CHECKIN: [REVISÃO GERENTE: ${rejectionReason.toUpperCase()}]`
+                    observacao: finalObs
                 })
-                .eq('id', reviewModalReport.id);
+                .eq('id', rejectionModalReport.id);
+
+            if (error) throw error;
 
             await fetchData();
-            setReviewModalReport(null);
-            alert('Relatório enviado para correção.');
+            setRejectionModalReport(null);
+            alert('Solicitação de revisão enviada ao representante.');
         } catch (e: any) {
-            alert('Erro: ' + e.message);
+            alert('Erro ao recusar: ' + e.message);
         } finally {
             setIsActionLoading(false);
         }
@@ -140,8 +129,8 @@ export const ManagerForecastScreen: React.FC = () => {
         if (!confirm('Deseja realmente EXCLUIR permanentemente?')) return;
         setIsActionLoading(true);
         try {
-            await supabase.from('previsao_clientes').delete().eq('previsao_id', id);
-            await supabase.from('previsoes').delete().eq('id', id);
+            const { error } = await supabase.from('previsoes').delete().eq('id', id);
+            if (error) throw error;
             await fetchData();
             alert('Removido.');
         } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
@@ -150,35 +139,20 @@ export const ManagerForecastScreen: React.FC = () => {
     const executeResetCycle = async () => {
         setIsActionLoading(true);
         try {
-            // 1. Buscar todos os IDs de previsões semanais
             const { data: weeklies } = await supabase
                 .from('previsoes')
                 .select('id')
-                .ilike('observacao', 'WEEKLY_CHECKIN%');
+                .ilike('observacao', '%WEEKLY_CHECKIN%');
             
             if (weeklies && weeklies.length > 0) {
                 const ids = weeklies.map(w => w.id);
-                
-                // 2. Apagar dependências (filhos)
-                const { error: errItems } = await supabase
-                    .from('previsao_clientes')
-                    .delete()
-                    .in('previsao_id', ids);
-                
-                if (errItems) throw errItems;
-
-                // 3. Apagar cabeçalhos (pai)
-                const { error: errHeader } = await supabase
-                    .from('previsoes')
-                    .delete()
-                    .in('id', ids);
-
+                const { error: errHeader } = await supabase.from('previsoes').delete().in('id', ids);
                 if (errHeader) throw errHeader;
             }
 
             await fetchData();
             setShowResetModal(false);
-            alert('Ciclo semanal resetado com sucesso! Todos os lançamentos foram apagados.');
+            alert('Ciclo resetado. Todos os lançamentos foram apagados.');
         } catch (e: any) { 
             alert('Falha ao resetar: ' + e.message); 
         } finally { 
@@ -199,7 +173,7 @@ export const ManagerForecastScreen: React.FC = () => {
                 </div>
                 <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar">
                     <button onClick={() => setView('weekly_checkin')} className={`whitespace-nowrap px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${view === 'weekly_checkin' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-                        <MousePointer2 className="w-4 h-4" /> Check-in Semanal
+                        <MousePointer2 className="w-4 h-4" /> Previsões Enviadas
                     </button>
                     <button onClick={() => setView('mensais')} className={`whitespace-nowrap px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${view === 'mensais' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>Sazonalidade Anual</button>
                 </div>
@@ -209,26 +183,26 @@ export const ManagerForecastScreen: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl relative overflow-hidden border-b-4 border-blue-600">
                         <div className="absolute top-0 right-0 p-4 opacity-10"><DollarSign className="w-16 h-16" /></div>
-                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Previsão Semanal</p>
+                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Previsão Semanal Consolidada</p>
                         <h3 className="text-3xl font-black tabular-nums">{formatBRL(weeklyKPIs.totalValid)}</h3>
-                        <p className="text-[9px] font-bold text-slate-400 mt-2 uppercase">Total de novos negócios (Em análise + Aprovados)</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-2 uppercase">Soma de todos os envios válidos da semana</p>
                     </div>
 
                     <div onClick={() => setShowMissingRepsModal(true)} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-400 transition-all active:scale-95">
                         <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><UserX className="w-16 h-16 text-slate-900" /></div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Reps s/ Check-in</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pendentes de Envio</p>
                         <div className="flex items-baseline gap-2">
                           <h3 className="text-3xl font-black text-slate-900">{weeklyKPIs.missingCount}</h3>
                           <span className="text-xs text-slate-400 font-bold">/ {totalDataStore.users.length}</span>
                         </div>
-                        <div className="mt-4 flex items-center gap-2 text-[9px] font-black text-blue-600 uppercase">Ver nomes <ChevronRight className="w-3 h-3" /></div>
+                        <div className="mt-4 flex items-center gap-2 text-[9px] font-black text-blue-600 uppercase">Ver lista <ChevronRight className="w-3 h-3" /></div>
                     </div>
 
                     <button onClick={() => setShowResetModal(true)} disabled={isActionLoading} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-center items-center gap-2 group hover:bg-red-50 hover:border-red-200 transition-all active:scale-95">
                         <div className="p-3 bg-red-50 text-red-600 rounded-2xl group-hover:bg-red-600 group-hover:text-white transition-all shadow-inner">
                            <RotateCcw className={`w-6 h-6 ${isActionLoading ? 'animate-spin' : ''}`} />
                         </div>
-                        <p className="text-[10px] font-black text-slate-400 group-hover:text-red-700 uppercase tracking-widest">Resetar Ciclo Semanal</p>
+                        <p className="text-[10px] font-black text-slate-400 group-hover:text-red-700 uppercase tracking-widest">Zerar Ciclo de Previsão</p>
                     </button>
                 </div>
             )}
@@ -239,12 +213,12 @@ export const ManagerForecastScreen: React.FC = () => {
                 <div className="space-y-4">
                     <div className="flex items-center gap-3 px-2">
                          <CheckCircle2 className="w-5 h-5 text-blue-600" />
-                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Representantes Cientes das Metas Anuais</h3>
+                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Mural de Ciência Anual</h3>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {previsoes.length === 0 ? (
                             <div className="col-span-full py-20 text-center bg-white border border-dashed border-slate-200 rounded-[32px]">
-                                <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest">Nenhuma ciência registrada até o momento</p>
+                                <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest">Nenhuma ciência anual confirmada</p>
                             </div>
                         ) : (
                             previsoes.map(p => (
@@ -256,222 +230,122 @@ export const ManagerForecastScreen: React.FC = () => {
                                             <p className="text-[9px] font-bold text-slate-400 uppercase tabular-nums">CIÊNCIA EM {new Date(p.criado_em).toLocaleDateString('pt-BR')}</p>
                                         </div>
                                     </div>
-                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase border border-emerald-100">Ciente</span>
+                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase border border-emerald-100">Confirmado</span>
                                 </div>
                             ))
                         )}
                     </div>
                 </div>
             ) : (
-                <div className="space-y-8 animate-slideUp">
-                    {/* Fila de Aprovação (Somente PENDENTES) */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3 px-2">
-                             <RefreshCw className="w-5 h-5 text-blue-600" />
-                             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Fila de Aprovação</h3>
+                <div className="space-y-6 animate-slideUp">
+                    {weeklyReports.length === 0 ? (
+                        <div className="bg-white rounded-[32px] p-24 text-center border border-dashed border-slate-200">
+                             <CheckCircle2 className="w-12 h-12 text-slate-100 mx-auto mb-4" />
+                             <p className="text-slate-300 font-bold uppercase text-[10px] tracking-[0.3em]">Nenhuma previsão aguardando análise.</p>
                         </div>
-                        
-                        {weeklyReports.filter(r => r.status === 'pending').length === 0 ? (
-                            <div className="bg-white rounded-[32px] p-12 text-center border border-dashed border-slate-200">
-                                 <CheckCircle2 className="w-10 h-10 text-emerald-100 mx-auto mb-3" />
-                                 <p className="text-slate-400 font-bold uppercase text-[9px] tracking-[0.3em]">Nenhuma previsão pendente</p>
-                            </div>
-                        ) : (
-                            weeklyReports.filter(r => r.status === 'pending').map(report => (
-                                <div key={report.id} className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden animate-slideUp border-l-8 border-l-amber-500">
-                                    <div className="p-6 md:p-8 bg-white flex flex-col md:flex-row justify-between items-center gap-4">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black shadow-lg">{report.usuarios?.nome.charAt(0)}</div>
-                                            <div>
-                                                <h4 className="font-black text-slate-900 uppercase text-md">{report.usuarios?.nome}</h4>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Enviado em {new Date(report.criado_em).toLocaleDateString('pt-BR')}</p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right flex items-center gap-6">
-                                            <div>
-                                                <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Total Relatado</p>
-                                                <p className="text-2xl font-black text-slate-900 tabular-nums">{formatBRL(report.previsao_total)}</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => handlePrevisaoAction(report.id, 'approved')} className="p-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg" title="Aprovar"><CheckCircle2 className="w-6 h-6" /></button>
-                                                <button onClick={() => openReviewModal(report)} className="p-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all shadow-lg" title="Ajustar e Recusar"><Edit3 className="w-6 h-6" /></button>
-                                                <button onClick={() => handleDeleteForecast(report.id)} className="p-3 bg-white border border-slate-200 text-slate-300 hover:text-red-500 rounded-xl transition-all" title="Excluir"><Trash2 className="w-6 h-6" /></button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-
-                    {/* Histórico por Representante (APROVADOS e RECUSADOS) */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3 px-2">
-                             <History className="w-5 h-5 text-slate-400" />
-                             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Histórico de Check-ins</h3>
-                        </div>
-
+                    ) : (
                         <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                             <table className="w-full text-left">
                                 <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                     <tr>
                                         <th className="px-8 py-5">Representante</th>
-                                        <th className="px-6 py-5">Data Envio</th>
-                                        <th className="px-6 py-5 text-right">Montante</th>
+                                        <th className="px-6 py-5">Previsão / Justificativa</th>
+                                        <th className="px-6 py-5 text-right">Valor Total</th>
                                         <th className="px-6 py-5 text-center">Status</th>
-                                        <th className="px-8 py-5 text-right">Ver Clientes</th>
+                                        <th className="px-8 py-5 text-right">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {weeklyReports.filter(r => r.status !== 'pending').length === 0 ? (
-                                        <tr>
-                                            <td colSpan={5} className="px-8 py-10 text-center text-slate-300 font-black uppercase text-[10px]">Sem registros processados</td>
+                                    {weeklyReports.map(report => (
+                                        <tr key={report.id} className={`hover:bg-slate-50 transition-colors group ${report.status === 'pending' ? 'bg-amber-50/20' : ''}`}>
+                                            <td className="px-8 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-[10px]">{report.usuarios?.nome.charAt(0)}</div>
+                                                    <span className="font-black text-slate-700 uppercase text-[11px]">{report.usuarios?.nome}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <p className="text-[10px] font-medium text-slate-500 line-clamp-2 max-w-md">
+                                                    <MessageSquareText className="w-3.5 h-3.5 inline mr-1 text-blue-500" />
+                                                    {report.observacao.replace(/\[REVISÃO GERENTE:.*?\]/, '').replace('WEEKLY_CHECKIN:', '').trim()}
+                                                </p>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <span className="font-black text-slate-900 text-xs tabular-nums">{formatBRL(report.previsao_total)}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase border ${
+                                                    report.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                                                    report.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-100 text-slate-400 border-slate-200'
+                                                }`}>
+                                                    {report.status === 'approved' ? 'Aceito' : report.status === 'rejected' ? 'Recusado' : 'Aguardando'}
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-4 text-right">
+                                                <div className="flex justify-end gap-2">
+                                                    {report.status === 'pending' ? (
+                                                        <>
+                                                            <button onClick={() => handlePrevisaoAction(report.id, 'approved')} className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100"><CheckCircle2 className="w-4 h-4" /></button>
+                                                            <button onClick={() => handlePrevisaoAction(report.id, 'rejected')} className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-md shadow-red-100"><XCircle className="w-4 h-4" /></button>
+                                                        </>
+                                                    ) : (
+                                                        <button onClick={() => handleDeleteForecast(report.id)} className="p-2 bg-slate-100 text-slate-400 hover:text-red-500 rounded-lg transition-all"><Trash2 className="w-4 h-4" /></button>
+                                                    )}
+                                                </div>
+                                            </td>
                                         </tr>
-                                    ) : (
-                                        weeklyReports.filter(r => r.status !== 'pending').map(report => (
-                                            <tr key={report.id} className="hover:bg-slate-50 transition-colors group">
-                                                <td className="px-8 py-4 font-black text-slate-700 uppercase text-xs">{report.usuarios?.nome}</td>
-                                                <td className="px-6 py-4 text-xs font-bold text-slate-400">{new Date(report.criado_em).toLocaleString('pt-BR')}</td>
-                                                <td className="px-6 py-4 text-right font-black text-slate-900 tabular-nums">{formatBRL(report.previsao_total)}</td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase border ${
-                                                        report.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
-                                                    }`}>
-                                                        {report.status === 'approved' ? 'Aceito' : 'Recusado'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-8 py-4 text-right">
-                                                    <button 
-                                                        onClick={() => setSelectedHistoryReport(report)}
-                                                        className="p-2 bg-slate-50 border border-slate-200 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm"
-                                                    >
-                                                        <Search className="w-4 h-4" />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
-                    </div>
+                    )}
                 </div>
             )}
 
-            {/* Modal de Drill-down do Histórico */}
-            {selectedHistoryReport && createPortal(
-                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden animate-slideUp flex flex-col max-h-[85vh]">
-                        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            {/* Modal de Recusa Simplificado */}
+            {rejectionModalReport && createPortal(
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white w-full max-w-sm rounded-[32px] p-8 shadow-2xl animate-slideUp border border-white/20">
+                        <div className="text-center mb-6">
+                            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <AlertTriangle className="w-8 h-8" />
+                            </div>
+                            <h4 className="text-lg font-black text-slate-900 uppercase tracking-tight">Recusar Previsão</h4>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Representante: {rejectionModalReport.usuarios?.nome}</p>
+                        </div>
+                        <div className="space-y-4">
                             <div>
-                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Detalhamento da Previsão</h3>
-                                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Representante: {selectedHistoryReport.usuarios?.nome}</p>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Motivo da Recusa</label>
+                                <textarea 
+                                    value={rejectionReason} 
+                                    onChange={e => setRejectionReason(e.target.value)} 
+                                    placeholder="Explique ao representante o que ele deve ajustar..." 
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:ring-4 focus:ring-red-100 transition-all" 
+                                    rows={3}
+                                />
                             </div>
-                            <button onClick={() => setSelectedHistoryReport(null)} className="p-2 hover:bg-white rounded-full text-slate-400"><X className="w-6 h-6" /></button>
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                                        <tr>
-                                            <th className="px-6 py-4">Cliente / Entidade</th>
-                                            <th className="px-6 py-4">CNPJ</th>
-                                            <th className="px-6 py-4 text-right">Vlr. Previsto</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {(selectedHistoryReport.previsao_clientes || []).map((item: any) => (
-                                            <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-6 py-4">
-                                                    <p className="font-black text-slate-800 uppercase text-[11px] truncate leading-tight">{item.clientes?.nome_fantasia}</p>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <p className="text-[10px] font-bold text-slate-400 tabular-nums">{item.clientes?.cnpj}</p>
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <p className="text-[11px] font-black text-blue-600 tabular-nums">{formatBRL(item.valor_previsto_cliente)}</p>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot className="bg-slate-50 border-t border-slate-200">
-                                        <tr>
-                                            <td colSpan={2} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-right">Total Consolidado</td>
-                                            <td className="px-6 py-4 text-right text-sm font-black text-slate-900 tabular-nums">{formatBRL(selectedHistoryReport.previsao_total)}</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => setRejectionModalReport(null)} className="rounded-xl h-12 border border-slate-200 text-[10px] font-black uppercase">Voltar</button>
+                                <Button onClick={confirmRejection} isLoading={isActionLoading} className="bg-red-600 hover:bg-red-700 text-white rounded-xl h-12 font-black uppercase text-[10px]">Confirmar Recusa</Button>
                             </div>
-                        </div>
-
-                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
-                            <Button onClick={() => setSelectedHistoryReport(null)} className="rounded-2xl px-10 h-12 font-black uppercase text-[10px]">Fechar Detalhe</Button>
                         </div>
                     </div>
                 </div>,
                 document.body
             )}
 
-            {/* Modal de Revisão Detalhada (Ajustes do Gerente) */}
-            {reviewModalReport && createPortal(
-                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden animate-slideUp flex flex-col max-h-[90vh]">
-                        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Sugestão de Revisão</h3>
-                                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Representante: {reviewModalReport.usuarios?.nome}</p>
-                            </div>
-                            <button onClick={() => setReviewModalReport(null)} className="p-2 hover:bg-white rounded-full text-slate-400"><X className="w-6 h-6" /></button>
+            {/* Modal Reset de Ciclo */}
+            {showResetModal && createPortal(
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white w-full max-w-sm rounded-[40px] p-10 shadow-2xl text-center border border-white/20 animate-slideUp">
+                        <div className="w-24 h-24 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-8 animate-pulse">
+                            <AlertTriangle className="w-12 h-12" />
                         </div>
-                        
-                        <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
-                            <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-center gap-3">
-                                <AlertCircle className="w-5 h-5 text-amber-600" />
-                                <p className="text-[10px] font-black text-amber-800 uppercase leading-tight">Ajuste os valores sugeridos abaixo. O representante receberá estas alterações para validar e reenviar.</p>
-                            </div>
-
-                            <div className="space-y-3">
-                                {reviewItems.map((item) => (
-                                    <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl">
-                                        <div className="flex-1 min-w-0 pr-4">
-                                            <p className="font-black text-slate-700 uppercase text-[10px] truncate leading-tight">{item.clientes?.nome_fantasia || 'Cliente não Identificado'}</p>
-                                            <p className="text-[9px] font-bold text-slate-400 mt-1 tabular-nums">{item.clientes?.cnpj}</p>
-                                        </div>
-                                        <div className="w-40 relative">
-                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[10px]">R$</span>
-                                            <input 
-                                              type="number"
-                                              value={item.valor_previsto_cliente}
-                                              onChange={(e) => handleUpdateReviewItem(item.id, Number(e.target.value))}
-                                              className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs font-black text-slate-900 outline-none focus:ring-2 focus:ring-blue-100"
-                                            />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Justificativa da Revisão</label>
-                                <textarea 
-                                    value={rejectionReason}
-                                    onChange={e => setRejectionReason(e.target.value)}
-                                    placeholder="Ex: Verba reduzida para esta regional ou ajustes de mix..."
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-50"
-                                    rows={3}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
-                            <Button variant="outline" onClick={() => setReviewModalReport(null)} className="flex-1 h-14 rounded-2xl font-black text-xs uppercase">Voltar</Button>
-                            <Button 
-                                onClick={confirmRejectionWithAdjustments} 
-                                isLoading={isActionLoading}
-                                className="flex-[2] h-14 rounded-2xl font-black text-xs uppercase bg-red-600 hover:bg-red-700 text-white shadow-xl shadow-red-200"
-                            >
-                                <Save className="w-4 h-4 mr-2" /> Enviar Revisão ao Rep
-                            </Button>
+                        <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Reiniciar Semana</h3>
+                        <p className="text-sm text-slate-500 mt-4 font-medium leading-relaxed">Isso apagará <strong className="text-red-600">TODOS</strong> os envios desta semana. Esta ação não pode ser desfeita.</p>
+                        <div className="grid grid-cols-1 gap-3 mt-10">
+                            <Button onClick={executeResetCycle} isLoading={isActionLoading} className="bg-red-600 hover:bg-red-700 text-white h-16 rounded-2xl font-black uppercase text-xs tracking-widest shadow-2xl shadow-red-200"><Trash2 className="w-4 h-4 mr-2" /> Confirmar e Apagar Tudo</Button>
+                            <button onClick={() => setShowResetModal(false)} disabled={isActionLoading} className="h-14 rounded-2xl font-black uppercase text-[10px] border border-slate-200">Voltar / Cancelar</button>
                         </div>
                     </div>
                 </div>,
@@ -483,7 +357,7 @@ export const ManagerForecastScreen: React.FC = () => {
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
                     <div className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl overflow-hidden animate-slideUp border border-white/20">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Reps s/ Check-in</h3>
+                            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Reps s/ Previsão</h3>
                             <button onClick={() => setShowMissingRepsModal(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X className="w-5 h-5" /></button>
                         </div>
                         <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
@@ -503,41 +377,6 @@ export const ManagerForecastScreen: React.FC = () => {
                         </div>
                         <div className="p-6 bg-slate-50 border-t border-slate-100">
                              <Button onClick={() => setShowMissingRepsModal(false)} fullWidth className="rounded-2xl h-14 font-black uppercase text-[10px]">Fechar Lista</Button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
-
-            {/* MODAL DE CONFIRMAÇÃO DO RESET DE CICLO SEMANAL */}
-            {showResetModal && createPortal(
-                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white w-full max-w-sm rounded-[40px] p-10 shadow-2xl text-center border border-white/20 animate-slideUp">
-                        <div className="w-24 h-24 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-8 animate-pulse">
-                            <AlertTriangle className="w-12 h-12" />
-                        </div>
-                        <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Limpeza Total</h3>
-                        <p className="text-sm text-slate-500 mt-4 font-medium leading-relaxed">
-                            Atenção: Isso apagará <strong className="text-red-600">TODOS</strong> os relatórios de check-in semanal desta semana, tanto os aprovados quanto os pendentes.
-                        </p>
-                        <p className="text-xs text-slate-400 mt-2 italic font-bold">Esta ação não pode ser desfeita.</p>
-                        
-                        <div className="grid grid-cols-1 gap-3 mt-10">
-                            <Button 
-                                onClick={executeResetCycle}
-                                isLoading={isActionLoading}
-                                className="bg-red-600 hover:bg-red-700 text-white h-16 rounded-2xl font-black uppercase text-xs tracking-widest shadow-2xl shadow-red-200"
-                            >
-                                <Trash2 className="w-4 h-4 mr-2" /> Confirmar e Apagar Tudo
-                            </Button>
-                            <Button 
-                                variant="outline" 
-                                onClick={() => setShowResetModal(false)}
-                                disabled={isActionLoading}
-                                className="h-14 rounded-2xl font-black uppercase text-[10px] border-slate-200"
-                            >
-                                Voltar / Cancelar
-                            </Button>
                         </div>
                     </div>
                 </div>,
