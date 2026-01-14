@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertOctagon, CheckCircle2 } from 'lucide-react';
+import { AlertOctagon, CheckCircle2, X } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '../lib/supabase';
 
@@ -37,7 +36,6 @@ export const UrgentNoticeModal: React.FC = () => {
 
   const rawNotice = urgentNotifications[currentIndex];
 
-  // Parser para extrair título da mensagem mesclada
   const parseUrgentMessage = (msg: string) => {
       if (msg.startsWith('[')) {
           const parts = msg.split(']');
@@ -73,22 +71,46 @@ export const UrgentNoticeModal: React.FC = () => {
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-slideUp border-t-8 border-red-600">
-        <div className="p-8 text-center">
-            <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
-                <AlertOctagon className="w-10 h-10" />
+      <div className="bg-white w-full max-w-3xl rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border-t-8 border-red-600 flex flex-col max-h-[85vh]">
+        
+        {/* Header Fixo */}
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+            <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center animate-pulse">
+                    <AlertOctagon className="w-7 h-7" />
+                </div>
+                <div>
+                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter">{title}</h2>
+                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest mt-1">Atenção Necessária</p>
+                </div>
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2 uppercase tracking-tighter">{title}</h2>
-            <div className="bg-red-50 border border-red-100 rounded-xl p-6 text-left mb-8">
-                <p className="text-slate-700 leading-relaxed text-sm whitespace-pre-wrap font-medium">
+            <div className="text-right">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Aviso {currentIndex + 1} de {urgentNotifications.length}</p>
+            </div>
+        </div>
+
+        {/* Conteúdo Rolável */}
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/30">
+            <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
+                <p className="text-slate-700 leading-relaxed text-base whitespace-pre-wrap font-medium">
                     {content}
                 </p>
-                <p className="text-[10px] text-red-400 mt-4 font-black uppercase tracking-widest">
-                    Postado em: {new Date(rawNotice.criada_em).toLocaleString('pt-BR')}
-                </p>
+                <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
+                        Data de Emissão: {new Date(rawNotice.criada_em).toLocaleString('pt-BR')}
+                    </p>
+                </div>
             </div>
-            <Button fullWidth onClick={handleConfirm} className="bg-red-600 hover:bg-red-700 py-5 shadow-xl shadow-red-200 rounded-xl font-black uppercase tracking-widest">
-                <CheckCircle2 className="w-5 h-5 mr-2" />
+        </div>
+
+        {/* Rodapé Fixo com Botão */}
+        <div className="p-8 border-t border-slate-100 bg-white shrink-0">
+            <Button 
+                fullWidth 
+                onClick={handleConfirm} 
+                className="bg-red-600 hover:bg-red-700 h-16 shadow-2xl shadow-red-200 rounded-2xl font-black uppercase tracking-[0.2em] text-sm transition-all active:scale-95"
+            >
+                <CheckCircle2 className="w-6 h-6 mr-3" />
                 Confirmar Leitura e Ciência
             </Button>
         </div>

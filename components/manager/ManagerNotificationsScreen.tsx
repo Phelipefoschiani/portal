@@ -1,7 +1,5 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-/* Added Filter to imports */
-import { Bell, Plus, Trash2, Eye, Paperclip, X, Loader2, Send, List, CheckCircle, Clock, FileText, CheckSquare, Square, Download, Search, AlertCircle, AlertTriangle, CalendarDays, User, Filter } from 'lucide-react';
+import { Bell, Plus, Trash2, Eye, Paperclip, X, Loader2, Send, CheckCircle, Clock, FileText, CheckSquare, Square, Download, Search, AlertTriangle, CalendarDays, User, Filter, ListChecks, AlertOctagon, Image as ImageIcon } from 'lucide-react';
 import { Button } from '../Button';
 import { Input } from '../Input';
 import { supabase } from '../../lib/supabase';
@@ -21,8 +19,13 @@ export const ManagerNotificationsScreen: React.FC = () => {
     
     // Filtros de Histórico
     const [historyFilterRepId, setHistoryFilterRepId] = useState('all');
-    const [historyFilterYear, setHistoryFilterYear] = useState<string | 'all'>('all');
+    const [historyFilterYear, setHistoryFilterYear] = useState<string | 'all'>(String(now.getFullYear()));
     const [historyFilterMonth, setHistoryFilterMonth] = useState<string | 'all'>('all');
+    const [historyFilterDay, setHistoryFilterDay] = useState<string | 'all'>('all');
+    const [historyFilterPriority, setHistoryFilterPriority] = useState<string | 'all'>('all');
+
+    // Seleção para deleção em massa
+    const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
 
     const [reps, setReps] = useState<any[]>([]);
     const [history, setHistory] = useState<any[]>([]);
@@ -30,6 +33,8 @@ export const ManagerNotificationsScreen: React.FC = () => {
     const [isSending, setIsSending] = useState(false);
     const [viewingNotification, setViewingNotification] = useState<any | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+    const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
     const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
@@ -37,14 +42,18 @@ export const ManagerNotificationsScreen: React.FC = () => {
 
     const availableYears = [2024, 2025, 2026, 2027];
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const days = Array.from({ length: 31 }, (_, i) => String(i + 1));
 
     useEffect(() => {
         fetchReps();
     }, []);
 
     useEffect(() => {
-        if (activeTab === 'history') fetchHistory();
-    }, [activeTab, historyFilterRepId, historyFilterYear, historyFilterMonth]);
+        if (activeTab === 'history') {
+            fetchHistory();
+            setSelectedHistoryIds([]);
+        }
+    }, [activeTab, historyFilterRepId, historyFilterYear, historyFilterMonth, historyFilterDay, historyFilterPriority]);
 
     const fetchReps = async () => {
         const { data } = await supabase
@@ -68,20 +77,29 @@ export const ManagerNotificationsScreen: React.FC = () => {
                 query = query.eq('para_usuario_id', historyFilterRepId);
             }
 
+            if (historyFilterPriority !== 'all') {
+                query = query.eq('prioridade', historyFilterPriority);
+            }
+
             if (historyFilterYear !== 'all') {
-                const yearStart = `${historyFilterYear}-01-01T00:00:00`;
-                const yearEnd = `${historyFilterYear}-12-31T23:59:59`;
-                query = query.gte('criada_em', yearStart).lte('criada_em', yearEnd);
+                let start = `${historyFilterYear}-01-01T00:00:00`;
+                let end = `${historyFilterYear}-12-31T23:59:59`;
+
+                if (historyFilterMonth !== 'all') {
+                    const m = historyFilterMonth.padStart(2, '0');
+                    if (historyFilterDay !== 'all') {
+                        const d = historyFilterDay.padStart(2, '0');
+                        start = `${historyFilterYear}-${m}-${d}T00:00:00`;
+                        end = `${historyFilterYear}-${m}-${d}T23:59:59`;
+                    } else {
+                        start = `${historyFilterYear}-${m}-01T00:00:00`;
+                        end = `${historyFilterYear}-${m}-31T23:59:59`;
+                    }
+                }
+                query = query.gte('criada_em', start).lte('criada_em', end);
             }
 
-            if (historyFilterMonth !== 'all' && historyFilterYear !== 'all') {
-                const month = String(historyFilterMonth).padStart(2, '0');
-                const monthStart = `${historyFilterYear}-${month}-01T00:00:00`;
-                const monthEnd = `${historyFilterYear}-${month}-31T23:59:59`;
-                query = query.gte('criada_em', monthStart).lte('criada_em', monthEnd);
-            }
-
-            const { data } = await query.limit(100);
+            const { data } = await query.limit(300);
             setHistory(data || []);
         } catch (e) {
             console.error('Erro ao carregar histórico:', e);
@@ -170,6 +188,30 @@ export const ManagerNotificationsScreen: React.FC = () => {
         }
     };
 
+    const toggleHistorySelection = (id: string) => {
+        setSelectedHistoryIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    };
+
+    const handleBulkDelete = async () => {
+        setIsBulkDeleting(true);
+        try {
+            // Deleta anexos primeiro por conta da constraint
+            await supabase.from('notificacao_anexos').delete().in('notificacao_id', selectedHistoryIds);
+            const { error } = await supabase.from('notificacoes').delete().in('id', selectedHistoryIds);
+
+            if (error) throw error;
+
+            setHistory(prev => prev.filter(h => !selectedHistoryIds.includes(h.id)));
+            setSelectedHistoryIds([]);
+            setShowBulkDeleteConfirm(false);
+            alert('Mensagens removidas com sucesso.');
+        } catch (e: any) {
+            alert(`Erro na remoção: ${e.message}`);
+        } finally {
+            setIsBulkDeleting(false);
+        }
+    };
+
     const executeDelete = async () => {
         if (!confirmDeleteId) return;
         
@@ -178,50 +220,60 @@ export const ManagerNotificationsScreen: React.FC = () => {
         setConfirmDeleteId(null);
 
         try {
-            // 1. Remover Anexos
             await supabase.from('notificacao_anexos').delete().eq('notificacao_id', idToDelete);
-            
-            // 2. Remover a Notificação
             const { error: errNotif } = await supabase.from('notificacoes').delete().eq('id', idToDelete);
-
             if (errNotif) throw errNotif;
 
             setHistory(prev => prev.filter(h => h.id !== idToDelete));
-            alert('Comunicado removido com sucesso.');
+            setSelectedHistoryIds(prev => prev.filter(i => i !== idToDelete));
+            alert('Removido.');
         } catch (e: any) {
-            console.error('Erro na exclusão:', e);
-            alert(`Falha na exclusão: ${e.message}`);
+            alert(`Falha: ${e.message}`);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleDownload = (file: any) => {
+        if (!file.arquivo_url || file.arquivo_url === '#') {
+            alert('Arquivo indisponível para download.');
+            return;
+        }
+        const link = document.createElement('a');
+        link.href = file.arquivo_url;
+        link.download = file.arquivo_nome;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const filteredReps = reps.filter(r => 
         r.nome.toLowerCase().includes(repSearchTerm.toLowerCase())
     );
 
+    // Função para tratar o título da mensagem na exibição do modal
+    const parseModalMessage = (msg: string) => {
+        if (msg.startsWith('[')) {
+            const parts = msg.split(']');
+            const title = parts[0].replace('[', '');
+            const content = parts.slice(1).join(']').trim();
+            return { title, content };
+        }
+        return { title: 'COMUNICADO', content: msg };
+    };
+
     return (
-        <div className="w-full max-w-5xl mx-auto space-y-4 animate-fadeIn pb-12">
+        <div className="w-full max-w-6xl mx-auto space-y-4 animate-fadeIn pb-12">
             <header className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-3xl border border-slate-200 shadow-sm gap-4">
                 <div>
                     <h2 className="text-xl font-black text-slate-900 flex items-center gap-3">
                         <Bell className="w-6 h-6 text-blue-600" /> Central de Comunicados
                     </h2>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Envio de informações e diretrizes comerciais</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Gestão Regional de Avisos</p>
                 </div>
                 <div className="flex bg-slate-100 p-1 rounded-2xl">
-                    <button 
-                        onClick={() => setActiveTab('new')}
-                        className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'new' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        Novo Comunicado
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('history')}
-                        className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'history' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        Histórico de Envios
-                    </button>
+                    <button onClick={() => setActiveTab('new')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'new' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Novo Envio</button>
+                    <button onClick={() => setActiveTab('history')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'history' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Histórico</button>
                 </div>
             </header>
 
@@ -230,14 +282,14 @@ export const ManagerNotificationsScreen: React.FC = () => {
                     <div className="lg:col-span-4 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-[600px]">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Destinatários</h3>
-                            <span className="bg-blue-50 text-blue-600 text-[10px] font-black px-2 py-0.5 rounded-lg">{selectedRepIds.length} Selecionados</span>
+                            <span className="bg-blue-50 text-blue-600 text-[10px] font-black px-2 py-0.5 rounded-lg">{selectedRepIds.length} Sel.</span>
                         </div>
                         
                         <div className="relative mb-4">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input 
                                 type="text" 
-                                placeholder="Filtrar equipe..." 
+                                placeholder="Filtrar..." 
                                 value={repSearchTerm}
                                 onChange={e => setRepSearchTerm(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-100"
@@ -250,16 +302,9 @@ export const ManagerNotificationsScreen: React.FC = () => {
                                     key={rep.id} 
                                     className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${selectedRepIds.includes(rep.id) ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-50 border border-transparent'}`}
                                 >
-                                    <input 
-                                        type="checkbox" 
-                                        className="hidden" 
-                                        checked={selectedRepIds.includes(rep.id)}
-                                        onChange={() => setSelectedRepIds(prev => 
-                                            prev.includes(rep.id) ? prev.filter(i => i !== rep.id) : [...prev, rep.id]
-                                        )}
-                                    />
+                                    <input type="checkbox" className="hidden" checked={selectedRepIds.includes(rep.id)} onChange={() => setSelectedRepIds(prev => prev.includes(rep.id) ? prev.filter(i => i !== rep.id) : [...prev, rep.id])} />
                                     <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${selectedRepIds.includes(rep.id) ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200 bg-white'}`}>
-                                        {selectedRepIds.includes(rep.id) && <CheckCircle className="w-3.5 h-3.5" />}
+                                        {selectedRepIds.includes(rep.id) && <CheckSquare className="w-3.5 h-3.5" />}
                                     </div>
                                     <span className="text-[11px] font-bold text-slate-700 uppercase truncate">{rep.nome}</span>
                                 </label>
@@ -267,18 +312,8 @@ export const ManagerNotificationsScreen: React.FC = () => {
                         </div>
 
                         <div className="pt-4 border-t border-slate-100 flex gap-2">
-                             <button 
-                                onClick={() => setSelectedRepIds(reps.map(r => r.id))}
-                                className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all"
-                             >
-                                Selecionar Todos
-                             </button>
-                             <button 
-                                onClick={() => setSelectedRepIds([])}
-                                className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-xl text-[9px] font-black uppercase hover:bg-slate-200 transition-all"
-                             >
-                                Limpar
-                             </button>
+                             <button onClick={() => setSelectedRepIds(reps.map(r => r.id))} className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-xl text-[9px] font-black uppercase hover:bg-slate-200">Todos</button>
+                             <button onClick={() => setSelectedRepIds([])} className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-xl text-[9px] font-black uppercase hover:bg-slate-200">Limpar</button>
                         </div>
                     </div>
 
@@ -286,140 +321,105 @@ export const ManagerNotificationsScreen: React.FC = () => {
                         <form onSubmit={handleSubmit} className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assunto do Comunicado</label>
-                                    <Input 
-                                        placeholder="Ex: Nova Tabela de Preços" 
-                                        value={title}
-                                        onChange={e => setTitle(e.target.value)}
-                                        className="!bg-slate-50 !h-12 text-sm font-bold"
-                                    />
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assunto</label>
+                                    <Input placeholder="Título do aviso" value={title} onChange={e => setTitle(e.target.value)} className="!bg-slate-50 !h-12 text-sm font-bold" />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nível de Prioridade</label>
-                                    <select 
-                                        value={priority}
-                                        onChange={e => setPriority(e.target.value)}
-                                        className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-700 outline-none focus:ring-2 focus:ring-blue-100 transition-all"
-                                    >
-                                        <option value="info">INFORMATIVO (PADRÃO)</option>
-                                        <option value="medium">IMPORTANTE (ALERTA EM 5 MIN)</option>
-                                        <option value="urgent">URGENTE (BLOQUEIO DE TELA)</option>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nível</label>
+                                    <select value={priority} onChange={e => setPriority(e.target.value)} className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-700 outline-none focus:ring-2 focus:ring-blue-100 transition-all">
+                                        <option value="info">INFORMATIVO</option>
+                                        <option value="medium">IMPORTANTE</option>
+                                        <option value="urgent">URGENTE</option>
                                     </select>
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Corpo do Comunicado</label>
-                                <textarea 
-                                    value={content}
-                                    onChange={e => setContent(e.target.value)}
-                                    rows={8}
-                                    placeholder="Escreva as instruções ou informações aqui..."
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-600 outline-none focus:ring-4 focus:ring-blue-100 transition-all"
-                                />
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mensagem Detalhada</label>
+                                <textarea value={content} onChange={e => setContent(e.target.value)} rows={8} placeholder="Escreva aqui..." className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-600 outline-none focus:ring-4 focus:ring-blue-100 transition-all" />
                             </div>
 
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Arquivos em Anexo</label>
-                                    <button 
-                                        type="button"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="flex items-center gap-2 text-[10px] font-black text-blue-600 uppercase hover:text-blue-700"
-                                    >
-                                        <Plus className="w-4 h-4" /> Adicionar Arquivos
-                                    </button>
-                                    <input 
-                                        type="file" 
-                                        ref={fileInputRef} 
-                                        className="hidden" 
-                                        multiple 
-                                        onChange={handleFileSelect}
-                                    />
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Anexos</label>
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 text-[10px] font-black text-blue-600 uppercase hover:text-blue-700"><Plus className="w-4 h-4" /> Adicionar</button>
+                                    <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileSelect} />
                                 </div>
-
-                                {attachments.length > 0 ? (
+                                {attachments.length > 0 && (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         {attachments.map((file, idx) => (
                                             <div key={idx} className="flex items-center justify-between p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                                                <div className="flex items-center gap-3 truncate">
-                                                    <FileText className="w-4 h-4 text-blue-500" />
-                                                    <span className="text-[10px] font-bold text-blue-800 truncate">{file.arquivo_nome}</span>
-                                                </div>
-                                                <button 
-                                                    type="button"
-                                                    onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
-                                                    className="p-1 hover:bg-blue-100 rounded-lg text-blue-400 hover:text-blue-600"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
+                                                <div className="flex items-center gap-3 truncate"><FileText className="w-4 h-4 text-blue-500" /><span className="text-[10px] font-bold text-blue-800 truncate">{file.arquivo_nome}</span></div>
+                                                <button type="button" onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))} className="p-1 hover:bg-blue-100 rounded-lg text-blue-400"><X className="w-4 h-4" /></button>
                                             </div>
                                         ))}
-                                    </div>
-                                ) : (
-                                    <div className="p-8 border-2 border-dashed border-slate-100 rounded-2xl flex flex-col items-center justify-center text-slate-300">
-                                        <Paperclip className="w-8 h-8 mb-2 opacity-20" />
-                                        <p className="text-[10px] font-black uppercase tracking-widest">Nenhum anexo selecionado</p>
                                     </div>
                                 )}
                             </div>
 
-                            <Button 
-                                type="submit" 
-                                fullWidth 
-                                isLoading={isSending}
-                                className="h-16 rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-2xl shadow-blue-500/20"
-                            >
-                                <Send className="w-5 h-5 mr-3" /> Disparar Comunicado Regional
-                            </Button>
+                            <Button type="submit" fullWidth isLoading={isSending} className="h-16 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-500/20"><Send className="w-5 h-5 mr-3" /> Disparar Comunicado</Button>
                         </form>
                     </div>
                 </div>
             ) : (
                 <div className="space-y-4 animate-slideUp">
-                    {/* Filtros de Histórico */}
-                    <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
-                        <div className="flex items-center gap-2">
-                             <Filter className="w-4 h-4 text-blue-600" />
-                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filtros de Histórico</span>
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm space-y-4">
+                        <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
+                            <Filter className="w-4 h-4 text-blue-600" />
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Refinar Busca no Histórico</span>
                         </div>
                         
-                        <div className="relative flex-1 min-w-[180px]">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                            <select 
-                                value={historyFilterRepId}
-                                onChange={e => setHistoryFilterRepId(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100"
-                            >
-                                <option value="all">TODOS REPRESENTANTES</option>
-                                {reps.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
-                            </select>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                            <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                                <select value={historyFilterRepId} onChange={e => setHistoryFilterRepId(e.target.value)} className="w-full pl-9 pr-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100">
+                                    <option value="all">TODOS REPRESENTANTES</option>
+                                    {reps.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="relative">
+                                <AlertTriangle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                                <select value={historyFilterPriority} onChange={e => setHistoryFilterPriority(e.target.value)} className="w-full pl-9 pr-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100">
+                                    <option value="all">TODOS OS NÍVEIS</option>
+                                    <option value="info">INFORMATIVOS</option>
+                                    <option value="medium">IMPORTANTES</option>
+                                    <option value="urgent">URGENTES</option>
+                                </select>
+                            </div>
+
+                            <div className="relative">
+                                <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                                <select value={historyFilterYear} onChange={e => setHistoryFilterYear(e.target.value)} className="w-full pl-9 pr-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100">
+                                    {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="relative">
+                                <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                                <select value={historyFilterMonth} onChange={e => setHistoryFilterMonth(e.target.value)} className="w-full pl-9 pr-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100">
+                                    <option value="all">MÊS: TODOS</option>
+                                    {monthNames.map((m, i) => <option key={i} value={String(i + 1)}>{m.toUpperCase()}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="relative">
+                                <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                                <select value={historyFilterDay} onChange={e => setHistoryFilterDay(e.target.value)} className="w-full pl-9 pr-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100">
+                                    <option value="all">DIA: TODOS</option>
+                                    {days.map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                            </div>
                         </div>
 
-                        <div className="relative flex-1 min-w-[120px]">
-                            <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                            <select 
-                                value={historyFilterYear}
-                                onChange={e => setHistoryFilterYear(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100"
-                            >
-                                <option value="all">TODOS OS ANOS</option>
-                                {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                            </select>
-                        </div>
-
-                        <div className="relative flex-1 min-w-[120px]">
-                            <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                            <select 
-                                value={historyFilterMonth}
-                                onChange={e => setHistoryFilterMonth(e.target.value)}
-                                disabled={historyFilterYear === 'all'}
-                                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100 disabled:opacity-50"
-                            >
-                                <option value="all">TODOS OS MESES</option>
-                                {monthNames.map((m, i) => <option key={i+1} value={i+1}>{m.toUpperCase()}</option>)}
-                            </select>
-                        </div>
+                        {selectedHistoryIds.length > 0 && (
+                            <div className="pt-4 flex justify-end">
+                                <button onClick={() => setShowBulkDeleteConfirm(true)} className="flex items-center gap-2 bg-red-600 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-red-700 transition-all animate-fadeIn">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Excluir Selecionados ({selectedHistoryIds.length})
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden min-h-[400px]">
@@ -427,7 +427,12 @@ export const ManagerNotificationsScreen: React.FC = () => {
                             <table className="w-full text-left">
                                 <thead className="bg-slate-50 border-b border-slate-100">
                                     <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        <th className="px-8 py-5">Data/Hora</th>
+                                        <th className="px-6 py-5 w-12">
+                                            <button onClick={() => { if (selectedHistoryIds.length === history.length) setSelectedHistoryIds([]); else setSelectedHistoryIds(history.map(h => h.id)); }} className="p-1 hover:bg-slate-200 rounded transition-colors">
+                                                {selectedHistoryIds.length === history.length && history.length > 0 ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                            </button>
+                                        </th>
+                                        <th className="px-6 py-5">Envio</th>
                                         <th className="px-6 py-5">Assunto</th>
                                         <th className="px-6 py-5">Para</th>
                                         <th className="px-6 py-5 text-center">Nível</th>
@@ -437,73 +442,35 @@ export const ManagerNotificationsScreen: React.FC = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
                                     {isLoading ? (
-                                        <tr>
-                                            <td colSpan={6} className="px-8 py-20 text-center">
-                                                <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" />
-                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sincronizando histórico...</p>
-                                            </td>
-                                        </tr>
+                                        <tr><td colSpan={7} className="px-8 py-20 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" /><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filtrando...</p></td></tr>
                                     ) : history.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={6} className="px-8 py-20 text-center">
-                                                <Bell className="w-12 h-12 text-slate-100 mx-auto mb-4" />
-                                                <p className="text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">Nenhum comunicado encontrado para este filtro</p>
-                                            </td>
-                                        </tr>
+                                        <tr><td colSpan={7} className="px-8 py-20 text-center"><Bell className="w-12 h-12 text-slate-100 mx-auto mb-4" /><p className="text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">Sem correspondências</p></td></tr>
                                     ) : (
                                         history.map(item => {
-                                            const titleRegex = /\[(.*?)\]/;
-                                            const titleMatch = item.mensagem.match(titleRegex);
+                                            const titleMatch = item.mensagem.match(/\[(.*?)\]/);
                                             const displayTitle = titleMatch ? titleMatch[1] : 'COMUNICADO';
+                                            const isSelected = selectedHistoryIds.includes(item.id);
                                             
                                             return (
-                                                <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
-                                                    <td className="px-8 py-4">
-                                                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
-                                                            <Clock className="w-3.5 h-3.5" />
-                                                            {new Date(item.criada_em).toLocaleString('pt-BR')}
-                                                        </div>
+                                                <tr 
+                                                    key={item.id} 
+                                                    className={`hover:bg-slate-50/50 transition-colors group cursor-pointer ${isSelected ? 'bg-blue-50/30' : ''}`}
+                                                    onClick={() => setViewingNotification(item)}
+                                                >
+                                                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                                                        <button onClick={() => toggleHistorySelection(item.id)} className="p-1 hover:bg-slate-200 rounded transition-colors">
+                                                            {isSelected ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 text-slate-200" />}
+                                                        </button>
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <p className="text-[11px] font-black text-slate-800 uppercase truncate max-w-[200px]">{displayTitle}</p>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className="text-[10px] font-bold text-slate-600 uppercase bg-slate-100 px-2 py-1 rounded-lg">
-                                                            {item.para?.nome || 'Destinatário'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-center">
-                                                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full border ${
-                                                            item.prioridade === 'urgent' ? 'bg-red-50 text-red-600 border-red-100' :
-                                                            item.prioridade === 'medium' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                                                            'bg-blue-50 text-blue-600 border-blue-100'
-                                                        }`}>
-                                                            {item.prioridade === 'urgent' ? 'Urgente' : item.prioridade === 'medium' ? 'Importante' : 'Informativo'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-center">
-                                                         <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase ${item.lida ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                                            {item.lida ? <CheckCircle className="w-3 h-3" /> : <Loader2 className="w-3 h-3" />}
-                                                            {item.lida ? 'Visualizado' : 'Pendente'}
-                                                         </div>
-                                                    </td>
-                                                    <td className="px-8 py-4 text-right">
+                                                    <td className="px-6 py-4"><div className="flex items-center gap-2 text-[10px] font-bold text-slate-500"><Clock className="w-3.5 h-3.5" />{new Date(item.criada_em).toLocaleString('pt-BR')}</div></td>
+                                                    <td className="px-6 py-4"><p className="text-[11px] font-black text-slate-800 uppercase truncate max-w-[180px]">{displayTitle}</p></td>
+                                                    <td className="px-6 py-4"><span className="text-[10px] font-bold text-slate-600 uppercase bg-slate-100 px-2 py-1 rounded-lg">{item.para?.nome || 'Destinatário'}</span></td>
+                                                    <td className="px-6 py-4 text-center"><span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full border ${item.prioridade === 'urgent' ? 'bg-red-50 text-red-600 border-red-100' : item.prioridade === 'medium' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{item.prioridade === 'urgent' ? 'Urgente' : item.prioridade === 'medium' ? 'Importante' : 'Informativo'}</span></td>
+                                                    <td className="px-6 py-4 text-center"><div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase ${item.lida ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{item.lida ? <CheckCircle className="w-3 h-3" /> : <Loader2 className="w-3 h-3" />}{item.lida ? 'Visto' : 'Pendente'}</div></td>
+                                                    <td className="px-8 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                                                         <div className="flex justify-end gap-2">
-                                                            <button 
-                                                                onClick={() => setViewingNotification(item)}
-                                                                className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"
-                                                                title="Ver Detalhes"
-                                                            >
-                                                                <Eye className="w-4 h-4" />
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => setConfirmDeleteId(item.id)}
-                                                                className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm disabled:opacity-30"
-                                                                disabled={isLoading}
-                                                                title="Excluir Definitivamente"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
+                                                            <button onClick={() => setViewingNotification(item)} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"><Eye className="w-4 h-4" /></button>
+                                                            <button onClick={() => setConfirmDeleteId(item.id)} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm disabled:opacity-30" disabled={isLoading}><Trash2 className="w-4 h-4" /></button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -517,28 +484,39 @@ export const ManagerNotificationsScreen: React.FC = () => {
                 </div>
             )}
 
-            {/* Modal de Confirmação Customizado (Substitui o window.confirm) */}
+            {/* Modal de Confirmação para Item Único */}
             {confirmDeleteId && createPortal(
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
                     <div className="bg-white w-full max-w-sm rounded-[32px] p-8 shadow-2xl animate-slideUp text-center border border-white/20">
-                        <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <AlertTriangle className="w-10 h-10" />
-                        </div>
+                        <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle className="w-10 h-10" /></div>
                         <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Exclusão Permanente</h3>
-                        <p className="text-sm text-slate-500 mt-2 font-medium">Deseja realmente apagar este comunicado? Ele será removido do mural do representante imediatamente.</p>
+                        <p className="text-sm text-slate-500 mt-2 font-medium">Deseja apagar este comunicado?</p>
                         <div className="grid grid-cols-2 gap-4 mt-8">
+                            <Button variant="outline" onClick={() => setConfirmDeleteId(null)} className="rounded-2xl h-14 font-black uppercase text-[10px]">Cancelar</Button>
+                            <Button onClick={executeDelete} className="bg-red-600 hover:bg-red-700 text-white rounded-2xl h-14 font-black uppercase text-[10px]">Excluir</Button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* Modal de Confirmação para Lote (Massa) */}
+            {showBulkDeleteConfirm && createPortal(
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white w-full max-w-sm rounded-[32px] p-8 shadow-2xl animate-slideUp text-center border border-white/20">
+                        <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><Trash2 className="w-10 h-10" /></div>
+                        <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Excluir Lote</h3>
+                        <p className="text-sm text-slate-500 mt-2 font-medium">
+                            Você selecionou <strong>{selectedHistoryIds.length}</strong> comunicados. Deseja excluí-los permanentemente um a um?
+                        </p>
+                        <div className="grid grid-cols-2 gap-4 mt-8">
+                            <Button variant="outline" onClick={() => setShowBulkDeleteConfirm(false)} className="rounded-2xl h-14 font-black uppercase text-[10px]">Cancelar</Button>
                             <Button 
-                                variant="outline" 
-                                onClick={() => setConfirmDeleteId(null)}
-                                className="rounded-2xl h-14 font-black uppercase text-[10px]"
+                                onClick={handleBulkDelete} 
+                                isLoading={isBulkDeleting}
+                                className="bg-red-600 hover:bg-red-700 text-white rounded-2xl h-14 font-black uppercase text-[10px] shadow-xl"
                             >
-                                Cancelar
-                            </Button>
-                            <Button 
-                                onClick={executeDelete}
-                                className="bg-red-600 hover:bg-red-700 text-white rounded-2xl h-14 font-black uppercase text-[10px] shadow-xl shadow-red-200"
-                            >
-                                Sim, Excluir
+                                Confirmar Lote
                             </Button>
                         </div>
                     </div>
@@ -546,70 +524,92 @@ export const ManagerNotificationsScreen: React.FC = () => {
                 document.body
             )}
 
+            {/* MODAL DE DETALHES (PADRÃO URGENTE DO REPRESENTANTE) */}
             {viewingNotification && createPortal(
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden animate-slideUp">
-                        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Comunicado Enviado</h3>
-                                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Para: {viewingNotification.para?.nome}</p>
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white w-full max-w-4xl rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border-t-8 border-blue-600 flex flex-col max-h-[85vh]">
+                        
+                        {/* Header Fixo */}
+                        <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                            <div className="flex items-center gap-4">
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                                    viewingNotification.prioridade === 'urgent' ? 'bg-red-100 text-red-600 animate-pulse' : 
+                                    viewingNotification.prioridade === 'medium' ? 'bg-amber-100 text-amber-600' : 
+                                    'bg-blue-100 text-blue-600'
+                                }`}>
+                                    <AlertOctagon className="w-7 h-7" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter">
+                                        {parseModalMessage(viewingNotification.mensagem).title}
+                                    </h2>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                                        Destinatário: {viewingNotification.para?.nome || 'N/I'}
+                                    </p>
+                                </div>
                             </div>
-                            <button onClick={() => setViewingNotification(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                            <button onClick={() => setViewingNotification(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400">
                                 <X className="w-6 h-6" />
                             </button>
                         </div>
-                        <div className="p-8 space-y-6">
-                            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                                <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap font-medium">
-                                    {viewingNotification.mensagem}
-                                </p>
-                            </div>
 
-                            {viewingNotification.notificacao_anexos?.length > 0 && (
-                                <div className="space-y-3">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Arquivos Anexados</h4>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {viewingNotification.notificacao_anexos.map((anexo: any) => (
-                                            <div key={anexo.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
-                                                <div className="flex items-center gap-3 truncate">
-                                                    <FileText className="w-4 h-4 text-slate-400" />
-                                                    <span className="text-[10px] font-bold text-slate-600 truncate">{anexo.arquivo_nome}</span>
-                                                </div>
-                                                <Download className="w-4 h-4 text-slate-300" />
+                        {/* Conteúdo Rolável */}
+                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/30">
+                            <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
+                                <div className="space-y-6">
+                                    <div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Conteúdo do Comunicado</p>
+                                        <p className="text-slate-700 leading-relaxed text-base whitespace-pre-wrap font-medium">
+                                            {parseModalMessage(viewingNotification.mensagem).content}
+                                        </p>
+                                    </div>
+
+                                    {viewingNotification.notificacao_anexos?.length > 0 && (
+                                        <div className="pt-6 border-t border-slate-100">
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Arquivos Vinculados (Clique para baixar)</p>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                {viewingNotification.notificacao_anexos.map((anexo: any) => (
+                                                    <div 
+                                                        key={anexo.id} 
+                                                        onClick={(e) => { e.stopPropagation(); handleDownload(anexo); }}
+                                                        className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer group/file"
+                                                    >
+                                                        <div className="flex items-center gap-3 truncate">
+                                                            {anexo.tipo_mime?.includes('image') ? <ImageIcon className="w-4 h-4 text-purple-500" /> : <FileText className="w-4 h-4 text-slate-400" />}
+                                                            <span className="text-[10px] font-bold text-slate-700 truncate group-hover/file:text-blue-700">{anexo.arquivo_nome}</span>
+                                                        </div>
+                                                        <Download className="w-4 h-4 text-slate-300 group-hover/file:text-blue-500 transition-colors" />
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Status de Recebimento</p>
-                                    <div className="flex items-center gap-2">
-                                        {viewingNotification.lida ? (
-                                            <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                        ) : (
-                                            <Loader2 className="w-4 h-4 text-slate-300 animate-spin" />
-                                        )}
-                                        <span className={`text-[10px] font-black uppercase ${viewingNotification.lida ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                            {viewingNotification.lida ? 'Lido pelo representante' : 'Aguardando leitura'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Prioridade</p>
-                                    <span className={`text-[10px] font-black uppercase ${
-                                        viewingNotification.prioridade === 'urgent' ? 'text-red-600' :
-                                        viewingNotification.prioridade === 'medium' ? 'text-amber-600' :
-                                        'text-blue-600'
-                                    }`}>
-                                        {viewingNotification.prioridade?.toUpperCase()}
-                                    </span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
-                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
-                            <Button onClick={() => setViewingNotification(null)} variant="outline" className="rounded-xl px-10 font-black uppercase text-[10px]">Fechar Visualização</Button>
+
+                        {/* Rodapé Fixo */}
+                        <div className="p-8 border-t border-slate-100 bg-white shrink-0 flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div className="flex items-center gap-6">
+                                <div className="text-center md:text-left">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Enviado em</p>
+                                    <p className="text-[11px] font-bold text-slate-700">{new Date(viewingNotification.criada_em).toLocaleString('pt-BR')}</p>
+                                </div>
+                                <div className="text-center md:text-left">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Status</p>
+                                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase ${viewingNotification.lida ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                        {viewingNotification.lida ? <CheckCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                                        {viewingNotification.lida ? 'Visto' : 'Pendente'}
+                                    </div>
+                                </div>
+                            </div>
+                            <Button 
+                                onClick={() => setViewingNotification(null)} 
+                                variant="outline"
+                                className="rounded-2xl h-12 px-12 font-black uppercase text-[10px] tracking-widest"
+                            >
+                                Fechar Visualização
+                            </Button>
                         </div>
                     </div>
                 </div>,

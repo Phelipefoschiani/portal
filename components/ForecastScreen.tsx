@@ -233,7 +233,8 @@ export const ForecastScreen: React.FC = () => {
       await supabase.from('previsoes').insert({
         usuario_id: userId,
         data: `${selectedYear}-01-01`,
-        previsao_total: Object.values(adjustedTargets).reduce((a,b) => a+b, 0),
+        // Fix: Explicitly cast Object.values to number[] to resolve "Argument of type 'unknown' is not assignable to parameter of type 'number'" in reduce
+        previsao_total: (Object.values(adjustedTargets) as number[]).reduce((a: number, b: number) => a + b, 0),
         status: 'approved',
         observacao: `CONFIRMAÇÃO ANUAL: ${userName} deu ciência nas metas de ${selectedYear}.`
       });
@@ -404,7 +405,8 @@ export const ForecastScreen: React.FC = () => {
                 <div className="absolute top-0 right-0 p-8 opacity-10"><BarChart3 className="w-40 h-40" /></div>
                 <div>
                     <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-2">Previsão Anual {selectedYear}</p>
-                    <h3 className="text-4xl font-black">{formatBRL(Object.values(adjustedTargets).reduce((a,b) => a+b, 0))}</h3>
+                    {/* Fix: Explicitly cast Object.values to number[] to resolve "Argument of type 'unknown' is not assignable to parameter of type 'number'" in reduce */}
+                    <h3 className="text-4xl font-black">{formatBRL((Object.values(adjustedTargets) as number[]).reduce((a: number, b: number) => a + b, 0))}</h3>
                 </div>
                 <div className="bg-white/5 p-6 rounded-3xl border border-white/5 backdrop-blur-sm max-w-xs text-right">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Status da Meta</p>
