@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle, ListChecks, CheckCircle2, Download, Loader2, FileSpreadsheet } from 'lucide-react';
@@ -52,6 +51,40 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
+  const handleDownloadExcel = () => {
+    const itemsToExport = sortedProducts.filter(p => selectedProductIds.includes(p.id));
+    
+    if (itemsToExport.length === 0) {
+      alert('Por favor, selecione pelo menos um item para exportar.');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
+      
+      const data = itemsToExport.map(p => ({
+        "Produto": p.name,
+        "Última Compra": new Date(p.lastPurchaseDate).toLocaleDateString('pt-BR'),
+        "Dias sem Compra": getDaysSince(p.lastPurchaseDate),
+        "Quantidade Úit. Compra": p.quantity,
+        "Valor Úit. Compra": p.totalValue,
+        "Status": isRedItem(p) ? "VERMELHO (Atenção)" : "BRANCO (Normal)"
+      }));
+
+      const ws = X.utils.json_to_sheet(data);
+      const wb = X.utils.book_new();
+      X.utils.book_append_sheet(wb, ws, "Sugestão_Reposição");
+      
+      X.writeFile(wb, `Reposicao_${client.name.replace(/\s/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao gerar planilha.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-4 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
       <div className="bg-white w-full max-w-5xl rounded-[28px] md:rounded-3xl shadow-2xl flex flex-col max-h-[94vh] md:max-h-[90vh] overflow-hidden border border-white/20">
@@ -89,7 +122,12 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
             
             <div className="flex items-center justify-between w-full sm:w-auto gap-2">
                 <span className="text-[9px] font-black text-slate-400 uppercase">{selectedProductIds.length} Sel.</span>
-                <Button variant="outline" className="h-9 md:h-11 px-6 rounded-xl text-[9px] md:text-[10px] font-black border-emerald-200 text-emerald-600 uppercase">
+                <Button 
+                    variant="outline" 
+                    onClick={handleDownloadExcel}
+                    isLoading={isExporting}
+                    className="h-9 md:h-11 px-6 rounded-xl text-[9px] md:text-[10px] font-black border-emerald-200 text-emerald-600 uppercase"
+                >
                     <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Excel
                 </Button>
             </div>

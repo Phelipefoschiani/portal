@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Menu, Table2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -48,7 +49,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   useEffect(() => {
     if (userId) {
         const fetchStatus = async () => {
-            // Notificações de mural
             const { count } = await supabase
                 .from('notificacoes')
                 .select('*', { count: 'exact', head: true })
@@ -57,23 +57,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             setUnreadCount(count || 0);
 
             if (userRole === 'rep') {
-                // Monitoramento de previsões semanais negadas
-                const { data: rejForecast } = await supabase
-                    .from('previsoes')
-                    .select('id')
-                    .eq('usuario_id', userId)
-                    .eq('status', 'rejected')
-                    .ilike('observacao', '%WEEKLY_CHECKIN%');
-                
+                const { data: rejForecast } = await supabase.from('previsao_clientes').select('id, previsoes!inner(usuario_id)').eq('status', 'rejected').eq('previsoes.usuario_id', userId);
                 setForecastAlert(!!(rejForecast && rejForecast.length > 0));
-
-                // Monitoramento de investimentos negados
-                const { data: rejInv } = await supabase
-                    .from('investimentos')
-                    .select('id')
-                    .eq('status', 'rejected')
-                    .eq('usuario_id', userId);
-
+                const { data: rejInv } = await supabase.from('investimentos').select('id').eq('status', 'rejected').eq('usuario_id', userId);
                 if (rejInv && rejInv.length > 0) {
                     const seenIds = JSON.parse(localStorage.getItem('pcn_seen_inv_rejections') || '[]');
                     const hasUnseenRejection = rejInv.some(inv => !seenIds.includes(inv.id));
@@ -82,10 +68,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     setInvestmentAlert(false);
                 }
             } else if (userRole === 'admin') {
-                // Gerente vê pendentes de análise
-                const { data: penForecast } = await supabase.from('previsoes').select('id').eq('status', 'pending').ilike('observacao', '%WEEKLY_CHECKIN%');
+                const { data: penForecast } = await supabase.from('previsao_clientes').select('id').eq('status', 'pending');
                 setForecastAlert(!!(penForecast && penForecast.length > 0));
-                
                 const { data: penInv } = await supabase.from('investimentos').select('id').eq('status', 'pendente');
                 setInvestmentAlert(!!(penInv && penInv.length > 0));
             }
