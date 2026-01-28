@@ -43,7 +43,7 @@ export const ManagerForecastScreen: React.FC = () => {
                     .from('previsoes')
                     .select('*, usuarios(nome)')
                     .ilike('observacao', 'CONFIRMAÇÃO ANUAL%')
-                    .order('previsao_total', { ascending: false }); // Ordenação do maior para o menor valor de meta
+                    .order('previsao_total', { ascending: false }); // Ordenação fiel: maior meta para menor
                 setPrevisoes(data || []);
             } else if (view === 'weekly_checkin') {
                 const { data } = await supabase
@@ -105,11 +105,11 @@ export const ManagerForecastScreen: React.FC = () => {
 
     const kpis = useMemo(() => {
         if (view === 'mensais') {
-            // Somatório das metas confirmadas na aba Ciência Anual
+            // Somatório das metas confirmadas na aba Ciência Anual (Correto conforme pedido)
             const totalAnnualConfirmed = previsoes.reduce((acc, curr) => acc + Number(curr.previsao_total), 0);
             return { mainValue: totalAnnualConfirmed, label: 'Metas Confirmadas', count: previsoes.length };
         } else {
-            // Lógica padrão do Check-in
+            // Lógica do Check-in
             const totalValid = weeklyReports
                 .filter(r => r.status === 'pending' || r.status === 'approved')
                 .reduce((acc, curr) => acc + Number(curr.previsao_total), 0);
@@ -321,7 +321,7 @@ export const ManagerForecastScreen: React.FC = () => {
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '30px', borderBottom: '3px solid #0f172a', paddingBottom: '30px', marginBottom: '40px' }}>
-                    <div style={{ width: '80px', height: '80px', backgroundColor: '#1d4ed8', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyCenter: 'center', color: '#ffffff' }}>
+                    <div style={{ width: '80px', height: '80px', backgroundColor: '#1d4ed8', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff' }}>
                         <TrendingUp size={48} style={{ margin: 'auto' }} />
                     </div>
                     <div>
