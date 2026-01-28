@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShieldCheck, CheckCircle2, XCircle, Loader2, Quote, X, History, TrendingUp, Calendar, Info, MessageCircleQuestion, Filter, DollarSign, Wallet, ArrowUpRight, BarChart3, ChevronDown, PieChart, Target, AlertTriangle, RefreshCw } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, XCircle, Loader2, Quote, X, History, TrendingUp, Calendar, Info, MessageCircleQuestion, Filter, DollarSign, Wallet, ArrowUpRight, BarChart3, ChevronDown, PieChart, Target, AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { createPortal } from 'react-dom';
@@ -14,6 +13,7 @@ export const ManagerCampaignsScreen: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isActionLoading, setIsActionLoading] = useState(false);
     const [selectedDetail, setSelectedDetail] = useState<any | null>(null);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     
     const [filterYear, setFilterYear] = useState<number>(now.getFullYear());
     const [filterMonth, setFilterMonth] = useState<number | 'all'>(now.getMonth() + 1);
@@ -85,7 +85,6 @@ export const ManagerCampaignsScreen: React.FC = () => {
         setIsActionLoading(true);
         try {
             const currentObs = selectedDetail.observacao || '';
-            // Remove qualquer marcação de recusa anterior para não duplicar se o gerente mudar de ideia antes de salvar
             const cleanObs = currentObs.replace(/\[RECUSADO:.*?\]\s*/, '');
             const finalObs = status === 'rejected' ? `[RECUSADO: ${rejectionReason.toUpperCase()}] ${cleanObs}` : cleanObs;
 
@@ -100,7 +99,6 @@ export const ManagerCampaignsScreen: React.FC = () => {
                 totalDataStore.investments = [...totalDataStore.investments, { ...selectedDetail, status: 'approved' }];
             }
 
-            // Remove da lista local de pendentes
             setInvestments(prev => prev.filter(i => i.id !== id));
             setSelectedDetail(null);
             setShowRejectionModal(false);
@@ -110,6 +108,30 @@ export const ManagerCampaignsScreen: React.FC = () => {
         } catch (error: any) {
             console.error('Erro na atualização:', error);
             alert('Erro ao processar: ' + (error.message || 'Falha na conexão com o banco de dados.'));
+        } finally {
+            setIsActionLoading(false);
+        }
+    };
+
+    const handleDeleteInvestment = async () => {
+        if (!selectedDetail || isActionLoading) return;
+
+        setIsActionLoading(true);
+        try {
+            const { error } = await supabase
+                .from('investimentos')
+                .delete()
+                .eq('id', selectedDetail.id);
+
+            if (error) throw error;
+
+            // Atualiza store local e lista da tela
+            totalDataStore.investments = totalDataStore.investments.filter(i => i.id !== selectedDetail.id);
+            setInvestments(prev => prev.filter(i => i.id !== selectedDetail.id));
+            setSelectedDetail(null);
+            setShowDeleteModal(false);
+        } catch (error: any) {
+            alert('Erro ao excluir: ' + error.message);
         } finally {
             setIsActionLoading(false);
         }
@@ -247,12 +269,25 @@ export const ManagerCampaignsScreen: React.FC = () => {
                                 <p className="text-sm font-medium text-slate-700 italic leading-relaxed">"{(selectedDetail.observacao || '').replace(/\[PEDIDO:.*?\]\s*/, '').replace(/\[RECUSADO:.*?\]\s*/, '') || 'Sem justificativa adicional.'}"</p>
                             </div>
                         </div>
-                        {selectedDetail.status === 'pendente' && (
-                            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
-                                <Button variant="outline" fullWidth onClick={() => setShowRejectionModal(true)} className="bg-white text-red-600 border-red-200 h-14 rounded-2xl font-black text-xs uppercase">Negar Verba</Button>
-                                <Button fullWidth onClick={() => handleUpdateStatus(selectedDetail.id, 'approved')} className="h-14 rounded-2xl font-black text-xs uppercase shadow-xl shadow-blue-500/20">Aprovar Verba</Button>
-                            </div>
-                        )}
+                        
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex flex-col gap-3">
+                            {selectedDetail.status === 'pendente' ? (
+                                <div className="flex gap-3">
+                                    <Button variant="outline" fullWidth onClick={() => setShowRejectionModal(true)} className="bg-white text-red-600 border-red-200 h-14 rounded-2xl font-black text-xs uppercase">Negar Verba</Button>
+                                    <Button fullWidth onClick={() => handleUpdateStatus(selectedDetail.id, 'approved')} className="h-14 rounded-2xl font-black text-xs uppercase shadow-xl shadow-blue-500/20">Aprovar Verba</Button>
+                                </div>
+                            ) : null}
+
+                            {/* Botão de Excluir para registros no histórico */}
+                            <Button 
+                                variant="outline" 
+                                fullWidth 
+                                onClick={() => setShowDeleteModal(true)} 
+                                className="h-14 rounded-2xl font-black text-xs uppercase border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-100 hover:bg-red-50 flex items-center justify-center gap-2"
+                            >
+                                <Trash2 className="w-4 h-4" /> Excluir Registro
+                            </Button>
+                        </div>
                     </div>
                     {showRejectionModal && (
                         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fadeIn">
@@ -270,6 +305,22 @@ export const ManagerCampaignsScreen: React.FC = () => {
                                     <Button onClick={() => handleUpdateStatus(selectedDetail.id, 'rejected')} isLoading={isActionLoading} className="bg-red-600 hover:bg-red-700 text-white rounded-xl h-12 font-black uppercase text-[10px]">Confirmar Recusa</Button>
                                 </div>
                              </div>
+                        </div>
+                    )}
+
+                    {showDeleteModal && (
+                        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
+                            <div className="bg-white w-full max-w-sm rounded-[40px] p-10 shadow-2xl text-center border border-white/20">
+                                <div className="w-24 h-24 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-8 animate-pulse">
+                                    <AlertTriangle className="w-12 h-12" />
+                                </div>
+                                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Excluir Registro</h3>
+                                <p className="text-sm text-slate-500 mt-4 font-medium leading-relaxed">Deseja realmente apagar este registro de investimento permanentemente? Esta ação não pode ser desfeita.</p>
+                                <div className="grid grid-cols-1 gap-3 mt-10">
+                                    <Button onClick={handleDeleteInvestment} isLoading={isActionLoading} className="bg-red-600 hover:bg-red-700 h-16 rounded-2xl font-black uppercase text-xs tracking-widest">Sim, Excluir</Button>
+                                    <Button variant="outline" onClick={() => setShowDeleteModal(false)} className="h-14 rounded-2xl font-black uppercase text-[10px] border-slate-200">Cancelar</Button>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>,
