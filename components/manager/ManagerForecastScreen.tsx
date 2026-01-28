@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { TrendingUp, CheckCircle2, XCircle, Loader2, X, Users, Trash2, ArrowRight, DollarSign, Building2, RefreshCw, Layers, History, MousePointer2, AlertTriangle, CheckSquare, ListTodo, ShieldCheck, UserX, RotateCcw, ChevronRight, Edit3, Save, AlertCircle, Search, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { TrendingUp, CheckCircle2, XCircle, Loader2, X, Users, Trash2, ArrowRight, DollarSign, Building2, RefreshCw, Layers, History, MousePointer2, AlertTriangle, CheckSquare, ListTodo, ShieldCheck, UserX, RotateCcw, ChevronRight, Edit3, Save, AlertCircle, Search, MapPin, Camera, Share2, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { createPortal } from 'react-dom';
 import { totalDataStore } from '../../lib/dataStore';
+import html2canvas from 'html2canvas';
 
 type ViewType = 'mensais' | 'mapeamentos' | 'weekly_checkin';
 
 export const ManagerForecastScreen: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
+    const [isExporting, setIsExporting] = useState(false);
     const [view, setView] = useState<ViewType>('weekly_checkin');
     const [previsoes, setPrevisoes] = useState<any[]>([]);
     const [showMissingRepsModal, setShowMissingRepsModal] = useState(false);
@@ -18,13 +20,16 @@ export const ManagerForecastScreen: React.FC = () => {
     const [weeklyReports, setWeeklyReports] = useState<any[]>([]);
     const [isActionLoading, setIsActionLoading] = useState(false);
     
-    // Modal de Revisão Detalhada (Gerente ajustando valores)
+    // Modal de Revisão Detalhada
     const [reviewModalReport, setReviewModalReport] = useState<any | null>(null);
     const [reviewItems, setReviewItems] = useState<any[]>([]);
     const [rejectionReason, setRejectionReason] = useState('');
 
-    // Modal de Detalhe do Histórico (Drill-down)
+    // Modal de Detalhe do Histórico
     const [selectedHistoryReport, setSelectedHistoryReport] = useState<any | null>(null);
+
+    // Ref para a área de exportação oculta
+    const exportContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         fetchData();
@@ -38,7 +43,7 @@ export const ManagerForecastScreen: React.FC = () => {
                     .from('previsoes')
                     .select('*, usuarios(nome)')
                     .ilike('observacao', 'CONFIRMAÇÃO ANUAL%')
-                    .order('criado_em', { ascending: false });
+                    .order('previsao_total', { ascending: false }); // Ordenação do maior para o menor valor de meta
                 setPrevisoes(data || []);
             } else if (view === 'weekly_checkin') {
                 const { data } = await supabase
@@ -65,31 +70,62 @@ export const ManagerForecastScreen: React.FC = () => {
         }
     };
 
-    const weeklyKPIs = useMemo(() => {
-        const reports = weeklyReports;
-        // Agora soma PENDENTES e APROVADOS para dar a visão real da semana
-        const totalValid = reports
-            .filter(r => r.status === 'pending' || r.status === 'approved')
-            .reduce((acc, curr) => acc + Number(curr.previsao_total), 0);
+    const formatBRL = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
+
+    const handleDownloadImage = async () => {
+        if (!exportContainerRef.current) return;
+        setIsExporting(true);
+        
+        try {
+            await new Promise(r => setTimeout(r, 200));
+
+            const canvas = await html2canvas(exportContainerRef.current, {
+                scale: 3, 
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                width: 1200,
+                onclone: (clonedDoc) => {
+                    const el = clonedDoc.getElementById('export-area-container');
+                    if (el) el.style.backgroundColor = '#ffffff';
+                }
+            });
             
-        const repsWhoSent = new Set(reports.map(r => r.usuario_id));
-        const missingRepsList = totalDataStore.users.filter(u => !repsWhoSent.has(u.id));
-        return { totalValid, missingCount: missingRepsList.length, missingList: missingRepsList };
-    }, [weeklyReports]);
+            const link = document.createElement('a');
+            const date = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+            link.download = `Relatorio_Regional_${date}.png`;
+            link.href = canvas.toDataURL('image/png', 1.0);
+            link.click();
+        } catch (err) {
+            console.error('Erro ao capturar imagem:', err);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const kpis = useMemo(() => {
+        if (view === 'mensais') {
+            // Somatório das metas confirmadas na aba Ciência Anual
+            const totalAnnualConfirmed = previsoes.reduce((acc, curr) => acc + Number(curr.previsao_total), 0);
+            return { mainValue: totalAnnualConfirmed, label: 'Metas Confirmadas', count: previsoes.length };
+        } else {
+            // Lógica padrão do Check-in
+            const totalValid = weeklyReports
+                .filter(r => r.status === 'pending' || r.status === 'approved')
+                .reduce((acc, curr) => acc + Number(curr.previsao_total), 0);
+            const repsWhoSent = new Set(weeklyReports.map(r => r.usuario_id));
+            const missingRepsList = totalDataStore.users.filter(u => !repsWhoSent.has(u.id));
+            return { mainValue: totalValid, label: 'Previsão Semanal', missingCount: missingRepsList.length, missingList: missingRepsList };
+        }
+    }, [weeklyReports, previsoes, view]);
 
     const handlePrevisaoAction = async (id: string, status: 'approved' | 'rejected') => {
         setIsActionLoading(true);
         try {
             await supabase.from('previsoes').update({ status }).eq('id', id);
-            
-            // Recarrega dados para atualizar UI e KPI
             await fetchData();
             alert(status === 'approved' ? 'Previsão aprovada!' : 'Previsão enviada para revisão.');
-        } catch (e) { 
-            console.error(e); 
-        } finally { 
-            setIsActionLoading(false); 
-        }
+        } catch (e) { console.error(e); } finally { setIsActionLoading(false); }
     };
 
     const openReviewModal = (report: any) => {
@@ -104,444 +140,286 @@ export const ManagerForecastScreen: React.FC = () => {
 
     const confirmRejectionWithAdjustments = async () => {
         if (!rejectionReason.trim()) {
-            alert('Informe o motivo da revisão para o representante.');
+            alert('Informe o motivo da revisão.');
             return;
         }
         setIsActionLoading(true);
         try {
             for (const item of reviewItems) {
-                await supabase
-                    .from('previsao_clientes')
-                    .update({ valor_previsto_cliente: item.valor_previsto_cliente })
-                    .eq('id', item.id);
+                await supabase.from('previsao_clientes').update({ valor_previsto_cliente: item.valor_previsto_cliente }).eq('id', item.id);
             }
-
             const newTotal = reviewItems.reduce((acc, curr) => acc + Number(curr.valor_previsto_cliente), 0);
-            await supabase
-                .from('previsoes')
-                .update({ 
-                    status: 'rejected', 
-                    previsao_total: newTotal,
-                    observacao: `WEEKLY_CHECKIN: [REVISÃO GERENTE: ${rejectionReason.toUpperCase()}]`
-                })
-                .eq('id', reviewModalReport.id);
-
+            await supabase.from('previsoes').update({ status: 'rejected', previsao_total: newTotal, observacao: `WEEKLY_CHECKIN: [REVISÃO GERENTE: ${rejectionReason.toUpperCase()}]` }).eq('id', reviewModalReport.id);
             await fetchData();
             setReviewModalReport(null);
-            alert('Relatório enviado para correção.');
-        } catch (e: any) {
-            alert('Erro: ' + e.message);
-        } finally {
-            setIsActionLoading(false);
-        }
+        } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
     };
 
     const handleDeleteForecast = async (id: string) => {
-        if (!confirm('Deseja realmente EXCLUIR permanentemente?')) return;
+        if (!confirm('Excluir permanentemente?')) return;
         setIsActionLoading(true);
         try {
             await supabase.from('previsao_clientes').delete().eq('previsao_id', id);
             await supabase.from('previsoes').delete().eq('id', id);
             await fetchData();
-            alert('Removido.');
         } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
     };
 
     const executeResetCycle = async () => {
+        if (!confirm('Deseja realmente apagar TODOS os check-ins desta semana?')) return;
         setIsActionLoading(true);
         try {
-            // 1. Buscar todos os IDs de previsões semanais
-            const { data: weeklies } = await supabase
-                .from('previsoes')
-                .select('id')
-                .ilike('observacao', 'WEEKLY_CHECKIN%');
-            
+            const { data: weeklies } = await supabase.from('previsoes').select('id').ilike('observacao', 'WEEKLY_CHECKIN%');
             if (weeklies && weeklies.length > 0) {
                 const ids = weeklies.map(w => w.id);
-                
-                // 2. Apagar dependências (filhos)
-                const { error: errItems } = await supabase
-                    .from('previsao_clientes')
-                    .delete()
-                    .in('previsao_id', ids);
-                
-                if (errItems) throw errItems;
-
-                // 3. Apagar cabeçalhos (pai)
-                const { error: errHeader } = await supabase
-                    .from('previsoes')
-                    .delete()
-                    .in('id', ids);
-
-                if (errHeader) throw errHeader;
+                await supabase.from('previsao_clientes').delete().in('previsao_id', ids);
+                await supabase.from('previsoes').delete().in('id', ids);
             }
-
             await fetchData();
             setShowResetModal(false);
-            alert('Ciclo semanal resetado com sucesso! Todos os lançamentos foram apagados.');
-        } catch (e: any) { 
-            alert('Falha ao resetar: ' + e.message); 
-        } finally { 
-            setIsActionLoading(false); 
-        }
+            alert('Ciclo resetado.');
+        } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
     };
-
-    const formatBRL = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-20">
-            <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-center gap-4">
-                <div>
-                    <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-                        <TrendingUp className="w-6 h-6 text-blue-600" /> Gestão de Previsões
-                    </h2>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Aprovação e Controle de Faturamento Semanal</p>
-                </div>
-                <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar">
-                    <button onClick={() => setView('weekly_checkin')} className={`whitespace-nowrap px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${view === 'weekly_checkin' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-                        <MousePointer2 className="w-4 h-4" /> Check-in Semanal
-                    </button>
-                    <button onClick={() => setView('mensais')} className={`whitespace-nowrap px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${view === 'mensais' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>Sazonalidade Anual</button>
-                </div>
-            </div>
-
-            {view === 'weekly_checkin' && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl relative overflow-hidden border-b-4 border-blue-600">
-                        <div className="absolute top-0 right-0 p-4 opacity-10"><DollarSign className="w-16 h-16" /></div>
-                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Previsão Semanal</p>
-                        <h3 className="text-3xl font-black tabular-nums">{formatBRL(weeklyKPIs.totalValid)}</h3>
-                        <p className="text-[9px] font-bold text-slate-400 mt-2 uppercase">Total de novos negócios (Em análise + Aprovados)</p>
-                    </div>
-
-                    <div onClick={() => setShowMissingRepsModal(true)} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-400 transition-all active:scale-95">
-                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><UserX className="w-16 h-16 text-slate-900" /></div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Reps s/ Check-in</p>
-                        <div className="flex items-baseline gap-2">
-                          <h3 className="text-3xl font-black text-slate-900">{weeklyKPIs.missingCount}</h3>
-                          <span className="text-xs text-slate-400 font-bold">/ {totalDataStore.users.length}</span>
+            
+            {/* TELA VISÍVEL DO GERENTE */}
+            <div className="space-y-6">
+                <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-center gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg">
+                            <TrendingUp className="w-6 h-6" />
                         </div>
-                        <div className="mt-4 flex items-center gap-2 text-[9px] font-black text-blue-600 uppercase">Ver nomes <ChevronRight className="w-3 h-3" /></div>
-                    </div>
-
-                    <button onClick={() => setShowResetModal(true)} disabled={isActionLoading} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-center items-center gap-2 group hover:bg-red-50 hover:border-red-200 transition-all active:scale-95">
-                        <div className="p-3 bg-red-50 text-red-600 rounded-2xl group-hover:bg-red-600 group-hover:text-white transition-all shadow-inner">
-                           <RotateCcw className={`w-6 h-6 ${isActionLoading ? 'animate-spin' : ''}`} />
+                        <div>
+                            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight uppercase leading-none">
+                                {view === 'mensais' ? 'Confirmação de Meta Anual' : 'Gestão de Previsões Regional'}
+                            </h2>
+                            <p className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mt-2">Acompanhamento do faturamento semanal projetado</p>
                         </div>
-                        <p className="text-[10px] font-black text-slate-400 group-hover:text-red-700 uppercase tracking-widest">Resetar Ciclo Semanal</p>
-                    </button>
-                </div>
-            )}
-
-            {isLoading ? (
-                <div className="flex flex-col items-center justify-center py-20 text-slate-400"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>
-            ) : view === 'mensais' ? (
-                <div className="space-y-4">
-                    <div className="flex items-center gap-3 px-2">
-                         <CheckCircle2 className="w-5 h-5 text-blue-600" />
-                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Representantes Cientes das Metas Anuais</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {previsoes.length === 0 ? (
-                            <div className="col-span-full py-20 text-center bg-white border border-dashed border-slate-200 rounded-[32px]">
-                                <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest">Nenhuma ciência registrada até o momento</p>
-                            </div>
-                        ) : (
-                            previsoes.map(p => (
-                                <div key={p.id} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex items-center justify-between group hover:border-blue-500 transition-all">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black group-hover:bg-blue-600 transition-colors">{p.usuarios?.nome.charAt(0)}</div>
-                                        <div>
-                                            <h4 className="font-black text-slate-800 uppercase text-xs">{p.usuarios?.nome}</h4>
-                                            <p className="text-[9px] font-bold text-slate-400 uppercase tabular-nums">CIÊNCIA EM {new Date(p.criado_em).toLocaleDateString('pt-BR')}</p>
-                                        </div>
-                                    </div>
-                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase border border-emerald-100">Ciente</span>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        <button 
+                            onClick={handleDownloadImage}
+                            disabled={isExporting || isLoading}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all shadow-lg text-[10px] font-black uppercase tracking-widest h-12"
+                        >
+                            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                            {isExporting ? 'Processando...' : 'Capturar Painel'}
+                        </button>
+
+                        <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar">
+                            <button onClick={() => setView('weekly_checkin')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${view === 'weekly_checkin' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>Check-in</button>
+                            <button onClick={() => setView('mensais')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${view === 'mensais' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>Ciência Anual</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="bg-slate-900 p-6 md:p-8 rounded-[32px] text-white shadow-xl relative overflow-hidden border-b-4 border-blue-600">
+                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">{kpis.label}</p>
+                        <h3 className="text-3xl font-black tabular-nums">{formatBRL(kpis.mainValue)}</h3>
+                    </div>
+
+                    {view === 'weekly_checkin' ? (
+                        <>
+                            <div onClick={() => setShowMissingRepsModal(true)} className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm relative cursor-pointer hover:border-blue-400 transition-all">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Reps s/ Check-in</p>
+                                <div className="flex items-baseline gap-2">
+                                    <h3 className="text-3xl font-black text-slate-900">{kpis.missingCount}</h3>
+                                    <span className="text-xs text-slate-400 font-bold">/ {totalDataStore.users.length}</span>
                                 </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            ) : (
-                <div className="space-y-8 animate-slideUp">
-                    {/* Fila de Aprovação (Somente PENDENTES) */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3 px-2">
-                             <RefreshCw className="w-5 h-5 text-blue-600" />
-                             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Fila de Aprovação</h3>
-                        </div>
-                        
-                        {weeklyReports.filter(r => r.status === 'pending').length === 0 ? (
-                            <div className="bg-white rounded-[32px] p-12 text-center border border-dashed border-slate-200">
-                                 <CheckCircle2 className="w-10 h-10 text-emerald-100 mx-auto mb-3" />
-                                 <p className="text-slate-400 font-bold uppercase text-[9px] tracking-[0.3em]">Nenhuma previsão pendente</p>
                             </div>
-                        ) : (
-                            weeklyReports.filter(r => r.status === 'pending').map(report => (
-                                <div key={report.id} className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden animate-slideUp border-l-8 border-l-amber-500">
-                                    <div className="p-6 md:p-8 bg-white flex flex-col md:flex-row justify-between items-center gap-4">
+
+                            <button onClick={() => setShowResetModal(true)} disabled={isActionLoading} className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-center items-center gap-2 hover:bg-red-50 transition-all">
+                                <RotateCcw className={`w-6 h-6 text-red-600 ${isActionLoading ? 'animate-spin' : ''}`} />
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resetar Ciclo</p>
+                            </button>
+                        </>
+                    ) : (
+                        <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-center">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Cotas Aceitas</p>
+                            <div className="flex items-baseline gap-2">
+                                <h3 className="text-3xl font-black text-slate-900">{kpis.count}</h3>
+                                <span className="text-xs text-slate-400 font-bold">Reps deram ciência</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {isLoading ? (
+                    <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>
+                ) : (
+                    <div className="space-y-12">
+                        {view === 'weekly_checkin' && weeklyReports.filter(r => r.status === 'pending').length > 0 && (
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest px-4">Fila de Aprovação</h3>
+                                {weeklyReports.filter(r => r.status === 'pending').map(report => (
+                                    <div key={report.id} className="bg-white rounded-[32px] border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-center gap-4">
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black shadow-lg">{report.usuarios?.nome.charAt(0)}</div>
-                                            <div>
-                                                <h4 className="font-black text-slate-900 uppercase text-md">{report.usuarios?.nome}</h4>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Enviado em {new Date(report.criado_em).toLocaleDateString('pt-BR')}</p>
-                                            </div>
+                                            <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black">{report.usuarios?.nome.charAt(0)}</div>
+                                            <div><h4 className="font-black text-slate-900 uppercase text-md">{report.usuarios?.nome}</h4><p className="text-[10px] font-bold text-slate-400 uppercase">{new Date(report.criado_em).toLocaleDateString('pt-BR')}</p></div>
                                         </div>
-                                        <div className="text-right flex items-center gap-6">
-                                            <div>
-                                                <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Total Relatado</p>
-                                                <p className="text-2xl font-black text-slate-900 tabular-nums">{formatBRL(report.previsao_total)}</p>
-                                            </div>
+                                        <div className="flex items-center gap-6">
+                                            <div className="text-right"><p className="text-[9px] font-black text-blue-600 uppercase">Montante</p><p className="text-xl font-black text-slate-900">{formatBRL(report.previsao_total)}</p></div>
                                             <div className="flex gap-2">
-                                                <button onClick={() => handlePrevisaoAction(report.id, 'approved')} className="p-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg" title="Aprovar"><CheckCircle2 className="w-6 h-6" /></button>
-                                                <button onClick={() => openReviewModal(report)} className="p-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all shadow-lg" title="Ajustar e Recusar"><Edit3 className="w-6 h-6" /></button>
-                                                <button onClick={() => handleDeleteForecast(report.id)} className="p-3 bg-white border border-slate-200 text-slate-300 hover:text-red-500 rounded-xl transition-all" title="Excluir"><Trash2 className="w-6 h-6" /></button>
+                                                <button onClick={() => handlePrevisaoAction(report.id, 'approved')} className="p-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-lg"><CheckCircle2 className="w-6 h-6" /></button>
+                                                <button onClick={() => openReviewModal(report)} className="p-3 bg-red-600 text-white rounded-xl hover:bg-red-700 shadow-lg"><Edit3 className="w-6 h-6" /></button>
+                                                <button onClick={() => handleDeleteForecast(report.id)} className="p-3 bg-white border border-slate-200 text-slate-300 hover:text-red-500 rounded-xl"><Trash2 className="w-6 h-6" /></button>
                                             </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-
-                    {/* Histórico por Representante (APROVADOS e RECUSADOS) */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3 px-2">
-                             <History className="w-5 h-5 text-slate-400" />
-                             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Histórico de Check-ins</h3>
-                        </div>
-
-                        <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                    <tr>
-                                        <th className="px-8 py-5">Representante</th>
-                                        <th className="px-6 py-5">Data Envio</th>
-                                        <th className="px-6 py-5 text-right">Montante</th>
-                                        <th className="px-6 py-5 text-center">Status</th>
-                                        <th className="px-8 py-5 text-right">Ver Clientes</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {weeklyReports.filter(r => r.status !== 'pending').length === 0 ? (
-                                        <tr>
-                                            <td colSpan={5} className="px-8 py-10 text-center text-slate-300 font-black uppercase text-[10px]">Sem registros processados</td>
-                                        </tr>
-                                    ) : (
-                                        weeklyReports.filter(r => r.status !== 'pending').map(report => (
-                                            <tr key={report.id} className="hover:bg-slate-50 transition-colors group">
-                                                <td className="px-8 py-4 font-black text-slate-700 uppercase text-xs">{report.usuarios?.nome}</td>
-                                                <td className="px-6 py-4 text-xs font-bold text-slate-400">{new Date(report.criado_em).toLocaleString('pt-BR')}</td>
-                                                <td className="px-6 py-4 text-right font-black text-slate-900 tabular-nums">{formatBRL(report.previsao_total)}</td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase border ${
-                                                        report.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
-                                                    }`}>
-                                                        {report.status === 'approved' ? 'Aceito' : 'Recusado'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-8 py-4 text-right">
-                                                    <button 
-                                                        onClick={() => setSelectedHistoryReport(report)}
-                                                        className="p-2 bg-slate-50 border border-slate-200 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm"
-                                                    >
-                                                        <Search className="w-4 h-4" />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal de Drill-down do Histórico */}
-            {selectedHistoryReport && createPortal(
-                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden animate-slideUp flex flex-col max-h-[85vh]">
-                        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Detalhamento da Previsão</h3>
-                                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Representante: {selectedHistoryReport.usuarios?.nome}</p>
-                            </div>
-                            <button onClick={() => setSelectedHistoryReport(null)} className="p-2 hover:bg-white rounded-full text-slate-400"><X className="w-6 h-6" /></button>
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                                        <tr>
-                                            <th className="px-6 py-4">Cliente / Entidade</th>
-                                            <th className="px-6 py-4">CNPJ</th>
-                                            <th className="px-6 py-4 text-right">Vlr. Previsto</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {(selectedHistoryReport.previsao_clientes || []).map((item: any) => (
-                                            <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-6 py-4">
-                                                    <p className="font-black text-slate-800 uppercase text-[11px] truncate leading-tight">{item.clientes?.nome_fantasia}</p>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <p className="text-[10px] font-bold text-slate-400 tabular-nums">{item.clientes?.cnpj}</p>
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <p className="text-[11px] font-black text-blue-600 tabular-nums">{formatBRL(item.valor_previsto_cliente)}</p>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot className="bg-slate-50 border-t border-slate-200">
-                                        <tr>
-                                            <td colSpan={2} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-right">Total Consolidado</td>
-                                            <td className="px-6 py-4 text-right text-sm font-black text-slate-900 tabular-nums">{formatBRL(selectedHistoryReport.previsao_total)}</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
-                            <Button onClick={() => setSelectedHistoryReport(null)} className="rounded-2xl px-10 h-12 font-black uppercase text-[10px]">Fechar Detalhe</Button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
-
-            {/* Modal de Revisão Detalhada (Ajustes do Gerente) */}
-            {reviewModalReport && createPortal(
-                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden animate-slideUp flex flex-col max-h-[90vh]">
-                        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Sugestão de Revisão</h3>
-                                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Representante: {reviewModalReport.usuarios?.nome}</p>
-                            </div>
-                            <button onClick={() => setReviewModalReport(null)} className="p-2 hover:bg-white rounded-full text-slate-400"><X className="w-6 h-6" /></button>
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
-                            <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-center gap-3">
-                                <AlertCircle className="w-5 h-5 text-amber-600" />
-                                <p className="text-[10px] font-black text-amber-800 uppercase leading-tight">Ajuste os valores sugeridos abaixo. O representante receberá estas alterações para validar e reenviar.</p>
-                            </div>
-
-                            <div className="space-y-3">
-                                {reviewItems.map((item) => (
-                                    <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl">
-                                        <div className="flex-1 min-w-0 pr-4">
-                                            <p className="font-black text-slate-700 uppercase text-[10px] truncate leading-tight">{item.clientes?.nome_fantasia || 'Cliente não Identificado'}</p>
-                                            <p className="text-[9px] font-bold text-slate-400 mt-1 tabular-nums">{item.clientes?.cnpj}</p>
-                                        </div>
-                                        <div className="w-40 relative">
-                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[10px]">R$</span>
-                                            <input 
-                                              type="number"
-                                              value={item.valor_previsto_cliente}
-                                              onChange={(e) => handleUpdateReviewItem(item.id, Number(e.target.value))}
-                                              className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs font-black text-slate-900 outline-none focus:ring-2 focus:ring-blue-100"
-                                            />
                                         </div>
                                     </div>
                                 ))}
                             </div>
+                        )}
 
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Justificativa da Revisão</label>
-                                <textarea 
-                                    value={rejectionReason}
-                                    onChange={e => setRejectionReason(e.target.value)}
-                                    placeholder="Ex: Verba reduzida para esta regional ou ajustes de mix..."
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-50"
-                                    rows={3}
-                                />
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest px-4">{view === 'mensais' ? 'Ciência de Metas Anuais' : 'Histórico Processado'}</h3>
+                            <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-900 uppercase tracking-widest">
+                                        <tr><th className="px-8 py-6">Representante</th><th className="px-6 py-6">Data Envio</th><th className="px-6 py-6 text-right">Montante</th><th className="px-6 py-6 text-center">Status</th><th className="px-8 py-6 text-right">Ação</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {(view === 'mensais' ? previsoes : weeklyReports.filter(r => r.status !== 'pending')).map(report => (
+                                            <tr key={report.id} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-8 py-5 font-black text-slate-800 uppercase text-xs">{report.usuarios?.nome}</td>
+                                                <td className="px-6 py-5 text-xs font-bold text-slate-500">{new Date(report.criado_em).toLocaleString('pt-BR')}</td>
+                                                <td className="px-6 py-5 text-right font-black text-slate-900">{formatBRL(report.previsao_total)}</td>
+                                                <td className="px-6 py-5 text-center">
+                                                    <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase border ${report.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                                        {report.status === 'approved' ? 'Aceito' : 'Recusado'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    <button onClick={() => setSelectedHistoryReport(report)} className="p-2 bg-slate-50 border border-slate-200 rounded-xl hover:bg-blue-600 hover:text-white transition-all"><Search className="w-4 h-4" /></button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-
-                        <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
-                            <Button variant="outline" onClick={() => setReviewModalReport(null)} className="flex-1 h-14 rounded-2xl font-black text-xs uppercase">Voltar</Button>
-                            <Button 
-                                onClick={confirmRejectionWithAdjustments} 
-                                isLoading={isActionLoading}
-                                className="flex-[2] h-14 rounded-2xl font-black text-xs uppercase bg-red-600 hover:bg-red-700 text-white shadow-xl shadow-red-200"
-                            >
-                                <Save className="w-4 h-4 mr-2" /> Enviar Revisão ao Rep
-                            </Button>
-                        </div>
                     </div>
-                </div>,
-                document.body
-            )}
+                )}
+            </div>
 
-            {/* Modal Missing Reps */}
-            {showMissingRepsModal && createPortal(
+            {/* ÁREA DE EXPORTAÇÃO (PNG) */}
+            <div 
+                id="export-area-container"
+                ref={exportContainerRef}
+                style={{ 
+                    position: 'fixed', 
+                    left: '-9999px', 
+                    top: '0', 
+                    width: '1200px', 
+                    backgroundColor: '#ffffff', 
+                    padding: '60px',
+                    color: '#000000',
+                    fontFamily: 'Inter, sans-serif'
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '30px', borderBottom: '3px solid #0f172a', paddingBottom: '30px', marginBottom: '40px' }}>
+                    <div style={{ width: '80px', height: '80px', backgroundColor: '#1d4ed8', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyCenter: 'center', color: '#ffffff' }}>
+                        <TrendingUp size={48} style={{ margin: 'auto' }} />
+                    </div>
+                    <div>
+                        <h2 style={{ fontSize: '42px', fontWeight: '900', textTransform: 'uppercase', margin: '0', color: '#0f172a' }}>
+                            {view === 'mensais' ? 'Confirmação de Meta Anual' : 'Gestão de Previsões Regional'}
+                        </h2>
+                        <p style={{ fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '4px', marginTop: '8px' }}>
+                            Acompanhamento do faturamento semanal projetado
+                        </p>
+                    </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '50px' }}>
+                    <div style={{ backgroundColor: '#0f172a', padding: '40px', borderRadius: '40px', color: '#ffffff' }}>
+                        <p style={{ fontSize: '12px', fontWeight: '900', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '4px', marginBottom: '10px' }}>{kpis.label}</p>
+                        <h3 style={{ fontSize: '56px', fontWeight: '900', margin: '0' }}>{formatBRL(kpis.mainValue)}</h3>
+                    </div>
+                    <div style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '40px', border: '4px solid #f1f5f9' }}>
+                        <p style={{ fontSize: '12px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '4px', marginBottom: '10px' }}>{view === 'mensais' ? 'Total de Aceites' : 'Reps s/ Check-in'}</p>
+                        <h3 style={{ fontSize: '56px', fontWeight: '900', margin: '0', color: '#0f172a' }}>
+                            {view === 'mensais' ? kpis.count : kpis.missingCount} <span style={{ fontSize: '24px', color: '#cbd5e1' }}>/ {totalDataStore.users.length}</span>
+                        </h3>
+                    </div>
+                </div>
+
+                <div style={{ marginTop: '40px' }}>
+                    <h3 style={{ fontSize: '20px', fontWeight: '900', textTransform: 'uppercase', color: '#0f172a', marginBottom: '20px', borderLeft: '10px solid #1d4ed8', paddingLeft: '20px' }}>
+                        Previsões Enviadas
+                    </h3>
+                    <div style={{ border: '2px solid #f1f5f9', borderRadius: '40px', overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#ffffff' }}>
+                            <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #f1f5f9' }}>
+                                <tr style={{ color: '#0f172a', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase' }}>
+                                    <th style={{ padding: '25px 40px', textAlign: 'left' }}>Representante</th>
+                                    <th style={{ padding: '25px 30px', textAlign: 'left' }}>Data Envio</th>
+                                    <th style={{ padding: '25px 30px', textAlign: 'right' }}>Montante</th>
+                                    <th style={{ padding: '25px 40px', textAlign: 'center' }}>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(view === 'mensais' ? previsoes : weeklyReports.filter(r => r.status !== 'pending')).map(report => (
+                                    <tr key={report.id} style={{ borderBottom: '2px solid #f8fafc' }}>
+                                        <td style={{ padding: '20px 40px', fontWeight: '900', textTransform: 'uppercase', fontSize: '14px', color: '#1e293b' }}>{report.usuarios?.nome}</td>
+                                        <td style={{ padding: '20px 30px', fontWeight: '700', fontSize: '13px', color: '#64748b' }}>{new Date(report.criado_em).toLocaleString('pt-BR')}</td>
+                                        <td style={{ padding: '20px 30px', textAlign: 'right', fontWeight: '900', fontSize: '18px', color: '#0f172a' }}>{formatBRL(report.previsao_total)}</td>
+                                        <td style={{ padding: '20px 40px', textAlign: 'center' }}>
+                                            <div style={{ display: 'inline-block', padding: '6px 15px', borderRadius: '10px', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', backgroundColor: report.status === 'approved' ? '#f0fdf4' : '#fef2f2', color: report.status === 'approved' ? '#166534' : '#991b1b', border: `1px solid ${report.status === 'approved' ? '#bbf7d0' : '#fecaca'}` }}>
+                                                {report.status === 'approved' ? 'Aceito' : 'Recusado'}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div style={{ marginTop: '50px', textAlign: 'center', borderTop: '2px solid #f1f5f9', paddingTop: '30px' }}>
+                    <p style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: '#cbd5e1', letterSpacing: '5px' }}>Portal Centro-Norte • Inteligência de Dados</p>
+                </div>
+            </div>
+
+            {/* Modais */}
+            {selectedHistoryReport && createPortal(
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl overflow-hidden animate-slideUp border border-white/20">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Reps s/ Check-in</h3>
-                            <button onClick={() => setShowMissingRepsModal(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X className="w-5 h-5" /></button>
+                    <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <div><h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Detalhamento</h3><p className="text-[10px] font-black text-blue-600 uppercase mt-1">Rep: {selectedHistoryReport.usuarios?.nome}</p></div>
+                            <button onClick={() => setSelectedHistoryReport(null)} className="p-2 hover:bg-white rounded-full text-slate-400"><X className="w-6 h-6" /></button>
                         </div>
-                        <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                            {weeklyKPIs.missingList.length === 0 ? (
-                                <div className="text-center py-10">
-                                    <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
-                                    <p className="text-xs font-black text-slate-800 uppercase">Equipe Completa!</p>
-                                </div>
-                            ) : (
-                                weeklyKPIs.missingList.map(rep => (
-                                    <div key={rep.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 mb-2">
-                                        <div className="w-8 h-8 bg-slate-900 text-white rounded-lg flex items-center justify-center font-black text-xs">{rep.nome.charAt(0)}</div>
-                                        <span className="font-black text-slate-700 uppercase text-[10px]">{rep.nome}</span>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                        <div className="p-6 bg-slate-50 border-t border-slate-100">
-                             <Button onClick={() => setShowMissingRepsModal(false)} fullWidth className="rounded-2xl h-14 font-black uppercase text-[10px]">Fechar Lista</Button>
+                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                            <table className="w-full text-left border-collapse bg-white rounded-3xl border border-slate-200 overflow-hidden">
+                                <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase border-b border-slate-100"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4 text-right">Vlr. Previsto</th></tr></thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {(selectedHistoryReport.previsao_clientes || []).map((item: any) => (
+                                        <tr key={item.id}><td className="px-6 py-4 font-black text-slate-800 uppercase text-[11px] truncate">{item.clientes?.nome_fantasia}</td><td className="px-6 py-4 text-right font-black text-blue-600 text-[11px]">{formatBRL(item.valor_previsto_cliente)}</td></tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                </div>,
-                document.body
+                </div>, document.body
             )}
 
-            {/* MODAL DE CONFIRMAÇÃO DO RESET DE CICLO SEMANAL */}
+            {/* Reset Modal */}
             {showResetModal && createPortal(
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
-                    <div className="bg-white w-full max-w-sm rounded-[40px] p-10 shadow-2xl text-center border border-white/20 animate-slideUp">
+                    <div className="bg-white w-full max-w-sm rounded-[40px] p-10 shadow-2xl text-center border border-white/20">
                         <div className="w-24 h-24 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-8 animate-pulse">
                             <AlertTriangle className="w-12 h-12" />
                         </div>
-                        <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Limpeza Total</h3>
-                        <p className="text-sm text-slate-500 mt-4 font-medium leading-relaxed">
-                            Atenção: Isso apagará <strong className="text-red-600">TODOS</strong> os relatórios de check-in semanal desta semana, tanto os aprovados quanto os pendentes.
-                        </p>
-                        <p className="text-xs text-slate-400 mt-2 italic font-bold">Esta ação não pode ser desfeita.</p>
-                        
+                        <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Resetar Ciclo</h3>
+                        <p className="text-sm text-slate-500 mt-4 font-medium leading-relaxed">Isso apagará <strong className="text-red-600">TODOS</strong> os check-ins lançados nesta semana.</p>
                         <div className="grid grid-cols-1 gap-3 mt-10">
-                            <Button 
-                                onClick={executeResetCycle}
-                                isLoading={isActionLoading}
-                                className="bg-red-600 hover:bg-red-700 text-white h-16 rounded-2xl font-black uppercase text-xs tracking-widest shadow-2xl shadow-red-200"
-                            >
-                                <Trash2 className="w-4 h-4 mr-2" /> Confirmar e Apagar Tudo
-                            </Button>
-                            <Button 
-                                variant="outline" 
-                                onClick={() => setShowResetModal(false)}
-                                disabled={isActionLoading}
-                                className="h-14 rounded-2xl font-black uppercase text-[10px] border-slate-200"
-                            >
-                                Voltar / Cancelar
-                            </Button>
+                            <Button onClick={executeResetCycle} isLoading={isActionLoading} className="bg-red-600 hover:bg-red-700 h-16 rounded-2xl font-black uppercase text-xs tracking-widest">Apagar Tudo</Button>
+                            <Button variant="outline" onClick={() => setShowResetModal(false)} className="h-14 rounded-2xl font-black uppercase text-[10px] border-slate-200">Cancelar</Button>
                         </div>
                     </div>
-                </div>,
-                document.body
+                </div>, document.body
             )}
         </div>
     );
