@@ -107,7 +107,6 @@ export const ManagerForecastScreen: React.FC = () => {
                         valor_previsto_cliente: 0
                     });
                 }
-                // Fix: Cast existingItem to any to avoid "Property 'valor_previsto_cliente' does not exist on type 'unknown'"
                 const existingItem = group.itemsMap.get(cId) as any;
                 if (existingItem) {
                     existingItem.valor_previsto_cliente += Number(item.valor_previsto_cliente);
@@ -117,8 +116,8 @@ export const ManagerForecastScreen: React.FC = () => {
 
         return Array.from(groups.values()).map(g => ({
             ...g,
-            previsao_clientes: Array.from(g.itemsMap.values()).sort((a,b) => b.valor_previsto_cliente - a.valor_previsto_cliente)
-        })).sort((a, b) => b.previsao_total - a.previsao_total);
+            previsao_clientes: Array.from(g.itemsMap.values() as IterableIterator<any>).sort((a: any, b: any) => b.valor_previsto_cliente - a.valor_previsto_cliente)
+        })).sort((a: any, b: any) => b.previsao_total - a.previsao_total);
     }, [weeklyReports, view]);
 
     const handleDownloadImage = async () => {
@@ -218,7 +217,7 @@ export const ManagerForecastScreen: React.FC = () => {
         try {
             const { data: weeklies } = await supabase.from('previsoes').select('id').ilike('observacao', 'WEEKLY_CHECKIN%');
             if (weeklies && weeklies.length > 0) {
-                const ids = weeklies.map(w => w.id);
+                const ids = weeklies.map((w: any) => w.id);
                 await supabase.from('previsao_clientes').delete().in('previsao_id', ids);
                 await supabase.from('previsoes').delete().in('id', ids);
             }
@@ -326,7 +325,7 @@ export const ManagerForecastScreen: React.FC = () => {
                             </h3>
                             <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                                 <table className="w-full text-left">
-                                    <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-900 uppercase tracking-widest">
+                                    <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                         <tr>
                                             <th className="px-8 py-6">Representante</th>
                                             <th className="px-6 py-6">{view === 'mensais' ? 'Data Envio' : 'Última Atividade'}</th>
@@ -336,7 +335,7 @@ export const ManagerForecastScreen: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {(view === 'mensais' ? previsoes : consolidatedHistory).map(report => (
+                                        {(view === 'mensais' ? previsoes : consolidatedHistory).map((report: any) => (
                                             <tr key={view === 'mensais' ? report.id : report.usuario_id} className="hover:bg-slate-50 transition-colors">
                                                 <td className="px-8 py-5 font-black text-slate-800 uppercase text-xs">{report.usuarios?.nome}</td>
                                                 <td className="px-6 py-5 text-xs font-bold text-slate-500">
@@ -417,7 +416,7 @@ export const ManagerForecastScreen: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {(view === 'mensais' ? previsoes : consolidatedHistory).map(report => (
+                                {(view === 'mensais' ? previsoes : consolidatedHistory).map((report: any) => (
                                     <tr key={view === 'mensais' ? report.id : report.usuario_id} style={{ borderBottom: '2px solid #f8fafc' }}>
                                         <td style={{ padding: '20px 40px', fontWeight: '900', textTransform: 'uppercase', fontSize: '14px', color: '#1e293b' }}>{report.usuarios?.nome}</td>
                                         <td style={{ padding: '20px 30px' }}>
@@ -491,7 +490,7 @@ export const ManagerForecastScreen: React.FC = () => {
                                 <table className="w-full text-left">
                                     <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4 text-right">Valor Previsto</th></tr></thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {reviewItems.map(item => (
+                                        {reviewItems.map((item: any) => (
                                             <tr key={item.id} className="hover:bg-slate-50">
                                                 <td className="px-6 py-3 font-black text-slate-700 uppercase text-[10px]">{item.clientes?.nome_fantasia}</td>
                                                 <td className="px-6 py-3 text-right">
