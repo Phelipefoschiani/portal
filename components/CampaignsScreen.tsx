@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Megaphone, Save, CheckCircle2, TrendingUp, DollarSign, Percent, AlertCircle, Clock, XCircle, ChevronRight, History, Edit3, RefreshCw, Search, Loader2 } from 'lucide-react';
 import { Button } from './Button';
@@ -18,7 +17,6 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
   const [selectedClientId, setSelectedClientId] = useState('');
   const [description, setDescription] = useState('');
   const [orderValue, setOrderValue] = useState('');
-  const [caju, setCaju] = useState('');
   const [dinheiro, setDinheiro] = useState('');
   const [produto, setProduto] = useState('');
   
@@ -71,10 +69,9 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
   };
 
   const valOrder = parseToNumber(orderValue);
-  const valCaju = parseToNumber(caju);
   const valDinheiro = parseToNumber(dinheiro);
   const valProduto = parseToNumber(produto);
-  const totalInvestment = valCaju + valDinheiro + valProduto;
+  const totalInvestment = valDinheiro + valProduto;
   const investmentPercent = valOrder > 0 ? (totalInvestment / valOrder) * 100 : 0;
 
   const handleSave = async (e: React.FormEvent) => {
@@ -88,7 +85,7 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
         cliente_id: selectedClientId,
         data: new Date().toISOString().split('T')[0],
         valor_total_investimento: totalInvestment,
-        valor_caju: valCaju,
+        valor_caju: 0, 
         valor_dinheiro: valDinheiro,
         valor_produto: valProduto,
         // Armazenamos o valor do pedido de forma estruturada no início da observação
@@ -109,7 +106,6 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
       setSelectedClientId('');
       setDescription('');
       setOrderValue('');
-      setCaju('');
       setDinheiro('');
       setProduto('');
       setEditingId(null);
@@ -133,7 +129,6 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
     const orderMatch = obs.match(/\[PEDIDO:\s*R\$\s*(.*?)\]/);
     setOrderValue(orderMatch ? orderMatch[1] : (inv.valor_total_investimento * 10).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
     
-    setCaju((inv.valor_caju || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
     setDinheiro((inv.valor_dinheiro || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
     setProduto((inv.valor_produto || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
     
@@ -171,178 +166,235 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
                   <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Investimento Solicitado</p>
                   <p className="text-4xl font-black text-white tabular-nums">{formatBRL(totalInvestment)}</p>
               </div>
-              <div className="flex-1 max-w-xs w-full">
-                  <div className="flex justify-between items-center mb-2">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Peso no Pedido</span>
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded ${investmentPercent > 7 ? 'bg-red-500' : 'bg-emerald-500'}`}>
-                          {investmentPercent.toFixed(2)}%
-                      </span>
+
+              <div className="flex flex-col items-center md:items-end gap-2">
+                  <div className="flex items-center gap-3 bg-white/5 px-6 py-3 rounded-2xl border border-white/10 backdrop-blur-sm">
+                      <Percent className="w-5 h-5 text-blue-400" />
+                      <div>
+                          <p className={`text-xl font-black tabular-nums ${investmentPercent > 7 ? 'text-red-400' : 'text-emerald-400'}`}>
+                            {investmentPercent.toFixed(1)}%
+                          </p>
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Comprometimento ROI</p>
+                      </div>
                   </div>
-                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                      <div className={`h-full transition-all duration-700 ${investmentPercent > 7 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(investmentPercent * 10, 100)}%` }}></div>
-                  </div>
+                  {investmentPercent > 7 && (
+                    <div className="flex items-center gap-2 text-[9px] font-black text-red-400 uppercase animate-pulse">
+                        <AlertCircle className="w-3 h-3" /> Requer Justificativa Forte
+                    </div>
+                  )}
               </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-              <form onSubmit={handleSave} className="space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="md:col-span-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-[0.2em]">Cliente Alvo</label>
-                          <select 
-                            value={selectedClientId} 
-                            onChange={e => setSelectedClientId(e.target.value)} 
-                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-[20px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-100 transition-all" 
+          <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-8 space-y-6">
+                <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Cliente</label>
+                            <select 
+                                value={selectedClientId}
+                                onChange={(e) => setSelectedClientId(e.target.value)}
+                                required
+                                className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-100 transition-all"
+                            >
+                                <option value="">Buscar cliente...</option>
+                                {clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
+                            </select>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pedido Gerado</label>
+                            <div className="relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">R$</span>
+                                <input 
+                                    type="text"
+                                    value={orderValue}
+                                    onChange={handleInputChange(setOrderValue)}
+                                    placeholder="0,00"
+                                    required
+                                    className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-blue-100 transition-all tabular-nums"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Justificativa da Ação</label>
+                        <textarea 
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            rows={4}
                             required
-                          >
-                              <option value="">Buscar na carteira...</option>
-                              {clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
-                          </select>
-                      </div>
+                            placeholder="Descreva o objetivo da campanha, produtos foco e expectativa de retorno..."
+                            className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[24px] text-sm font-medium text-slate-600 outline-none focus:ring-4 focus:ring-blue-100 transition-all"
+                        />
+                    </div>
 
-                      <div>
-                          <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-[0.2em]">Valor Total do Pedido (R$)</label>
-                          <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">R$</span>
-                            <input 
-                              type="text" 
-                              value={orderValue} 
-                              onChange={handleInputChange(setOrderValue)} 
-                              className="w-full p-4 pl-12 bg-slate-50 border border-slate-200 rounded-[20px] font-black text-slate-900 outline-none focus:ring-4 focus:ring-blue-100 transition-all tabular-nums" 
-                              placeholder="0,00" 
-                              required 
-                            />
-                          </div>
-                      </div>
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 mb-2 ml-1">
+                            <DollarSign className="w-4 h-4 text-blue-600" />
+                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Distribuição do Investimento</h3>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 group hover:border-emerald-200 transition-all">
+                                <p className="text-[9px] font-black text-slate-400 uppercase mb-3 text-center tracking-widest">Dinheiro (Cash)</p>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-600 font-bold">R$</span>
+                                    <input 
+                                        type="text"
+                                        value={dinheiro}
+                                        onChange={handleInputChange(setDinheiro)}
+                                        placeholder="0,00"
+                                        className="w-full h-12 bg-white border border-slate-200 rounded-xl pl-10 pr-4 text-sm font-black text-emerald-600 text-center outline-none focus:ring-2 focus:ring-emerald-100 tabular-nums"
+                                    />
+                                </div>
+                            </div>
+                            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 group hover:border-blue-200 transition-all">
+                                <p className="text-[9px] font-black text-slate-400 uppercase mb-3 text-center tracking-widest">Bonificação Produto</p>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-600 font-bold">R$</span>
+                                    <input 
+                                        type="text"
+                                        value={produto}
+                                        onChange={handleInputChange(setProduto)}
+                                        placeholder="0,00"
+                                        className="w-full h-12 bg-white border border-slate-200 rounded-xl pl-10 pr-4 text-sm font-black text-blue-600 text-center outline-none focus:ring-2 focus:ring-blue-100 tabular-nums"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-                      <div className="md:col-span-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-[0.2em]">Justificativa e Detalhes da Ação</label>
-                          <textarea 
-                            value={description} 
-                            onChange={e => setDescription(e.target.value)} 
-                            className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[24px] font-medium text-slate-600 outline-none focus:ring-4 focus:ring-blue-100 transition-all" 
-                            rows={3} 
-                            required 
-                            placeholder="Descreva como essa verba ajudará no fechamento do pedido..."
-                          ></textarea>
-                      </div>
-                  </div>
+            <div className="lg:col-span-4 space-y-6">
+                <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm space-y-6">
+                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-tighter flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5 text-blue-600" /> Resumo Estratégico
+                    </h3>
+                    
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase">
+                            <span>Venda Projetada</span>
+                            <span className="text-slate-900">{formatBRL(valOrder)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase">
+                            <span>Invest. Total</span>
+                            <span className="text-blue-600 font-black">{formatBRL(totalInvestment)}</span>
+                        </div>
+                        <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
+                            <span className="text-[10px] font-black text-slate-400 uppercase">Percentual ROI</span>
+                            <span className={`text-xl font-black ${investmentPercent > 7 ? 'text-red-600' : 'text-emerald-600'}`}>{investmentPercent.toFixed(2)}%</span>
+                        </div>
+                    </div>
 
-                  <div className="pt-8 border-t border-slate-100">
-                      <p className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-[0.2em]">Distribuição do Investimento</p>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                          <div className="p-6 bg-pink-50/50 rounded-3xl border border-pink-100">
-                              <label className="text-[9px] font-black text-pink-600 uppercase block mb-3 text-center">Verba Caju</label>
-                              <div className="relative">
-                                <input 
-                                  type="text" 
-                                  value={caju} 
-                                  onChange={handleInputChange(setCaju)} 
-                                  className="w-full p-3 bg-white border border-pink-200 rounded-xl font-black text-center text-pink-700 outline-none focus:ring-2 focus:ring-pink-300" 
-                                  placeholder="0,00"
-                                />
-                              </div>
-                          </div>
-                          <div className="p-6 bg-emerald-50/50 rounded-3xl border border-emerald-100">
-                              <label className="text-[9px] font-black text-emerald-600 uppercase block mb-3 text-center">Dinheiro (Cash)</label>
-                              <div className="relative">
-                                <input 
-                                  type="text" 
-                                  value={dinheiro} 
-                                  onChange={handleInputChange(setDinheiro)} 
-                                  className="w-full p-3 bg-white border border-emerald-200 rounded-xl font-black text-center text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-300" 
-                                  placeholder="0,00"
-                                />
-                              </div>
-                          </div>
-                          <div className="p-6 bg-blue-50/50 rounded-3xl border border-blue-100">
-                              <label className="text-[9px] font-black text-blue-600 uppercase block mb-3 text-center">Bonificação Produto</label>
-                              <div className="relative">
-                                <input 
-                                  type="text" 
-                                  value={produto} 
-                                  onChange={handleInputChange(setProduto)} 
-                                  className="w-full p-3 bg-white border border-blue-200 rounded-xl font-black text-center text-blue-700 outline-none focus:ring-2 focus:ring-blue-300" 
-                                  placeholder="0,00"
-                                />
-                              </div>
-                          </div>
-                      </div>
-                  </div>
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                        <p className="text-[9px] font-bold text-blue-700 leading-relaxed uppercase">
+                           Dica: Campanhas com investimento acima de 7% do valor do pedido requerem validação detalhada do gestor.
+                        </p>
+                    </div>
 
-                  <Button 
-                    type="submit" 
-                    fullWidth 
-                    isLoading={isSaving} 
-                    disabled={!selectedClientId || totalInvestment === 0 || valOrder === 0} 
-                    className="h-16 rounded-[24px] font-black text-sm uppercase tracking-[0.2em] shadow-2xl shadow-blue-500/30"
-                  >
-                    {editingId ? 'Confirmar Revisão e Reenviar' : 'Enviar Solicitação para o Gerente'}
-                  </Button>
-              </form>
-          </div>
+                    <Button 
+                        type="submit" 
+                        fullWidth 
+                        isLoading={isSaving}
+                        disabled={totalInvestment === 0 || !selectedClientId || valOrder === 0}
+                        className="h-16 rounded-2xl font-black uppercase tracking-[0.2em] text-xs shadow-2xl shadow-blue-500/20"
+                    >
+                        <Save className="w-4 h-4 mr-2" /> {editingId ? 'Reenviar para Aprovação' : 'Solicitar Verba'}
+                    </Button>
+                </div>
+                <button 
+                  type="button"
+                  onClick={onNavigateToInvestments}
+                  className="w-full bg-slate-900 text-white p-5 rounded-[28px] font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-all flex items-center justify-between group shadow-xl"
+                >
+                    <span>Ver Meu Saldo de Verba</span>
+                    <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </button>
+            </div>
+          </form>
         </>
       ) : (
-        <div className="space-y-4">
-            {isLoadingHistory ? (
-                <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-4" />
-                    <p className="text-[10px] font-black uppercase tracking-widest">Carregando histórico...</p>
-                </div>
-            ) : history.length === 0 ? (
-                <div className="bg-white rounded-[32px] p-20 text-center border border-dashed border-slate-200">
-                    <History className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                    <p className="text-slate-400 font-bold uppercase text-xs tracking-widest">Nenhuma campanha registrada.</p>
-                </div>
-            ) : (
-                history.map(inv => {
+        <div className="space-y-4 animate-slideUp">
+           <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                  <History className="w-6 h-6 text-blue-600" />
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Status das Solicitações</h3>
+              </div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{history.length} campanhas registradas</p>
+           </div>
+
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {isLoadingHistory ? (
+                  <div className="col-span-full py-20 text-center"><Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto" /></div>
+              ) : history.length === 0 ? (
+                  <div className="col-span-full bg-white rounded-[32px] p-24 text-center border-2 border-dashed border-slate-100">
+                      <Megaphone className="w-16 h-16 text-slate-100 mx-auto mb-4" />
+                      <p className="text-slate-300 font-bold uppercase text-xs tracking-widest italic">Nenhuma solicitação enviada ainda</p>
+                  </div>
+              ) : (
+                  history.map(inv => {
                     const obs = inv.observacao || '';
+                    // Extração de dados da observação formatada
                     const orderMatch = obs.match(/\[PEDIDO:\s*R\$\s*(.*?)\]/);
                     const pedidoValue = orderMatch ? orderMatch[1] : 'N/I';
                     const cleanObs = obs.replace(/\[PEDIDO:.*?\]\s*/, '').replace(/\[RECUSADO:.*?\]\s*/, '');
+                    
+                    const isRejected = inv.status === 'rejected';
 
                     return (
-                        <div key={inv.id} className={`bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-6 group transition-all`}>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(inv.criado_em).toLocaleDateString('pt-BR')}</span>
-                                    {inv.status === 'rejected' && <span className="px-2 py-0.5 rounded bg-red-50 text-red-500 text-[8px] font-black uppercase">Recusada</span>}
+                        <div key={inv.id} className={`bg-white p-6 rounded-[32px] border shadow-sm transition-all group ${isRejected ? 'border-red-200 ring-4 ring-red-50' : 'border-slate-200 hover:border-blue-500'}`}>
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="min-w-0">
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">{new Date(inv.data).toLocaleDateString('pt-BR')}</p>
+                                    <h4 className="font-black text-slate-800 uppercase text-xs truncate group-hover:text-blue-600 transition-colors">{inv.clientes?.nome_fantasia}</h4>
                                 </div>
-                                <h3 className="font-black text-slate-800 uppercase text-md truncate">{inv.clientes?.nome_fantasia}</h3>
-                                <p className="text-[10px] text-slate-400 font-bold italic mt-1 line-clamp-1">"{cleanObs || 'Campanha comercial'}"</p>
+                                <div className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase shadow-sm ${
+                                    inv.status === 'approved' ? 'bg-emerald-600 text-white' : 
+                                    inv.status === 'rejected' ? 'bg-red-600 text-white' : 
+                                    'bg-slate-900 text-white'
+                                }`}>
+                                    {inv.status === 'approved' ? 'Aprovado' : inv.status === 'rejected' ? 'Recusado' : 'Em Análise'}
+                                </div>
                             </div>
 
-                            <div className="flex items-center gap-8">
-                                <div className="text-right">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Pedido</p>
-                                    <p className="text-sm font-black text-slate-700">R$ {pedidoValue}</p>
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                        <p className="text-[7px] font-black text-slate-400 uppercase mb-0.5">Faturado</p>
+                                        <p className="text-xs font-black text-slate-800">R$ {pedidoValue}</p>
+                                    </div>
+                                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                        <p className="text-[7px] font-black text-slate-400 uppercase mb-0.5">Verba</p>
+                                        <p className="text-xs font-black text-blue-600">{formatBRL(inv.valor_total_investimento)}</p>
+                                    </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Investimento</p>
-                                    <p className="text-sm font-black text-blue-600">{formatBRL(inv.valor_total_investimento)}</p>
+
+                                <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                                    <p className="text-[8px] font-black text-slate-400 uppercase mb-2">Justificativa</p>
+                                    <p className="text-[10px] text-slate-500 italic line-clamp-2 leading-relaxed">"{cleanObs || 'Sem descrição adicional'}"</p>
                                 </div>
-                                <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                                    inv.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
-                                    inv.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-100' : 
-                                    'bg-amber-50 text-amber-700 border-amber-100'
-                                }`}>
-                                    {inv.status === 'approved' ? 'Aprovado' : inv.status === 'rejected' ? 'Recusado' : 'Pendente'}
-                                </div>
-                                
-                                {inv.status === 'rejected' && (
-                                    <button 
-                                        onClick={() => handleEditRejected(inv)}
-                                        className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
-                                        title="Corrigir e Reenviar"
-                                    >
-                                        <RefreshCw className="w-4 h-4" />
-                                    </button>
+
+                                {isRejected && (
+                                    <div className="bg-red-50 p-4 rounded-2xl border border-red-100 animate-fadeIn">
+                                        <p className="text-[8px] font-black text-red-600 uppercase mb-2 flex items-center gap-1.5"><AlertCircle className="w-3 h-3" /> Motivo da Recusa</p>
+                                        <p className="text-[10px] text-red-800 font-bold italic mb-4 leading-relaxed">
+                                            "{obs.match(/\[RECUSADO:\s*(.*?)\]/)?.[1] || 'Por favor, revise o ROI e as bonificações sugeridas.'}"
+                                        </p>
+                                        <button 
+                                            onClick={() => handleEditRejected(inv)}
+                                            className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[9px] font-black uppercase flex items-center justify-center gap-2 transition-all shadow-lg shadow-red-200"
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" /> Corrigir e Reenviar
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>
                     );
-                })
-            )}
+                  })
+              )}
+           </div>
         </div>
       )}
     </div>

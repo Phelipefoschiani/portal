@@ -43,7 +43,7 @@ export const ManagerForecastScreen: React.FC = () => {
                     .from('previsoes')
                     .select('*, usuarios(nome)')
                     .ilike('observacao', 'CONFIRMAÇÃO ANUAL%')
-                    .order('previsao_total', { ascending: false }); // Ordenação fiel: maior meta para menor
+                    .order('previsao_total', { ascending: false });
                 setPrevisoes(data || []);
             } else if (view === 'weekly_checkin') {
                 const { data } = await supabase
@@ -71,6 +71,55 @@ export const ManagerForecastScreen: React.FC = () => {
     };
 
     const formatBRL = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
+
+    // --- LÓGICA DE CONSOLIDAÇÃO DO HISTÓRICO DE CHECK-IN ---
+    const consolidatedHistory = useMemo(() => {
+        if (view !== 'weekly_checkin') return [];
+
+        const processed = weeklyReports.filter(r => r.status !== 'pending');
+        const groups = new Map<string, any>();
+
+        processed.forEach(report => {
+            const userId = report.usuario_id;
+            if (!groups.has(userId)) {
+                groups.set(userId, {
+                    usuario_id: userId,
+                    usuarios: report.usuarios,
+                    previsao_total: 0,
+                    status: 'approved', // Se houver um aprovado, o consolidado assume approved
+                    criado_em: report.criado_em, // Pega a data do mais recente
+                    itemsMap: new Map<string, any>()
+                });
+            }
+
+            const group = groups.get(userId);
+            group.previsao_total += Number(report.previsao_total);
+            
+            // Se houver algum recusado no bolo, sinaliza (opcional, mas ajuda o gerente a ver que houve recusa no período)
+            if (report.status === 'rejected') group.status = 'rejected';
+
+            // Mesclar itens (clientes)
+            (report.previsao_clientes || []).forEach((item: any) => {
+                const cId = item.cliente_id;
+                if (!group.itemsMap.has(cId)) {
+                    group.itemsMap.set(cId, {
+                        ...item,
+                        valor_previsto_cliente: 0
+                    });
+                }
+                // Fix: Cast existingItem to any to avoid "Property 'valor_previsto_cliente' does not exist on type 'unknown'"
+                const existingItem = group.itemsMap.get(cId) as any;
+                if (existingItem) {
+                    existingItem.valor_previsto_cliente += Number(item.valor_previsto_cliente);
+                }
+            });
+        });
+
+        return Array.from(groups.values()).map(g => ({
+            ...g,
+            previsao_clientes: Array.from(g.itemsMap.values()).sort((a,b) => b.valor_previsto_cliente - a.valor_previsto_cliente)
+        })).sort((a, b) => b.previsao_total - a.previsao_total);
+    }, [weeklyReports, view]);
 
     const handleDownloadImage = async () => {
         if (!exportContainerRef.current) return;
@@ -105,11 +154,9 @@ export const ManagerForecastScreen: React.FC = () => {
 
     const kpis = useMemo(() => {
         if (view === 'mensais') {
-            // Somatório das metas confirmadas na aba Ciência Anual (Correto conforme pedido)
             const totalAnnualConfirmed = previsoes.reduce((acc, curr) => acc + Number(curr.previsao_total), 0);
             return { mainValue: totalAnnualConfirmed, label: 'Metas Confirmadas', count: previsoes.length };
         } else {
-            // Lógica do Check-in
             const totalValid = weeklyReports
                 .filter(r => r.status === 'pending' || r.status === 'approved')
                 .reduce((acc, curr) => acc + Number(curr.previsao_total), 0);
@@ -184,7 +231,6 @@ export const ManagerForecastScreen: React.FC = () => {
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-20">
             
-            {/* TELA VISÍVEL DO GERENTE */}
             <div className="space-y-6">
                 <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-center gap-4">
                     <div className="flex items-center gap-4">
@@ -254,7 +300,7 @@ export const ManagerForecastScreen: React.FC = () => {
                     <div className="space-y-12">
                         {view === 'weekly_checkin' && weeklyReports.filter(r => r.status === 'pending').length > 0 && (
                             <div className="space-y-4">
-                                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest px-4">Fila de Aprovação</h3>
+                                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest px-4">Fila de Aprovação (Envios Pendentes)</h3>
                                 {weeklyReports.filter(r => r.status === 'pending').map(report => (
                                     <div key={report.id} className="bg-white rounded-[32px] border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-center gap-4">
                                         <div className="flex items-center gap-4">
@@ -275,17 +321,27 @@ export const ManagerForecastScreen: React.FC = () => {
                         )}
 
                         <div className="space-y-4">
-                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest px-4">{view === 'mensais' ? 'Ciência de Metas Anuais' : 'Histórico Processado'}</h3>
+                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest px-4">
+                                {view === 'mensais' ? 'Ciência de Metas Anuais' : 'Histórico Consolidado por Representante'}
+                            </h3>
                             <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                                 <table className="w-full text-left">
                                     <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                                        <tr><th className="px-8 py-6">Representante</th><th className="px-6 py-6">Data Envio</th><th className="px-6 py-6 text-right">Montante</th><th className="px-6 py-6 text-center">Status</th><th className="px-8 py-6 text-right">Ação</th></tr>
+                                        <tr>
+                                            <th className="px-8 py-6">Representante</th>
+                                            <th className="px-6 py-6">{view === 'mensais' ? 'Data Envio' : 'Última Atividade'}</th>
+                                            <th className="px-6 py-6 text-right">Montante Total</th>
+                                            <th className="px-6 py-6 text-center">Status</th>
+                                            <th className="px-8 py-6 text-right">Ação</th>
+                                        </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {(view === 'mensais' ? previsoes : weeklyReports.filter(r => r.status !== 'pending')).map(report => (
-                                            <tr key={report.id} className="hover:bg-slate-50 transition-colors">
+                                        {(view === 'mensais' ? previsoes : consolidatedHistory).map(report => (
+                                            <tr key={view === 'mensais' ? report.id : report.usuario_id} className="hover:bg-slate-50 transition-colors">
                                                 <td className="px-8 py-5 font-black text-slate-800 uppercase text-xs">{report.usuarios?.nome}</td>
-                                                <td className="px-6 py-5 text-xs font-bold text-slate-500">{new Date(report.criado_em).toLocaleString('pt-BR')}</td>
+                                                <td className="px-6 py-5 text-xs font-bold text-slate-500">
+                                                    {new Date(report.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </td>
                                                 <td className="px-6 py-5 text-right font-black text-slate-900">{formatBRL(report.previsao_total)}</td>
                                                 <td className="px-6 py-5 text-center">
                                                     <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase border ${report.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
@@ -349,29 +405,27 @@ export const ManagerForecastScreen: React.FC = () => {
 
                 <div style={{ marginTop: '40px' }}>
                     <h3 style={{ fontSize: '20px', fontWeight: '900', textTransform: 'uppercase', color: '#0f172a', marginBottom: '20px', borderLeft: '10px solid #1d4ed8', paddingLeft: '20px' }}>
-                        Previsões Enviadas
+                        Previsões {view === 'mensais' ? 'por Vendedor' : 'Consolidadas Regional'}
                     </h3>
                     <div style={{ border: '2px solid #f1f5f9', borderRadius: '40px', overflow: 'hidden' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#ffffff' }}>
                             <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #f1f5f9' }}>
                                 <tr style={{ color: '#0f172a', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase' }}>
                                     <th style={{ padding: '25px 40px', textAlign: 'left' }}>Representante</th>
-                                    <th style={{ padding: '25px 30px', textAlign: 'left' }}>Data Envio</th>
+                                    <th style={{ padding: '25px 30px', textAlign: 'left' }}>Status</th>
                                     <th style={{ padding: '25px 30px', textAlign: 'right' }}>Montante</th>
-                                    <th style={{ padding: '25px 40px', textAlign: 'center' }}>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {(view === 'mensais' ? previsoes : weeklyReports.filter(r => r.status !== 'pending')).map(report => (
-                                    <tr key={report.id} style={{ borderBottom: '2px solid #f8fafc' }}>
+                                {(view === 'mensais' ? previsoes : consolidatedHistory).map(report => (
+                                    <tr key={view === 'mensais' ? report.id : report.usuario_id} style={{ borderBottom: '2px solid #f8fafc' }}>
                                         <td style={{ padding: '20px 40px', fontWeight: '900', textTransform: 'uppercase', fontSize: '14px', color: '#1e293b' }}>{report.usuarios?.nome}</td>
-                                        <td style={{ padding: '20px 30px', fontWeight: '700', fontSize: '13px', color: '#64748b' }}>{new Date(report.criado_em).toLocaleString('pt-BR')}</td>
-                                        <td style={{ padding: '20px 30px', textAlign: 'right', fontWeight: '900', fontSize: '18px', color: '#0f172a' }}>{formatBRL(report.previsao_total)}</td>
-                                        <td style={{ padding: '20px 40px', textAlign: 'center' }}>
+                                        <td style={{ padding: '20px 30px' }}>
                                             <div style={{ display: 'inline-block', padding: '6px 15px', borderRadius: '10px', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', backgroundColor: report.status === 'approved' ? '#f0fdf4' : '#fef2f2', color: report.status === 'approved' ? '#166534' : '#991b1b', border: `1px solid ${report.status === 'approved' ? '#bbf7d0' : '#fecaca'}` }}>
                                                 {report.status === 'approved' ? 'Aceito' : 'Recusado'}
                                             </div>
                                         </td>
+                                        <td style={{ padding: '20px 30px', textAlign: 'right', fontWeight: '900', fontSize: '18px', color: '#0f172a' }}>{formatBRL(report.previsao_total)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -388,18 +442,75 @@ export const ManagerForecastScreen: React.FC = () => {
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
                     <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
                         <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div><h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Detalhamento</h3><p className="text-[10px] font-black text-blue-600 uppercase mt-1">Rep: {selectedHistoryReport.usuarios?.nome}</p></div>
+                            <div>
+                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Detalhamento Unificado</h3>
+                                <p className="text-[10px] font-black text-blue-600 uppercase mt-1">Rep: {selectedHistoryReport.usuarios?.nome}</p>
+                            </div>
                             <button onClick={() => setSelectedHistoryReport(null)} className="p-2 hover:bg-white rounded-full text-slate-400"><X className="w-6 h-6" /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                            <div className="bg-slate-900 p-6 rounded-3xl text-white mb-6 flex justify-between items-center">
+                                <div><p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Montante Agregado</p><h4 className="text-2xl font-black">{formatBRL(selectedHistoryReport.previsao_total)}</h4></div>
+                                <div className="text-right"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Itens na Lista</p><h4 className="text-2xl font-black">{selectedHistoryReport.previsao_clientes?.length || 0}</h4></div>
+                            </div>
                             <table className="w-full text-left border-collapse bg-white rounded-3xl border border-slate-200 overflow-hidden">
-                                <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase border-b border-slate-100"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4 text-right">Vlr. Previsto</th></tr></thead>
+                                <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase border-b border-slate-100">
+                                    <tr><th className="px-6 py-4">Cliente / CNPJ</th><th className="px-6 py-4 text-right">Previsão Somada</th></tr>
+                                </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {(selectedHistoryReport.previsao_clientes || []).map((item: any) => (
-                                        <tr key={item.id}><td className="px-6 py-4 font-black text-slate-800 uppercase text-[11px] truncate">{item.clientes?.nome_fantasia}</td><td className="px-6 py-4 text-right font-black text-blue-600 text-[11px]">{formatBRL(item.valor_previsto_cliente)}</td></tr>
+                                    {(selectedHistoryReport.previsao_clientes || []).map((item: any, idx: number) => (
+                                        <tr key={idx}>
+                                            <td className="px-6 py-4">
+                                                <p className="font-black text-slate-800 uppercase text-[11px] truncate">{item.clientes?.nome_fantasia}</p>
+                                                <p className="text-[9px] font-bold text-slate-400">{item.clientes?.cnpj}</p>
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-black text-blue-600 text-[11px] tabular-nums">{formatBRL(item.valor_previsto_cliente)}</td>
+                                        </tr>
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>, document.body
+            )}
+
+            {/* Modal de Revisão / Ajustes */}
+            {reviewModalReport && createPortal(
+                <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+                        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <div><h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Sugerir Ajustes</h3><p className="text-[10px] font-black text-red-500 uppercase mt-1">Rep: {reviewModalReport.usuarios?.nome}</p></div>
+                            <button onClick={() => setReviewModalReport(null)} className="p-2 hover:bg-white rounded-full text-slate-400"><X className="w-6 h-6" /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-6">
+                            <div className="bg-red-50 p-6 rounded-3xl border border-red-100">
+                                <label className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-2 block">Motivo da Recusa / Observação</label>
+                                <textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} placeholder="Ex: Aumentar previsão no cliente X, diminuir no Y..." className="w-full p-4 bg-white border border-red-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:ring-4 focus:ring-red-100" rows={3} />
+                            </div>
+                            <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4 text-right">Valor Previsto</th></tr></thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {reviewItems.map(item => (
+                                            <tr key={item.id} className="hover:bg-slate-50">
+                                                <td className="px-6 py-3 font-black text-slate-700 uppercase text-[10px]">{item.clientes?.nome_fantasia}</td>
+                                                <td className="px-6 py-3 text-right">
+                                                    <input 
+                                                        type="number" 
+                                                        value={item.valor_previsto_cliente} 
+                                                        onChange={e => handleUpdateReviewItem(item.id, Number(e.target.value))}
+                                                        className="w-32 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-right font-black text-blue-600 text-xs outline-none focus:ring-2 focus:ring-blue-100"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+                            <Button variant="outline" fullWidth onClick={() => setReviewModalReport(null)} className="rounded-2xl h-14 font-black uppercase text-[10px]">Cancelar</Button>
+                            <Button fullWidth onClick={confirmRejectionWithAdjustments} isLoading={isActionLoading} className="bg-red-600 hover:bg-red-700 text-white rounded-2xl h-14 font-black uppercase text-[10px] shadow-xl">Confirmar e Notificar</Button>
                         </div>
                     </div>
                 </div>, document.body
