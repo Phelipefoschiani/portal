@@ -514,6 +514,11 @@ export const ManagerDashboard: React.FC = () => {
     const [isExportingMatrix, setIsExportingMatrix] = useState(false);
     const [isExportingPdf, setIsExportingPdf] = useState(false);
     
+    // --- ESTADO ADICIONADO PARA DOWNLOAD DO RANKING ---
+    const rankingRef = useRef<HTMLDivElement>(null);
+    const [isExportingRanking, setIsExportingRanking] = useState(false);
+    // ---------------------------------------------------
+
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => { processConsolidatedData(); }, [selectedMonths, selectedYear, selectedRepId]);
@@ -752,6 +757,29 @@ export const ManagerDashboard: React.FC = () => {
         }
     };
 
+    // --- FUNÇÃO DE DOWNLOAD DO RANKING ---
+    const handleDownloadRanking = async () => {
+        if (!rankingRef.current) return;
+        setIsExportingRanking(true);
+        try {
+            await new Promise(r => setTimeout(r, 200));
+            const canvas = await html2canvas(rankingRef.current, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false
+            });
+            const link = document.createElement('a');
+            link.download = `Ranking_Eficiencia_${selectedYear}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        } catch (e) {
+            console.error('Download error:', e);
+        } finally {
+            setIsExportingRanking(false);
+        }
+    };
+
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
             <header className="flex flex-col lg:flex-row justify-between items-end gap-6 px-4">
@@ -895,7 +923,7 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
             </div>
 
-            <div className="bg-white p-8 md:p-12 rounded-[48px] border border-slate-200 shadow-sm mx-4">
+            <div ref={rankingRef} className="bg-white p-8 md:p-12 rounded-[48px] border border-slate-200 shadow-sm mx-4">
                 <div className="flex justify-between items-start mb-16">
                     <div>
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em]">Ranking de Eficiência Regional</h3>
@@ -913,8 +941,13 @@ export const ManagerDashboard: React.FC = () => {
                                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Abaixo (&lt; 100%)</span>
                             </div>
                         </div>
-                        <button className="bg-blue-600 text-white p-3.5 rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20">
-                            <Share2 className="w-5 h-5" />
+                        <button 
+                            onClick={handleDownloadRanking} 
+                            disabled={isExportingRanking} 
+                            data-html2canvas-ignore
+                            className="bg-blue-600 text-white p-3.5 rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+                        >
+                            {isExportingRanking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
                         </button>
                     </div>
                 </div>

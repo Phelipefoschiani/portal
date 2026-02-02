@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { TrendingUp, CheckCircle2, XCircle, Loader2, X, Users, Trash2, ArrowRight, DollarSign, Building2, RefreshCw, Layers, History, MousePointer2, AlertTriangle, CheckSquare, ListTodo, ShieldCheck, UserX, RotateCcw, ChevronRight, Edit3, Save, AlertCircle, Search, MapPin, Camera, Share2, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -101,13 +102,17 @@ export const ManagerForecastScreen: React.FC = () => {
             // Mesclar itens (clientes)
             (report.previsao_clientes || []).forEach((item: any) => {
                 const cId = item.cliente_id;
-                if (!group.itemsMap.has(cId)) {
-                    group.itemsMap.set(cId, {
+                // Explicitly treating itemsMap as a Map<string, any> to avoid 'unknown' type errors on get()
+                const currentItemsMap = group.itemsMap as Map<string, any>;
+
+                if (!currentItemsMap.has(cId)) {
+                    currentItemsMap.set(cId, {
                         ...item,
                         valor_previsto_cliente: 0
                     });
                 }
-                const existingItem = group.itemsMap.get(cId) as any;
+                
+                const existingItem = currentItemsMap.get(cId);
                 if (existingItem) {
                     existingItem.valor_previsto_cliente += Number(item.valor_previsto_cliente);
                 }
@@ -116,8 +121,8 @@ export const ManagerForecastScreen: React.FC = () => {
 
         return Array.from(groups.values()).map(g => ({
             ...g,
-            previsao_clientes: Array.from(g.itemsMap.values() as IterableIterator<any>).sort((a: any, b: any) => b.valor_previsto_cliente - a.valor_previsto_cliente)
-        })).sort((a: any, b: any) => b.previsao_total - a.previsao_total);
+            previsao_clientes: Array.from((g.itemsMap as Map<string, any>).values()).sort((a: any, b: any) => b.valor_previsto_cliente - a.valor_previsto_cliente)
+        })).sort((a, b) => b.previsao_total - a.previsao_total);
     }, [weeklyReports, view]);
 
     const handleDownloadImage = async () => {
@@ -217,7 +222,7 @@ export const ManagerForecastScreen: React.FC = () => {
         try {
             const { data: weeklies } = await supabase.from('previsoes').select('id').ilike('observacao', 'WEEKLY_CHECKIN%');
             if (weeklies && weeklies.length > 0) {
-                const ids = weeklies.map((w: any) => w.id);
+                const ids = weeklies.map(w => w.id);
                 await supabase.from('previsao_clientes').delete().in('previsao_id', ids);
                 await supabase.from('previsoes').delete().in('id', ids);
             }
@@ -325,7 +330,7 @@ export const ManagerForecastScreen: React.FC = () => {
                             </h3>
                             <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                                 <table className="w-full text-left">
-                                    <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-900 uppercase tracking-widest">
                                         <tr>
                                             <th className="px-8 py-6">Representante</th>
                                             <th className="px-6 py-6">{view === 'mensais' ? 'Data Envio' : 'Última Atividade'}</th>
@@ -335,7 +340,7 @@ export const ManagerForecastScreen: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {(view === 'mensais' ? previsoes : consolidatedHistory).map((report: any) => (
+                                        {(view === 'mensais' ? previsoes : consolidatedHistory).map(report => (
                                             <tr key={view === 'mensais' ? report.id : report.usuario_id} className="hover:bg-slate-50 transition-colors">
                                                 <td className="px-8 py-5 font-black text-slate-800 uppercase text-xs">{report.usuarios?.nome}</td>
                                                 <td className="px-6 py-5 text-xs font-bold text-slate-500">
@@ -416,7 +421,7 @@ export const ManagerForecastScreen: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {(view === 'mensais' ? previsoes : consolidatedHistory).map((report: any) => (
+                                {(view === 'mensais' ? previsoes : consolidatedHistory).map(report => (
                                     <tr key={view === 'mensais' ? report.id : report.usuario_id} style={{ borderBottom: '2px solid #f8fafc' }}>
                                         <td style={{ padding: '20px 40px', fontWeight: '900', textTransform: 'uppercase', fontSize: '14px', color: '#1e293b' }}>{report.usuarios?.nome}</td>
                                         <td style={{ padding: '20px 30px' }}>
@@ -490,7 +495,7 @@ export const ManagerForecastScreen: React.FC = () => {
                                 <table className="w-full text-left">
                                     <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4 text-right">Valor Previsto</th></tr></thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {reviewItems.map((item: any) => (
+                                        {reviewItems.map(item => (
                                             <tr key={item.id} className="hover:bg-slate-50">
                                                 <td className="px-6 py-3 font-black text-slate-700 uppercase text-[10px]">{item.clientes?.nome_fantasia}</td>
                                                 <td className="px-6 py-3 text-right">
