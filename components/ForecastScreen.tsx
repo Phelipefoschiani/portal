@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Target, TrendingUp, Lock, ChevronRight, Loader2, DollarSign, Building2, BarChart3, Info, AlertTriangle, MousePointer2, Plus, History, Clock, RefreshCw, Trash2, Send, AlertCircle, X, CheckCircle2 } from 'lucide-react';
+import { Target, TrendingUp, Lock, ChevronRight, Loader2, DollarSign, Building2, BarChart3, Info, AlertTriangle, MousePointer2, Plus, History, Clock, RefreshCw, Trash2, Send, AlertCircle, X, CheckCircle2, Calendar } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
@@ -233,7 +233,6 @@ export const ForecastScreen: React.FC = () => {
       await supabase.from('previsoes').insert({
         usuario_id: userId,
         data: `${selectedYear}-01-01`,
-        // Fix: Explicitly cast Object.values to number[] to resolve "Argument of type 'unknown' is not assignable to parameter of type 'number'" in reduce
         previsao_total: (Object.values(adjustedTargets) as number[]).reduce((a: number, b: number) => a + b, 0),
         status: 'approved',
         observacao: `CONFIRMAÇÃO ANUAL: ${userName} deu ciência nas metas de ${selectedYear}.`
@@ -248,10 +247,10 @@ export const ForecastScreen: React.FC = () => {
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-fadeIn pb-32">
-      <div className="flex justify-center mb-8">
-        <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1 overflow-x-auto no-scrollbar">
-          <button onClick={() => setActiveTab('seasonality')} className={`px-6 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'seasonality' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>1. Previsão Anual</button>
-          <button onClick={() => setActiveTab('weekly')} className={`px-6 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'weekly' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>
+      <div className="flex justify-center mb-6 md:mb-8">
+        <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1 overflow-x-auto no-scrollbar w-full md:w-auto">
+          <button onClick={() => setActiveTab('seasonality')} className={`flex-1 md:flex-none px-4 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'seasonality' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>1. Previsão Anual</button>
+          <button onClick={() => setActiveTab('weekly')} className={`flex-1 md:flex-none px-4 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === 'weekly' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>
             <MousePointer2 className="w-3.5 h-3.5" /> 2. Check-in Semanal
           </button>
         </div>
@@ -261,9 +260,9 @@ export const ForecastScreen: React.FC = () => {
           <div className="py-40 text-center"><Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto" /></div>
       ) : activeTab === 'weekly' ? (
         <div className="space-y-6 animate-slideUp">
-            {/* Form de Adição */}
-            <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm">
-                <div className="flex flex-col md:flex-row items-end gap-6">
+            {/* Form de Adição - Mobile Otimizado */}
+            <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-200 shadow-sm">
+                <div className="flex flex-col md:flex-row items-end gap-4 md:gap-6">
                     <div className="flex-1 w-full">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Selecione o Cliente</label>
                         <select 
@@ -294,7 +293,7 @@ export const ForecastScreen: React.FC = () => {
                       type="button" 
                       onClick={addToDraft}
                       disabled={!selectedClientForWeekly || !weeklyValueStr}
-                      className="h-14 rounded-2xl px-8 bg-slate-900 text-white font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center gap-2 hover:bg-slate-800 disabled:opacity-30"
+                      className="w-full md:w-auto h-14 rounded-2xl px-8 bg-slate-900 text-white font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-slate-800 disabled:opacity-30"
                     >
                         <Plus className="w-4 h-4" /> Adicionar
                     </button>
@@ -401,14 +400,13 @@ export const ForecastScreen: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-6 animate-slideUp">
-           <div className="bg-slate-900 p-8 rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-8 border-b-4 border-blue-600">
+           <div className="bg-slate-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-6 md:gap-8 border-b-4 border-blue-600">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><BarChart3 className="w-40 h-40" /></div>
-                <div>
+                <div className="text-center md:text-left">
                     <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-2">Previsão Anual {selectedYear}</p>
-                    {/* Fix: Explicitly cast Object.values to number[] to resolve "Argument of type 'unknown' is not assignable to parameter of type 'number'" in reduce */}
-                    <h3 className="text-4xl font-black">{formatBRL((Object.values(adjustedTargets) as number[]).reduce((a: number, b: number) => a + b, 0))}</h3>
+                    <h3 className="text-3xl md:text-4xl font-black">{formatBRL((Object.values(adjustedTargets) as number[]).reduce((a: number, b: number) => a + b, 0))}</h3>
                 </div>
-                <div className="bg-white/5 p-6 rounded-3xl border border-white/5 backdrop-blur-sm max-w-xs text-right">
+                <div className="bg-white/5 p-4 md:p-6 rounded-3xl border border-white/5 backdrop-blur-sm w-full md:max-w-xs text-center md:text-right">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Status da Meta</p>
                     <p className={`text-xs font-black uppercase ${isCotaConfirmed ? 'text-emerald-400' : 'text-blue-400'}`}>
                         {isCotaConfirmed ? 'Ciência Confirmada' : 'Aguardando Validação'}
@@ -428,7 +426,8 @@ export const ForecastScreen: React.FC = () => {
                 </div>
             )}
 
-            <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden relative">
+            {/* TABELA DE SAZONALIDADE (DESKTOP) */}
+            <div className="hidden md:block bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden relative">
                 {isCotaConfirmed && (
                     <div className="absolute inset-0 z-10 bg-white/10 backdrop-blur-[1px] cursor-not-allowed"></div>
                 )}
@@ -468,9 +467,55 @@ export const ForecastScreen: React.FC = () => {
                 </table>
             </div>
 
+            {/* LISTA DE CARDS DE SAZONALIDADE (MOBILE) */}
+            <div className="md:hidden space-y-4">
+                {months.map((m, idx) => {
+                    const monthNum = idx + 1;
+                    const original = originalTargets.find(t => t.mes === monthNum)?.valor || 0;
+                    const isConfirmed = confirmedMonths.has(monthNum);
+                    const val = adjustedTargets[monthNum] || original;
+                    
+                    return (
+                        <div key={idx} className={`bg-white p-5 rounded-3xl border shadow-sm transition-all ${isConfirmed ? 'border-emerald-200 ring-2 ring-emerald-50' : 'border-slate-200'}`}>
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex items-center gap-2">
+                                    <Calendar className="w-4 h-4 text-slate-400" />
+                                    <span className="font-black text-slate-800 uppercase text-xs tracking-widest">{m}</span>
+                                </div>
+                                {isConfirmed ? (
+                                    <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase">Confirmado</span>
+                                ) : (
+                                    <span className="bg-slate-100 text-slate-400 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase">Pendente</span>
+                                )}
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta Regional</p>
+                                    <p className="text-xs font-bold text-slate-600">{formatBRL(original)}</p>
+                                </div>
+                                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Minha Previsão</p>
+                                    <p className="text-xs font-black text-slate-900">{formatBRL(val)}</p>
+                                </div>
+                            </div>
+
+                            {!isCotaConfirmed && (
+                                <button 
+                                    onClick={() => setConfirmedMonths(prev => { const n = new Set(prev); if (n.has(monthNum)) n.delete(monthNum); else n.add(monthNum); return n; })}
+                                    className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isConfirmed ? 'bg-white border border-emerald-200 text-emerald-600' : 'bg-slate-900 text-white shadow-lg'}`}
+                                >
+                                    {isConfirmed ? 'Remover Ciência' : 'Confirmar Ciência'}
+                                </button>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
             {!isCotaConfirmed && (
-                <div className="flex justify-end">
-                    <Button onClick={confirmSeasonality} disabled={confirmedMonths.size < 12 || isSaving} isLoading={isSaving} className="rounded-2xl px-12 h-16 font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-blue-500/20">
+                <div className="flex justify-end pt-4 pb-8">
+                    <Button onClick={confirmSeasonality} disabled={confirmedMonths.size < 12 || isSaving} isLoading={isSaving} className="w-full md:w-auto rounded-2xl px-12 h-16 font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-blue-500/20">
                         Confirmar Ciência e Enviar ao Gerente <ChevronRight className="w-5 h-5 ml-2" />
                     </Button>
                 </div>

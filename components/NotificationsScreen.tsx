@@ -160,7 +160,219 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6 animate-fadeIn pb-12">
+    <div className="w-full max-w-4xl mx-auto space-y-6 animate-fadeIn pb-24 md:pb-12">
+      
+      {/* --- MOBILE LAYOUT (md:hidden) --- */}
+      <div className="md:hidden space-y-4 px-1">
+        {/* Header & Tabs */}
+        <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+                <Bell className="w-6 h-6 text-blue-600" />
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Notificações</h2>
+            </div>
+            
+            <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-sm flex">
+                <button 
+                    onClick={() => setActiveTab('inbox')} 
+                    className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'inbox' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'}`}
+                >
+                    Recebidos
+                </button>
+                <button 
+                    onClick={() => setActiveTab('compose')} 
+                    className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'compose' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'}`}
+                >
+                    Falar com Gerente
+                </button>
+            </div>
+        </div>
+
+        {activeTab === 'compose' ? (
+            <div className="space-y-6">
+                {/* Mobile Compose Form */}
+                <div className="bg-white p-5 rounded-[24px] border border-slate-200 shadow-sm space-y-4">
+                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                        <Send className="w-4 h-4 text-blue-600" /> Nova Mensagem
+                    </h3>
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Assunto</label>
+                            <input 
+                                type="text"
+                                value={subject}
+                                onChange={e => setSubject(e.target.value)}
+                                className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-100"
+                                placeholder="Motivo..."
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Mensagem</label>
+                            <textarea 
+                                value={messageBody}
+                                onChange={e => setMessageBody(e.target.value)}
+                                rows={5}
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 outline-none focus:ring-2 focus:ring-blue-100"
+                                placeholder="Digite sua mensagem..."
+                            />
+                        </div>
+                        <Button 
+                            fullWidth 
+                            onClick={handleSendToManager} 
+                            isLoading={isSending}
+                            className="h-14 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg"
+                        >
+                            Enviar
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Mobile Sent History */}
+                <div className="space-y-3">
+                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">Histórico de Envios</h3>
+                    {sentMessages.length === 0 ? (
+                        <div className="py-10 text-center bg-white rounded-2xl border border-dashed border-slate-200">
+                            <p className="text-[10px] font-black text-slate-400 uppercase">Nenhuma mensagem enviada</p>
+                        </div>
+                    ) : (
+                        sentMessages.map(msg => {
+                            const { title, content } = parseMessage(msg.mensagem);
+                            const isExpandedLocal = expandedId === msg.id;
+                            return (
+                                <div key={msg.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-2">
+                                    <div onClick={() => setExpandedId(isExpandedLocal ? null : msg.id)} className="flex justify-between items-start cursor-pointer">
+                                        <div className="min-w-0 pr-2">
+                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
+                                                {new Date(msg.criada_em).toLocaleDateString('pt-BR')}
+                                            </p>
+                                            <h4 className="font-black text-slate-800 uppercase text-xs truncate">{title}</h4>
+                                        </div>
+                                        <ChevronDown className={`w-4 h-4 text-slate-300 transition-transform ${isExpandedLocal ? 'rotate-180' : ''}`} />
+                                    </div>
+                                    {isExpandedLocal && (
+                                        <div className="pt-2 border-t border-slate-50 mt-1">
+                                            <p className="text-[10px] text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl">
+                                                {content}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+        ) : (
+            <div className="space-y-4">
+                {/* Mobile Filters */}
+                <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto no-scrollbar gap-1">
+                    {['all', 'info', 'important', 'urgent'].map(f => (
+                        <button 
+                            key={f}
+                            onClick={() => setActiveFilter(f as any)} 
+                            className={`flex-none px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap ${
+                                activeFilter === f 
+                                ? (f === 'urgent' ? 'bg-red-600 text-white' : f === 'important' ? 'bg-amber-500 text-white' : 'bg-blue-600 text-white') 
+                                : 'text-slate-400 bg-slate-50'
+                            }`}
+                        >
+                            {f === 'all' ? 'Todos' : f === 'important' ? 'Importante' : f === 'urgent' ? 'Urgente' : 'Info'}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Mobile Notification List */}
+                <div className="space-y-3">
+                    {isLoading ? (
+                        <div className="py-20 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" /></div>
+                    ) : filteredNotifications.length === 0 ? (
+                        <div className="py-20 text-center bg-white rounded-2xl border border-dashed border-slate-200">
+                            <MailOpen className="w-10 h-10 text-slate-200 mx-auto mb-3" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase">Caixa de entrada vazia</p>
+                        </div>
+                    ) : (
+                        filteredNotifications.map(notif => {
+                            const { title, content } = parseMessage(notif.mensagem);
+                            const isExpanded = expandedId === notif.id;
+                            const hasAnexo = notif.notificacao_anexos?.length > 0;
+                            const isUrgent = notif.prioridade === 'urgent';
+
+                            return (
+                                <div key={notif.id} className={`bg-white rounded-[24px] border shadow-sm overflow-hidden ${
+                                    !notif.lida 
+                                    ? (isUrgent ? 'border-red-200 ring-2 ring-red-50' : 'border-blue-200 ring-1 ring-blue-50')
+                                    : 'border-slate-200 opacity-90'
+                                }`}>
+                                    <div 
+                                        onClick={() => setExpandedId(isExpanded ? null : notif.id)}
+                                        className="p-4 cursor-pointer active:bg-slate-50 transition-colors"
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-2 h-2 rounded-full ${!notif.lida ? 'bg-blue-600' : 'bg-slate-300'}`}></div>
+                                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                                    {new Date(notif.criada_em).toLocaleDateString('pt-BR')}
+                                                </span>
+                                            </div>
+                                            {isUrgent && <span className="bg-red-100 text-red-600 text-[8px] font-black uppercase px-2 py-0.5 rounded">Urgente</span>}
+                                        </div>
+                                        <h4 className={`font-black uppercase text-xs mb-1 ${!notif.lida ? 'text-slate-900' : 'text-slate-500'}`}>{title}</h4>
+                                        {!isExpanded && <p className="text-[10px] text-slate-400 line-clamp-1">{content}</p>}
+                                    </div>
+
+                                    {isExpanded && (
+                                        <div className="px-4 pb-4 pt-0">
+                                            <div className="bg-slate-50 p-3 rounded-xl text-[10px] text-slate-600 leading-relaxed border border-slate-100 mb-4 whitespace-pre-wrap">
+                                                {content}
+                                            </div>
+
+                                            {hasAnexo && (
+                                                <div className="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar">
+                                                    {notif.notificacao_anexos.map((file: any) => (
+                                                        <button 
+                                                            key={file.id} 
+                                                            onClick={() => handleDownload(file)}
+                                                            className="flex items-center gap-2 bg-purple-50 border border-purple-100 px-3 py-2 rounded-xl text-[9px] font-bold text-purple-700 whitespace-nowrap"
+                                                        >
+                                                            <Paperclip className="w-3 h-3" /> {file.arquivo_nome.slice(0, 10)}...
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="flex gap-2">
+                                                {!notif.lida ? (
+                                                    <Button 
+                                                        fullWidth
+                                                        onClick={() => {
+                                                            if (notif.metadata?.type === 'forecast_rejected' && notif.metadata?.relatedId && onFixForecast) {
+                                                                onFixForecast(notif.metadata.relatedId);
+                                                            }
+                                                            markAsRead(notif.id);
+                                                        }}
+                                                        className={`h-10 rounded-xl font-black uppercase text-[9px] tracking-widest ${isUrgent ? 'bg-red-600' : 'bg-blue-600'}`}
+                                                    >
+                                                        {notif.metadata?.type === 'forecast_rejected' ? 'Corrigir' : 'Ciente'}
+                                                    </Button>
+                                                ) : (
+                                                    <div className="w-full bg-emerald-50 text-emerald-600 py-2 rounded-xl text-center text-[9px] font-black uppercase border border-emerald-100">
+                                                        Lida
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+        )}
+      </div>
+
+      {/* --- DESKTOP LAYOUT (LOCKED - Original) --- */}
+      <div className="hidden md:block space-y-6">
       
       {/* Header com Navegação */}
       <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
@@ -418,6 +630,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
             )}
           </div>
       )}
+      </div>
     </div>
   );
 };
