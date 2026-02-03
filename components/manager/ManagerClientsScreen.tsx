@@ -1,6 +1,5 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info, CalendarClock, Calendar, FileSpreadsheet } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info, CalendarClock, Calendar, FileSpreadsheet, CheckSquare, Square, ChevronDown, CalendarDays } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ClientDetailModal } from '../ClientDetailModal';
 import { totalDataStore } from '../../lib/dataStore';
@@ -13,10 +12,28 @@ export const ManagerClientsScreen: React.FC = () => {
     const [selectedRep, setSelectedRep] = useState('all');
     const [selectedChannel, setSelectedChannel] = useState('all');
     const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
+    
+    // Novos estados para filtro de meses
+    const [selectedMonths, setSelectedMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    const [showMonthDropdown, setShowMonthDropdown] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedClient, setSelectedClient] = useState<any | null>(null);
 
     const availableYears = [2024, 2025, 2026, 2027];
+    const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setShowMonthDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     // 1. Extrair canais únicos da base hidratada
     const channels = useMemo(() => {
@@ -55,13 +72,14 @@ export const ManagerClientsScreen: React.FC = () => {
 
         const filteredCnpjs = new Set(filteredClientsBase.map(c => String(c.cnpj || '').replace(/\D/g, '')));
 
-        // Filtro B: Vendas APENAS dos clientes filtrados acima e no ANO selecionado
+        // Filtro B: Vendas APENAS dos clientes filtrados acima e no ANO/MÊS selecionado
         const relevantSales = sales.filter(s => {
             const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
             const matchClient = filteredCnpjs.has(cleanCnpj);
             const saleDate = new Date(s.data + 'T00:00:00');
             const matchYear = selectedYear === 'all' ? true : saleDate.getUTCFullYear() === selectedYear;
-            return matchClient && matchYear;
+            const matchMonth = selectedMonths.includes(saleDate.getUTCMonth() + 1);
+            return matchClient && matchYear && matchMonth;
         });
 
         const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
@@ -96,7 +114,7 @@ export const ManagerClientsScreen: React.FC = () => {
             ranking,
             totalGroupFaturamento
         };
-    }, [selectedRep, selectedChannel, searchTerm, selectedYear]);
+    }, [selectedRep, selectedChannel, searchTerm, selectedYear, selectedMonths]);
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
@@ -122,7 +140,6 @@ export const ManagerClientsScreen: React.FC = () => {
 
         setIsExporting(true);
         try {
-            // RESOLUÇÃO DE INTEROPERAÇÃO: Captura o objeto XLSX correto para evitar undefined
             const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
             if (!X || !X.utils) {
                 throw new Error("Biblioteca XLSX não carregada corretamente.");
@@ -132,8 +149,9 @@ export const ManagerClientsScreen: React.FC = () => {
                 "REGIONAL": getRegional(client.repName),
                 "REPRESENTANTE": client.repName,
                 "CLIENTE": client.nome_fantasia,
-                "CANAL 2025": client.canal_vendas || 'GERAL',
-                "CANAL 2026": ""
+                "CANAL": client.canal_vendas || 'GERAL',
+                "FATURAMENTO": client.totalPurchase,
+                "PARTICIPAÇÃO %": (client.participation / 100)
             }));
 
             const ws = X.utils.json_to_sheet(dataToExport);
@@ -151,6 +169,15 @@ export const ManagerClientsScreen: React.FC = () => {
                 }
             }
 
+            // Formatação de números
+            for (let R = 1; R <= range.e.r; ++R) {
+                const cellFat = ws[X.utils.encode_cell({r: R, c: 4})];
+                if (cellFat) { cellFat.t = 'n'; cellFat.z = '"R$" #,##0.00'; }
+                
+                const cellPart = ws[X.utils.encode_cell({r: R, c: 5})];
+                if (cellPart) { cellPart.t = 'n'; cellPart.z = '0.00%'; }
+            }
+
             const wb = X.utils.book_new();
             X.utils.book_append_sheet(wb, ws, "Carteira_Total");
             X.writeFile(wb, `Carteira_Total_CentroNorte_${new Date().getTime()}.xlsx`);
@@ -160,6 +187,22 @@ export const ManagerClientsScreen: React.FC = () => {
         } finally {
             setIsExporting(false);
         }
+    };
+
+    const toggleTempMonth = (m: number) => {
+        setTempSelectedMonths(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
+    };
+
+    const handleApplyFilter = () => {
+        setSelectedMonths([...tempSelectedMonths]);
+        setShowMonthDropdown(false);
+    };
+
+    const getMonthsLabel = () => {
+        if (selectedMonths.length === 12) return "ANO COMPLETO";
+        if (selectedMonths.length === 0) return "NENHUM MÊS";
+        if (selectedMonths.length === 1) return monthNames[selectedMonths[0] - 1].toUpperCase();
+        return `${selectedMonths.length} MESES`;
     };
 
     return (
@@ -210,6 +253,52 @@ export const ManagerClientsScreen: React.FC = () => {
                         </select>
                     </div>
 
+                    {/* Filtro de Meses (Novo) */}
+                    <div className="relative flex-1 lg:flex-none" ref={dropdownRef}>
+                        <button 
+                            onClick={() => {
+                                setTempSelectedMonths([...selectedMonths]);
+                                setShowMonthDropdown(!showMonthDropdown);
+                            }}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50 min-w-[150px] justify-between h-[42px]"
+                        >
+                            <div className="flex items-center gap-2">
+                                <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
+                                <span className="truncate">{getMonthsLabel()}</span>
+                            </div>
+                            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
+                        </button>
+                        
+                        {showMonthDropdown && (
+                            <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
+                                <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-2">
+                                    <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[9px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">Todos</button>
+                                    <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[9px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg hover:bg-red-100 transition-all">Limpar</button>
+                                </div>
+                                <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {monthNames.map((m, i) => (
+                                        <button 
+                                            key={i} 
+                                            onClick={() => toggleTempMonth(i + 1)}
+                                            className={`flex items-center gap-2 p-2 rounded-xl text-[10px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                                        >
+                                            {tempSelectedMonths.includes(i + 1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 opacity-20" />}
+                                            {m}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="p-3 border-t border-slate-100 bg-slate-50">
+                                    <button 
+                                        onClick={handleApplyFilter}
+                                        className="w-full bg-blue-600 text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <Filter className="w-3 h-3" /> Aplicar Filtro
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     {/* Filtro de Ano */}
                     <div className="relative flex-1 lg:flex-none">
                         <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -247,7 +336,7 @@ export const ManagerClientsScreen: React.FC = () => {
                     <div className="flex items-center gap-3 bg-white/5 px-6 py-3 rounded-2xl border border-white/5">
                         <Info className="w-4 h-4 text-blue-400" />
                         <p className="text-[10px] font-bold text-slate-400 leading-tight">
-                            A porcentagem de participação abaixo refere-se à fatia <br/> que o cliente ocupa neste montante filtrado de {selectedYear === 'all' ? 'todo o período' : selectedYear}.
+                            A porcentagem de participação abaixo refere-se à fatia <br/> que o cliente ocupa neste montante filtrado.
                         </p>
                     </div>
                 </div>

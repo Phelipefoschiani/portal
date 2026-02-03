@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, Loader2, Target, BarChart, LineChart, Award } from 'lucide-react';
@@ -124,16 +123,36 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
         try {
             const element = exportRef.current;
             const canvas = await html2canvas(element, { 
-                scale: 2, 
+                scale: 3, 
                 useCORS: true,
                 backgroundColor: '#ffffff',
                 logging: false,
+                width: 1200, // Força largura desktop para evitar layout mobile
+                windowWidth: 1200,
                 onclone: (clonedDoc) => {
                     const el = clonedDoc.getElementById('raio-x-export-root');
                     if (el) {
                         el.style.height = 'auto';
                         el.style.overflow = 'visible';
                         el.style.maxHeight = 'none';
+                        el.style.width = '1200px';
+                        el.style.padding = '40px'; // Adiciona respiro
+
+                        // Remove a classe 'truncate' e força exibição completa do texto
+                        const textElements = el.querySelectorAll('.truncate');
+                        textElements.forEach((t: any) => {
+                            t.style.whiteSpace = 'normal';
+                            t.style.overflow = 'visible';
+                            t.style.textOverflow = 'clip';
+                            t.classList.remove('truncate');
+                        });
+                        
+                        // Garante que os cards expandam altura
+                        const cards = el.querySelectorAll('.rounded-2xl, .rounded-3xl');
+                        cards.forEach((c: any) => {
+                            c.style.height = 'auto';
+                            c.style.minHeight = 'auto';
+                        });
                     }
                 }
             });
