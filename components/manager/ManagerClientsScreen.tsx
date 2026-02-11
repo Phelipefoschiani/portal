@@ -416,7 +416,14 @@ export const ManagerClientsScreen: React.FC = () => {
                 </div>
             </div>
 
-            {selectedClient && <ClientDetailModal client={selectedClient} onClose={() => setSelectedClient(null)} />}
+            {selectedClient && (
+                <ClientDetailModal 
+                    client={selectedClient} 
+                    // Passa o ano selecionado se for numérico, senão usa o atual
+                    initialYear={typeof selectedYear === 'number' ? selectedYear : new Date().getFullYear()}
+                    onClose={() => setSelectedClient(null)} 
+                />
+            )}
         </div>
     );
 };

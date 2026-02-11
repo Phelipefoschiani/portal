@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Bell, Plus, Trash2, Eye, Paperclip, X, Loader2, Send, CheckCircle, Clock, FileText, CheckSquare, Square, Download, Search, AlertTriangle, CalendarDays, User, Filter, ListChecks, AlertOctagon, Image as ImageIcon, Inbox, Mail } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Bell, Plus, Trash2, Eye, Paperclip, X, Loader2, Send, CheckCircle, Clock, FileText, CheckSquare, Square, Download, Search, AlertTriangle, CalendarDays, User, Filter, ListChecks, AlertOctagon, Image as ImageIcon, Inbox, Mail, ArrowRight } from 'lucide-react';
 import { Button } from '../Button';
 import { Input } from '../Input';
 import { supabase } from '../../lib/supabase';
@@ -18,8 +18,8 @@ export const ManagerNotificationsScreen: React.FC = () => {
     const [repSearchTerm, setRepSearchTerm] = useState('');
     
     // Filtros de Histórico
-    const [historyFilterRepId, setHistoryFilterRepId] = useState('all');
-    const [historyFilterYear, setHistoryFilterYear] = useState<string | 'all'>(String(now.getFullYear()));
+    const [historyFilterRepId, setHistoryFilterRepId] = useState<string>('all'); 
+    const [historyFilterYear, setHistoryFilterYear] = useState<string | 'all'>('all');
     const [historyFilterMonth, setHistoryFilterMonth] = useState<string | 'all'>('all');
     const [historyFilterDay, setHistoryFilterDay] = useState<string | 'all'>('all');
     const [historyFilterPriority, setHistoryFilterPriority] = useState<string | 'all'>('all');
@@ -27,10 +27,11 @@ export const ManagerNotificationsScreen: React.FC = () => {
     // Seleção para deleção em massa
     const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
 
-    const [reps, setReps] = useState<any[]>([]);
+    const [allUsers, setAllUsers] = useState<any[]>([]); 
     const [history, setHistory] = useState<any[]>([]);
-    const [inbox, setInbox] = useState<any[]>([]); // New Inbox State
+    const [inbox, setInbox] = useState<any[]>([]); 
     const [isLoading, setIsLoading] = useState(false);
+    const [isLoadingDetails, setIsLoadingDetails] = useState(false); // Novo estado para loading de detalhes
     const [isSending, setIsSending] = useState(false);
     const [viewingNotification, setViewingNotification] = useState<any | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
     const days = Array.from({ length: 31 }, (_, i) => String(i + 1));
 
     useEffect(() => {
-        fetchReps();
+        fetchAllUsers();
     }, []);
 
     useEffect(() => {
@@ -57,33 +58,24 @@ export const ManagerNotificationsScreen: React.FC = () => {
             fetchInbox();
             setSelectedHistoryIds([]);
         }
-    }, [activeTab, historyFilterRepId, historyFilterYear, historyFilterMonth, historyFilterDay, historyFilterPriority]);
+    }, [activeTab, historyFilterYear, historyFilterMonth, historyFilterDay]);
 
-    const fetchReps = async () => {
+    const fetchAllUsers = async () => {
         const { data } = await supabase
             .from('usuarios')
             .select('id, nome, nivel_acesso')
-            .not('nivel_acesso', 'ilike', 'admin')
-            .not('nivel_acesso', 'ilike', 'gerente')
             .order('nome');
-        setReps(data || []);
+        setAllUsers(data || []);
     };
 
     const fetchHistory = async () => {
         setIsLoading(true);
         try {
+            // OTIMIZAÇÃO: Select apenas na tabela principal, SEM JOIN pesado com anexos
             let query = supabase
                 .from('notificacoes')
-                .select('*, para:usuarios!notificacoes_para_usuario_id_fkey(nome), notificacao_anexos(*)')
+                .select('*') // Pega todas as colunas da notificação, mas não os anexos ainda
                 .order('criada_em', { ascending: false });
-
-            if (historyFilterRepId !== 'all') {
-                query = query.eq('para_usuario_id', historyFilterRepId);
-            }
-
-            if (historyFilterPriority !== 'all') {
-                query = query.eq('prioridade', historyFilterPriority);
-            }
 
             if (historyFilterYear !== 'all') {
                 let start = `${historyFilterYear}-01-01T00:00:00`;
@@ -103,9 +95,19 @@ export const ManagerNotificationsScreen: React.FC = () => {
                 query = query.gte('criada_em', start).lte('criada_em', end);
             }
 
-            const { data } = await query.limit(300);
-            setHistory(data || []);
-        } catch (e) {
+            // Aumentamos o limite um pouco pois a query agora é leve
+            const { data, error } = await query.limit(100);
+            
+            if (error) throw error;
+
+            const normalizedData = (data || []).map((item: any) => ({
+                ...item,
+                para_usuario_id: item.para_usuario_id || item.Para_usuario_id || item.para_Usuario_Id,
+                de_usuario_id: item.de_usuario_id || item.De_usuario_id || item.de_Usuario_Id
+            }));
+
+            setHistory(normalizedData);
+        } catch (e: any) {
             console.error('Erro ao carregar histórico:', e);
         } finally {
             setIsLoading(false);
@@ -113,22 +115,72 @@ export const ManagerNotificationsScreen: React.FC = () => {
     };
 
     const fetchInbox = async () => {
+        if (!managerId) return;
         setIsLoading(true);
         try {
-            // Busca notificações onde o "para_usuario_id" é o gerente
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('notificacoes')
-                .select('*, de:usuarios!notificacoes_de_usuario_id_fkey(nome)')
+                .select('*') // Sem anexos aqui também
                 .eq('para_usuario_id', managerId)
                 .order('criada_em', { ascending: false })
-                .limit(200);
+                .limit(100);
             
-            setInbox(data || []);
+            if (error) throw error;
+
+            const normalizedData = (data || []).map((item: any) => ({
+                ...item,
+                para_usuario_id: item.para_usuario_id || item.Para_usuario_id,
+                de_usuario_id: item.de_usuario_id || item.De_usuario_id
+            }));
+
+            setInbox(normalizedData);
         } catch (e) {
             console.error('Erro ao carregar inbox:', e);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    // --- CARREGAMENTO SOB DEMANDA DOS DETALHES ---
+    const handleViewDetails = async (notification: any) => {
+        // Abre o modal imediatamente com os dados que já temos
+        setViewingNotification({ ...notification, notificacao_anexos: [] }); 
+        setIsLoadingDetails(true);
+
+        try {
+            // Busca anexos separadamente apenas para esta notificação
+            const { data: anexos, error } = await supabase
+                .from('notificacao_anexos')
+                .select('*')
+                .eq('notificacao_id', notification.id);
+
+            if (!error && anexos) {
+                setViewingNotification((prev: any) => 
+                    prev?.id === notification.id ? { ...prev, notificacao_anexos: anexos } : prev
+                );
+            }
+        } catch (e) {
+            console.error("Erro ao carregar anexos:", e);
+        } finally {
+            setIsLoadingDetails(false);
+        }
+    };
+
+    const filteredHistory = useMemo(() => {
+        return history.filter(item => {
+            const pid = item.para_usuario_id;
+            const did = item.de_usuario_id;
+            
+            const matchRep = historyFilterRepId === 'all' || pid === historyFilterRepId || did === historyFilterRepId;
+            const matchPriority = historyFilterPriority === 'all' || item.prioridade === historyFilterPriority;
+            return matchRep && matchPriority;
+        });
+    }, [history, historyFilterRepId, historyFilterPriority]);
+
+    const resolveName = (id: string) => {
+        if (!id) return 'Sistema';
+        const user = allUsers.find(u => u.id === id);
+        return user ? user.nome : 'Desconhecido';
     };
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -218,13 +270,11 @@ export const ManagerNotificationsScreen: React.FC = () => {
     const handleBulkDelete = async () => {
         setIsBulkDeleting(true);
         try {
-            // Deleta anexos primeiro por conta da constraint
             await supabase.from('notificacao_anexos').delete().in('notificacao_id', selectedHistoryIds);
             const { error } = await supabase.from('notificacoes').delete().in('id', selectedHistoryIds);
 
             if (error) throw error;
 
-            // Atualiza ambas as listas
             setHistory(prev => prev.filter(h => !selectedHistoryIds.includes(h.id)));
             setInbox(prev => prev.filter(h => !selectedHistoryIds.includes(h.id)));
             setSelectedHistoryIds([]);
@@ -273,11 +323,11 @@ export const ManagerNotificationsScreen: React.FC = () => {
         document.body.removeChild(link);
     };
 
-    const filteredReps = reps.filter(r => 
-        r.nome.toLowerCase().includes(repSearchTerm.toLowerCase())
+    const filteredRepsForSelection = allUsers.filter(u => 
+        u.nome.toLowerCase().includes(repSearchTerm.toLowerCase()) &&
+        !['admin', 'gerente'].includes(u.nivel_acesso.toLowerCase())
     );
 
-    // Função para tratar o título da mensagem na exibição do modal
     const parseModalMessage = (msg: string) => {
         if (msg.startsWith('[')) {
             const parts = msg.split(']');
@@ -287,6 +337,8 @@ export const ManagerNotificationsScreen: React.FC = () => {
         }
         return { title: 'COMUNICADO', content: msg };
     };
+
+    const displayList = activeTab === 'inbox' ? inbox : filteredHistory;
 
     return (
         <div className="w-full max-w-6xl mx-auto space-y-4 animate-fadeIn pb-12">
@@ -302,7 +354,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
                     <button onClick={() => setActiveTab('inbox')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'inbox' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <Inbox className="w-3 h-3" /> Caixa de Entrada
                     </button>
-                    <button onClick={() => setActiveTab('history')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap ${activeTab === 'history' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Histórico Envios</button>
+                    <button onClick={() => setActiveTab('history')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap ${activeTab === 'history' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Todos os Envios</button>
                 </div>
             </header>
 
@@ -326,7 +378,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
                         </div>
 
                         <div className="flex-1 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
-                            {filteredReps.map(rep => (
+                            {filteredRepsForSelection.map(rep => (
                                 <label 
                                     key={rep.id} 
                                     className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${selectedRepIds.includes(rep.id) ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-50 border border-transparent'}`}
@@ -341,7 +393,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
                         </div>
 
                         <div className="pt-4 border-t border-slate-100 flex gap-2">
-                             <button onClick={() => setSelectedRepIds(reps.map(r => r.id))} className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-xl text-[9px] font-black uppercase hover:bg-slate-200">Todos</button>
+                             <button onClick={() => setSelectedRepIds(filteredRepsForSelection.map(r => r.id))} className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-xl text-[9px] font-black uppercase hover:bg-slate-200">Todos</button>
                              <button onClick={() => setSelectedRepIds([])} className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-xl text-[9px] font-black uppercase hover:bg-slate-200">Limpar</button>
                         </div>
                     </div>
@@ -405,15 +457,15 @@ export const ManagerNotificationsScreen: React.FC = () => {
                         <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm space-y-4">
                             <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
                                 <Filter className="w-4 h-4 text-blue-600" />
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Refinar Busca no Histórico</span>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Refinar Busca</span>
                             </div>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                                 <div className="relative">
                                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
                                     <select value={historyFilterRepId} onChange={e => setHistoryFilterRepId(e.target.value)} className="w-full pl-9 pr-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100">
-                                        <option value="all">TODOS REPRESENTANTES</option>
-                                        {reps.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+                                        <option value="all">TODOS USUÁRIOS</option>
+                                        {allUsers.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
                                     </select>
                                 </div>
 
@@ -430,6 +482,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
                                 <div className="relative">
                                     <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
                                     <select value={historyFilterYear} onChange={e => setHistoryFilterYear(e.target.value)} className="w-full pl-9 pr-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-100">
+                                        <option value="all">ANO: TODOS</option>
                                         {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
                                     </select>
                                 </div>
@@ -462,45 +515,48 @@ export const ManagerNotificationsScreen: React.FC = () => {
                         </div>
                     )}
 
-                    <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden min-h-[400px]">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50 border-b border-slate-100">
+                    <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
+                        <div className="overflow-y-auto custom-scrollbar flex-1">
+                            <table className="w-full text-left relative">
+                                <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10 shadow-sm">
                                     <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                         <th className="px-6 py-5 w-12">
                                             <button onClick={() => { 
-                                                const currentList = activeTab === 'inbox' ? inbox : history;
+                                                const currentList = activeTab === 'inbox' ? inbox : filteredHistory;
                                                 if (selectedHistoryIds.length === currentList.length) setSelectedHistoryIds([]); 
                                                 else setSelectedHistoryIds(currentList.map(h => h.id)); 
                                             }} className="p-1 hover:bg-slate-200 rounded transition-colors">
-                                                {selectedHistoryIds.length === (activeTab === 'inbox' ? inbox.length : history.length) && (activeTab === 'inbox' ? inbox.length : history.length) > 0 ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                {selectedHistoryIds.length === (activeTab === 'inbox' ? inbox.length : filteredHistory.length) && (activeTab === 'inbox' ? inbox.length : filteredHistory.length) > 0 ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 text-slate-300" />}
                                             </button>
                                         </th>
                                         <th className="px-6 py-5">Envio</th>
                                         <th className="px-6 py-5">Assunto</th>
-                                        <th className="px-6 py-5">{activeTab === 'inbox' ? 'Remetente' : 'Para'}</th>
+                                        <th className="px-6 py-5">De (Remetente)</th>
+                                        <th className="px-6 py-5">Para (Destinatário)</th>
                                         {activeTab !== 'inbox' && <th className="px-6 py-5 text-center">Nível</th>}
-                                        {activeTab !== 'inbox' && <th className="px-6 py-5 text-center">Status</th>}
                                         <th className="px-8 py-5 text-right">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
                                     {isLoading ? (
-                                        <tr><td colSpan={activeTab === 'inbox' ? 5 : 7} className="px-8 py-20 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" /><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Carregando...</p></td></tr>
-                                    ) : (activeTab === 'inbox' ? inbox : history).length === 0 ? (
-                                        <tr><td colSpan={activeTab === 'inbox' ? 5 : 7} className="px-8 py-20 text-center"><Bell className="w-12 h-12 text-slate-100 mx-auto mb-4" /><p className="text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">{activeTab === 'inbox' ? 'Caixa de entrada vazia' : 'Sem correspondências no histórico'}</p></td></tr>
+                                        <tr><td colSpan={7} className="px-8 py-20 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" /><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Carregando...</p></td></tr>
+                                    ) : displayList.length === 0 ? (
+                                        <tr><td colSpan={7} className="px-8 py-20 text-center"><Bell className="w-12 h-12 text-slate-100 mx-auto mb-4" /><p className="text-slate-300 font-bold uppercase text-[10px] tracking-widest italic">{activeTab === 'inbox' ? 'Caixa de entrada vazia' : 'Sem correspondências'}</p></td></tr>
                                     ) : (
-                                        (activeTab === 'inbox' ? inbox : history).map(item => {
+                                        displayList.map(item => {
                                             const titleMatch = item.mensagem.match(/\[(.*?)\]/);
                                             const displayTitle = titleMatch ? titleMatch[1] : 'COMUNICADO';
                                             const isSelected = selectedHistoryIds.includes(item.id);
-                                            const personName = activeTab === 'inbox' ? (item.de?.nome || 'Desconhecido') : (item.para?.nome || 'Destinatário');
+                                            
+                                            // Resolver nomes usando a lista carregada
+                                            const fromName = resolveName(item.de_usuario_id);
+                                            const toName = resolveName(item.para_usuario_id);
                                             
                                             return (
                                                 <tr 
                                                     key={item.id} 
                                                     className={`hover:bg-slate-50/50 transition-colors group cursor-pointer ${isSelected ? 'bg-blue-50/30' : ''}`}
-                                                    onClick={() => setViewingNotification(item)}
+                                                    onClick={() => handleViewDetails(item)}
                                                 >
                                                     <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                                                         <button onClick={() => toggleHistorySelection(item.id)} className="p-1 hover:bg-slate-200 rounded transition-colors">
@@ -509,16 +565,17 @@ export const ManagerNotificationsScreen: React.FC = () => {
                                                     </td>
                                                     <td className="px-6 py-4"><div className="flex items-center gap-2 text-[10px] font-bold text-slate-500"><Clock className="w-3.5 h-3.5" />{new Date(item.criada_em).toLocaleString('pt-BR')}</div></td>
                                                     <td className="px-6 py-4"><p className="text-[11px] font-black text-slate-800 uppercase truncate max-w-[180px]">{displayTitle}</p></td>
-                                                    <td className="px-6 py-4"><span className="text-[10px] font-bold text-slate-600 uppercase bg-slate-100 px-2 py-1 rounded-lg">{personName}</span></td>
+                                                    
+                                                    <td className="px-6 py-4"><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${item.de_usuario_id === managerId ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-600'}`}>{fromName}</span></td>
+                                                    <td className="px-6 py-4"><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${item.para_usuario_id === managerId ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-600'}`}>{toName}</span></td>
+                                                    
                                                     {activeTab !== 'inbox' && (
-                                                        <>
-                                                            <td className="px-6 py-4 text-center"><span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full border ${item.prioridade === 'urgent' ? 'bg-red-50 text-red-600 border-red-100' : item.prioridade === 'medium' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{item.prioridade === 'urgent' ? 'Urgente' : item.prioridade === 'medium' ? 'Importante' : 'Informativo'}</span></td>
-                                                            <td className="px-6 py-4 text-center"><div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase ${item.lida ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{item.lida ? <CheckCircle className="w-3 h-3" /> : <Loader2 className="w-3 h-3" />}{item.lida ? 'Visto' : 'Pendente'}</div></td>
-                                                        </>
+                                                        <td className="px-6 py-4 text-center"><span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full border ${item.prioridade === 'urgent' ? 'bg-red-50 text-red-600 border-red-100' : item.prioridade === 'medium' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{item.prioridade === 'urgent' ? 'Urgente' : item.prioridade === 'medium' ? 'Importante' : 'Informativo'}</span></td>
                                                     )}
+                                                    
                                                     <td className="px-8 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                                                         <div className="flex justify-end gap-2">
-                                                            <button onClick={() => setViewingNotification(item)} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"><Eye className="w-4 h-4" /></button>
+                                                            <button onClick={() => handleViewDetails(item)} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"><Eye className="w-4 h-4" /></button>
                                                             <button onClick={() => setConfirmDeleteId(item.id)} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm disabled:opacity-30" disabled={isLoading}><Trash2 className="w-4 h-4" /></button>
                                                         </div>
                                                     </td>
@@ -592,9 +649,15 @@ export const ManagerNotificationsScreen: React.FC = () => {
                                     <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter">
                                         {parseModalMessage(viewingNotification.mensagem).title}
                                     </h2>
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
-                                        {activeTab === 'inbox' ? `Remetente: ${viewingNotification.de?.nome || 'N/I'}` : `Destinatário: ${viewingNotification.para?.nome || 'N/I'}`}
-                                    </p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                            De: {resolveName(viewingNotification.de_usuario_id)}
+                                        </p>
+                                        <ArrowRight className="w-3 h-3 text-slate-300" />
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                            Para: {resolveName(viewingNotification.para_usuario_id)}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                             <button onClick={() => setViewingNotification(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400">
@@ -613,7 +676,12 @@ export const ManagerNotificationsScreen: React.FC = () => {
                                         </p>
                                     </div>
 
-                                    {viewingNotification.notificacao_anexos?.length > 0 && (
+                                    {isLoadingDetails ? (
+                                        <div className="py-10 text-center text-slate-400">
+                                            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
+                                            <p className="text-[10px] font-black uppercase">Verificando anexos...</p>
+                                        </div>
+                                    ) : viewingNotification.notificacao_anexos?.length > 0 && (
                                         <div className="pt-6 border-t border-slate-100">
                                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Arquivos Vinculados (Clique para baixar)</p>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

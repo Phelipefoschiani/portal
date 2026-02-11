@@ -18,6 +18,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
   const [notifications, setNotifications] = useState<any[]>([]);
   const [sentMessages, setSentMessages] = useState<any[]>([]); // Novo estado para enviados
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingSent, setIsLoadingSent] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -56,6 +57,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
   };
 
   const fetchSentMessages = async () => {
+      setIsLoadingSent(true);
       try {
           const { data, error } = await supabase
             .from('notificacoes')
@@ -67,6 +69,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
           setSentMessages(data || []);
       } catch (e) {
           console.error(e);
+      } finally {
+          setIsLoadingSent(false);
       }
   };
 
@@ -230,7 +234,9 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                 {/* Mobile Sent History */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">Histórico de Envios</h3>
-                    {sentMessages.length === 0 ? (
+                    {isLoadingSent ? (
+                        <div className="py-10 text-center"><Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto" /></div>
+                    ) : sentMessages.length === 0 ? (
                         <div className="py-10 text-center bg-white rounded-2xl border border-dashed border-slate-200">
                             <p className="text-[10px] font-black text-slate-400 uppercase">Nenhuma mensagem enviada</p>
                         </div>
@@ -452,7 +458,9 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                   </div>
                   
                   <div className="space-y-3">
-                      {sentMessages.length === 0 ? (
+                      {isLoadingSent ? (
+                          <div className="py-10 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" /></div>
+                      ) : sentMessages.length === 0 ? (
                           <div className="text-center py-10 text-slate-400">
                               <p className="text-[10px] font-black uppercase">Nenhuma mensagem enviada.</p>
                           </div>

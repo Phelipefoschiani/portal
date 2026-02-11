@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Table2, Filter, ChevronRight, FileSpreadsheet, Percent, Calculator, Search, User, Boxes, Tag, Package, Building2, BarChart4, Download, Layers, CheckSquare, Square, X as XIcon, ChevronDown, ListFilter, ArrowRight, Calendar, FileText, Loader2, Trash2, ListChecks, CalendarDays, Hash, RotateCcw, AlertCircle } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
@@ -124,8 +123,8 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             if (s.grupo) grupos.add(s.grupo);
         });
 
-        const dynamicClients = filterReps.length > 0 
-            ? clients.filter(c => filterReps.includes(c.usuario_id))
+        const dynamicClients = (!isAdmin || filterReps.length > 0)
+            ? clients.filter(c => isAdmin ? filterReps.includes(c.usuario_id) : true)
             : [];
 
         return {
@@ -134,7 +133,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             grupos: Array.from(grupos).sort(),
             clients: dynamicClients.sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia))
         };
-    }, [filterReps]);
+    }, [filterReps, isAdmin]);
 
     const toggleFilter = (list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
         setList(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
@@ -152,6 +151,16 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             clientLookup.set(clean, c.nome_fantasia);
         });
 
+        // Prepara Set de CNPJs permitidos se houver filtro de clientes
+        const allowedClientCnpjs = new Set<string>();
+        if (filterClients.length > 0) {
+            totalDataStore.clients.forEach(c => {
+                if (filterClients.includes(c.id)) {
+                    allowedClientCnpjs.add(String(c.cnpj || '').replace(/\D/g, ''));
+                }
+            });
+        }
+
         let filteredSales = sales.filter(s => {
             const d = new Date(s.data + 'T00:00:00');
             const m = d.getUTCMonth() + 1;
@@ -162,6 +171,12 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             if (isAdmin && filterReps.length > 0 && !filterReps.includes(s.usuario_id)) return false;
             if (filterCanais.length > 0 && (!s.canal_vendas || !filterCanais.includes(s.canal_vendas))) return false;
             if (filterGrupos.length > 0 && (!s.grupo || !filterGrupos.includes(s.grupo))) return false;
+            
+            // Filtro de Cliente aplicado aqui
+            if (filterClients.length > 0) {
+                const saleCnpj = String(s.cnpj || '').replace(/\D/g, '');
+                if (!allowedClientCnpjs.has(saleCnpj)) return false;
+            }
             
             return true;
         });
@@ -256,7 +271,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
         setIsExporting(true);
         try {
-            // RESOLUÇÃO DE INTEROPERAÇÃO: Captura o objeto XLSX correto para evitar undefined
             const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
             if (!X || !X.utils) {
                 throw new Error("Biblioteca XLSX não carregada corretamente.");
@@ -298,7 +312,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
             const ws = X.utils.aoa_to_sheet(dataMatrix);
 
-            // Estilos para títulos (Linha 1 e 2)
             if (ws['A1']) {
                 ws['A1'].s = {
                     font: { bold: true, color: { rgb: "1E40AF" }, sz: 14 },
@@ -322,7 +335,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 }
             });
 
-            // Formatação de dados
             const range = X.utils.decode_range(ws['!ref']!);
             for (let R = 2; R <= range.e.r; ++R) {
                 const cellC = ws[X.utils.encode_cell({r: R, c: 2})];
@@ -539,7 +551,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 id="clients" 
                                 label="Clientes" 
                                 icon={Building2} 
-                                disabled={filterReps.length === 0 && isAdmin}
+                                disabled={isAdmin && filterReps.length === 0}
                                 options={filterOptions.clients} 
                                 selected={filterClients} 
                                 onToggle={(val: any) => toggleFilter(filterClients, setFilterClients, val)} 
