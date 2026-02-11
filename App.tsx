@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { LoginScreen } from './components/LoginScreen';
 import { Dashboard } from './components/Dashboard';
@@ -29,6 +28,7 @@ import { ManagerImportScreen } from './components/manager/ManagerImportScreen';
 import { ManagerAnalysisScreen } from './components/manager/ManagerAnalysisScreen';
 import { ManagerDetailedAnalysisScreen } from './components/manager/ManagerDetailedAnalysisScreen';
 import { ManagerUsersScreen } from './components/manager/ManagerUsersScreen';
+import { ManagerScoreCardScreen } from './components/manager/ManagerScoreCardScreen';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -207,6 +207,7 @@ const App: React.FC = () => {
                 {currentView === 'admin-forecast' && <ManagerForecastScreen />}
                 {currentView === 'admin-notifications' && <ManagerNotificationsScreen />}
                 {currentView === 'admin-users' && <ManagerUsersScreen />}
+                {currentView === 'admin-scorecard' && <ManagerScoreCardScreen />}
                 {currentView === 'admin-clients' && <ManagerClientsScreen />}
                 {currentView === 'admin-targets' && <ManagerTargetsScreen />}
                </>

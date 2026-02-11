@@ -19,6 +19,110 @@ interface GroupData {
     children?: Map<string, GroupData>;
 }
 
+// Componente extraído para suportar estado de busca local sem perder foco
+const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, isSimple = false, disabled = false, openUp = false, activeDropdown, setActiveDropdown }: any) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const listContainerRef = useRef<HTMLDivElement>(null);
+
+    // Reseta a busca quando o dropdown fecha
+    useEffect(() => {
+        if (activeDropdown !== id) {
+            setSearchTerm('');
+        }
+    }, [activeDropdown, id]);
+
+    const filteredOptions = useMemo(() => {
+        if (!searchTerm) return options;
+        return options.filter((opt: any) => {
+            const val = typeof opt === 'object' ? (opt.nome || opt.label || opt.nome_fantasia) : opt;
+            return String(val).toLowerCase().includes(searchTerm.toLowerCase());
+        });
+    }, [options, searchTerm]);
+
+    return (
+        <div className={`relative group/filter flex items-center gap-1 ${disabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
+            <button 
+                type="button"
+                disabled={disabled}
+                onClick={() => setActiveDropdown(activeDropdown === id ? null : id)}
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all text-[10px] font-black uppercase tracking-tight shadow-sm min-w-[140px] justify-between ${
+                    (isSimple ? selected !== 'all' : selected.length > 0) 
+                    ? 'bg-blue-600 border-blue-600 text-white' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+            >
+                <div className="flex items-center gap-2">
+                    <Icon className={`w-3.5 h-3.5 ${(isSimple ? selected !== 'all' : selected.length > 0) ? 'text-white' : 'text-slate-400'}`} />
+                    <span className="truncate max-w-[110px]">
+                        {id === 'top' 
+                          ? (selected === 'all' ? label : `Top ${selected} Clts`)
+                          : (selected.length > 0 ? `${selected.length} Sel.` : label)
+                        }
+                    </span>
+                </div>
+                <ChevronDown className={`w-3 h-3 transition-transform ${activeDropdown === id ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {!disabled && (
+                <button 
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onClear(); }}
+                    className={`p-2.5 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-red-500 hover:border-red-200 transition-all shadow-sm ${
+                        (isSimple ? selected === 'all' : selected.length === 0) ? 'opacity-30 cursor-not-allowed' : ''
+                    }`}
+                    disabled={(isSimple ? selected === 'all' : selected.length === 0)}
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
+                </button>
+            )}
+
+            {activeDropdown === id && !disabled && (
+                <div className={`absolute ${openUp ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[300] overflow-hidden animate-slideUp`}>
+                    <div className="p-3 bg-slate-50 border-b border-slate-100 space-y-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">{label}</span>
+                        {/* Campo de Busca */}
+                        <div className="relative">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+                            <input 
+                                autoFocus
+                                type="text" 
+                                placeholder="Buscar..." 
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-100 placeholder:text-slate-300"
+                            />
+                        </div>
+                    </div>
+                    <div className="p-2 max-h-64 overflow-y-auto custom-scrollbar scroll-smooth" ref={listContainerRef}>
+                        {filteredOptions.length === 0 ? (
+                            <div className="text-center py-4 text-[10px] text-slate-400 font-bold uppercase">Nenhum resultado</div>
+                        ) : (
+                            filteredOptions.map((opt: any) => {
+                                const val = typeof opt === 'object' ? (opt.id || opt.nome) : opt;
+                                const optLabel = typeof opt === 'object' ? (opt.nome || opt.label || opt.nome_fantasia) : opt;
+                                const isSelected = isSimple ? selected === val : selected.includes(val);
+                                
+                                return (
+                                    <button 
+                                        key={val} 
+                                        type="button"
+                                        onClick={(e) => { e.preventDefault(); onToggle(val); }} 
+                                        className={`w-full text-left px-3 py-2 rounded-xl text-[10px] font-bold uppercase flex items-center justify-between transition-colors ${isSelected ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-50 text-slate-500'}`}
+                                    >
+                                        <span className="truncate pr-2">{optLabel}</span>
+                                        {isSelected ? <CheckSquare className="w-3.5 h-3.5 shrink-0" /> : <Square className="w-3.5 h-3.5 opacity-20 shrink-0" />}
+                                    </button>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const now = new Date();
     const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
@@ -68,7 +172,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const monthDropdownRef = useRef<HTMLDivElement>(null);
     const yearDropdownRef = useRef<HTMLDivElement>(null);
-    const listContainerRef = useRef<HTMLDivElement>(null);
 
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const years = [2024, 2025, 2026, 2027];
@@ -123,6 +226,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             if (s.grupo) grupos.add(s.grupo);
         });
 
+        // Prepara Set de CNPJs permitidos se houver filtro de clientes
         const dynamicClients = (!isAdmin || filterReps.length > 0)
             ? clients.filter(c => isAdmin ? filterReps.includes(c.usuario_id) : true)
             : [];
@@ -378,72 +482,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         }
     };
 
-    const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, isSimple = false, disabled = false, openUp = false }: any) => (
-        <div className={`relative group/filter flex items-center gap-1 ${disabled ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
-            <button 
-                type="button"
-                disabled={disabled}
-                onClick={() => setActiveDropdown(activeDropdown === id ? null : id)}
-                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all text-[10px] font-black uppercase tracking-tight shadow-sm min-w-[140px] justify-between ${
-                    (isSimple ? selected !== 'all' : selected.length > 0) 
-                    ? 'bg-blue-600 border-blue-600 text-white' 
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-            >
-                <div className="flex items-center gap-2">
-                    <Icon className={`w-3.5 h-3.5 ${(isSimple ? selected !== 'all' : selected.length > 0) ? 'text-white' : 'text-slate-400'}`} />
-                    <span className="truncate max-w-[110px]">
-                        {id === 'top' 
-                          ? (selected === 'all' ? label : `Top ${selected} Clts`)
-                          : (selected.length > 0 ? `${selected.length} Sel.` : label)
-                        }
-                    </span>
-                </div>
-                <ChevronDown className={`w-3 h-3 transition-transform ${activeDropdown === id ? 'rotate-180' : ''}`} />
-            </button>
-            
-            {!disabled && (
-                <button 
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onClear(); }}
-                    className={`p-2.5 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-red-500 hover:border-red-200 transition-all shadow-sm ${
-                        (isSimple ? selected === 'all' : selected.length === 0) ? 'opacity-30 cursor-not-allowed' : ''
-                    }`}
-                    disabled={(isSimple ? selected === 'all' : selected.length === 0)}
-                >
-                    <Trash2 className="w-3.5 h-3.5" />
-                </button>
-            )}
-
-            {activeDropdown === id && !disabled && (
-                <div className={`absolute ${openUp ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[300] overflow-hidden animate-slideUp`}>
-                    <div className="p-3 bg-slate-50 border-b border-slate-100">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
-                    </div>
-                    <div className="p-2 max-h-64 overflow-y-auto custom-scrollbar scroll-smooth" ref={listContainerRef}>
-                        {options.map((opt: any) => {
-                            const val = typeof opt === 'object' ? (opt.id || opt.nome) : opt;
-                            const optLabel = typeof opt === 'object' ? (opt.nome || opt.label || opt.nome_fantasia) : opt;
-                            const isSelected = isSimple ? selected === val : selected.includes(val);
-                            
-                            return (
-                                <button 
-                                    key={val} 
-                                    type="button"
-                                    onClick={(e) => { e.preventDefault(); onToggle(val); }} 
-                                    className={`w-full text-left px-3 py-2 rounded-xl text-[10px] font-bold uppercase flex items-center justify-between transition-colors ${isSelected ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-50 text-slate-500'}`}
-                                >
-                                    <span className="truncate pr-2">{optLabel}</span>
-                                    {isSelected ? <CheckSquare className="w-3.5 h-3.5 shrink-0" /> : <Square className="w-3.5 h-3.5 opacity-20 shrink-0" />}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-
     return (
         <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 animate-fadeIn pb-32" ref={dropdownRef}>
             
@@ -535,6 +573,8 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                             selected={rowDimensions} 
                             onToggle={(val: any) => setRowDimensions(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val])} 
                             onClear={() => setRowDimensions([])} 
+                            activeDropdown={activeDropdown}
+                            setActiveDropdown={setActiveDropdown}
                         />
                     </div>
                     
@@ -544,9 +584,9 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">2. Filtros Dinâmicos (Opcional)</span>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-3 items-center">
-                            {isAdmin && <FilterDropdown id="reps" label="Equipe" icon={User} options={filterOptions.reps} selected={filterReps} onToggle={(val: any) => toggleFilter(filterReps, setFilterReps, val)} onClear={() => setFilterReps([])} />}
-                            <FilterDropdown id="canais" label="Canais" icon={Tag} options={filterOptions.canais} selected={filterCanais} onToggle={(val: any) => toggleFilter(filterCanais, setFilterCanais, val)} onClear={() => setFilterCanais([])} />
-                            <FilterDropdown id="grupos" label="Grupos" icon={Boxes} options={filterOptions.grupos} selected={filterGrupos} onToggle={(val: any) => toggleFilter(filterGrupos, setFilterGrupos, val)} onClear={() => setFilterGrupos([])} />
+                            {isAdmin && <FilterDropdown id="reps" label="Equipe" icon={User} options={filterOptions.reps} selected={filterReps} onToggle={(val: any) => toggleFilter(filterReps, setFilterReps, val)} onClear={() => setFilterReps([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />}
+                            <FilterDropdown id="canais" label="Canais" icon={Tag} options={filterOptions.canais} selected={filterCanais} onToggle={(val: any) => toggleFilter(filterCanais, setFilterCanais, val)} onClear={() => setFilterCanais([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
+                            <FilterDropdown id="grupos" label="Grupos" icon={Boxes} options={filterOptions.grupos} selected={filterGrupos} onToggle={(val: any) => toggleFilter(filterGrupos, setFilterGrupos, val)} onClear={() => setFilterGrupos([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
                             <FilterDropdown 
                                 id="clients" 
                                 label="Clientes" 
@@ -556,7 +596,9 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 selected={filterClients} 
                                 onToggle={(val: any) => toggleFilter(filterClients, setFilterClients, val)} 
                                 onClear={() => setFilterClients([])}
-                                openUp={true}
+                                activeDropdown={activeDropdown}
+                                setActiveDropdown={setActiveDropdown}
+                                // openUp={true} // Removido para abrir para baixo
                             />
                         </div>
                     </div>

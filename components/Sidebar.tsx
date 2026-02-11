@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Menu, Table2 } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Menu, Table2, Trophy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { createPortal } from 'react-dom';
 import { Button } from './Button';
@@ -102,6 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, hasAlert: forecastAlert },
     { id: 'admin-notifications', label: 'Gestão Notificações', icon: Bell },
     { id: 'admin-users', label: 'Gestão Acessos', icon: Lock },
+    { id: 'admin-scorecard', label: 'Score Card', icon: Trophy },
   ];
 
   const menuItems = userRole === 'admin' ? adminMenuItems : repMenuItems;
