@@ -194,7 +194,7 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
         XLSX.writeFile(wb, `Clientes_Mapeados_${selectedYear}.xlsx`);
     };
 
-    const handleExportPngElement = async (ref: React.RefObject<HTMLDivElement>, name: string) => {
+    const handleExportPngElement = async (ref: React.RefObject<HTMLDivElement | null>, name: string) => {
         if (!ref.current) return;
         setIsExporting(true);
         try {
@@ -449,7 +449,7 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
                                     <button onClick={() => handleExportPngElement(clientsTableExportRef, `Clientes_Faturamento`)} className="flex items-center gap-2 px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase shadow-sm"><Download className="w-4 h-4" /> PNG</button>
                                 </div>
                             </div>
-                            <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm"><table className="w-full text-left border-collapse"><thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10"><tr className="text-slate-400 text-[9px] font-black uppercase tracking-widest"><th className="px-8 py-5">Razão Social / CNPJ</th><th className="px-6 py-5 text-center">Mix Positivado</th><th className="px-6 py-5 text-right">Unidades</th>{boxConfigs.length > 0 && <th className="px-6 py-5 text-right">Caixas</th>}<th className="px-8 py-5 text-right">Última Compra</th></tr></thead><tbody className="divide-y divide-slate-100 font-bold text-slate-700 uppercase text-xs">{(() => {
+                            <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm"><table className="w-full text-left border-collapse"><thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10"><tr className="text-slate-400 text-[9px] font-black uppercase tracking-widest"><th className="px-8 py-5">Razão Social / CNPJ</th><th className="px-6 py-5">Produto</th><th className="px-6 py-5 text-right">Unidades</th>{boxConfigs.length > 0 && <th className="px-6 py-5 text-right">Caixas</th>}<th className="px-8 py-5 text-right">Última Compra</th></tr></thead><tbody className="divide-y divide-slate-100 font-bold text-slate-700 uppercase text-xs">{(() => {
                                 const clientMap = new Map<string, any>();
                                 const clientLookup = new Map(totalDataStore.clients.map(c => [String(c.cnpj).replace(/\D/g, ''), c]));
                                 
