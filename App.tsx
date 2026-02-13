@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { LoginScreen } from './components/LoginScreen';
 import { Dashboard } from './components/Dashboard';
@@ -29,6 +30,7 @@ import { ManagerAnalysisScreen } from './components/manager/ManagerAnalysisScree
 import { ManagerDetailedAnalysisScreen } from './components/manager/ManagerDetailedAnalysisScreen';
 import { ManagerUsersScreen } from './components/manager/ManagerUsersScreen';
 import { ManagerScoreCardScreen } from './components/manager/ManagerScoreCardScreen';
+import { ManagerProductAnalysisScreen } from './components/manager/ManagerProductAnalysisScreen';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -56,7 +58,6 @@ const App: React.FC = () => {
       setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
       
       if (role === 'rep') {
-          // Usamos window.setTimeout para evitar conflito com tipos de retorno
           noticeTimer = window.setTimeout(() => checkImportantNotices(id), 5 * 60 * 1000);
       }
     }
@@ -208,6 +209,7 @@ const App: React.FC = () => {
                 {currentView === 'admin-notifications' && <ManagerNotificationsScreen />}
                 {currentView === 'admin-users' && <ManagerUsersScreen />}
                 {currentView === 'admin-scorecard' && <ManagerScoreCardScreen />}
+                {currentView === 'admin-product-analysis' && <ManagerProductAnalysisScreen />}
                 {currentView === 'admin-clients' && <ManagerClientsScreen />}
                 {currentView === 'admin-targets' && <ManagerTargetsScreen />}
                </>

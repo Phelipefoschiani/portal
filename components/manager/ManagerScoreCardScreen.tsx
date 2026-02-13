@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Trophy, Target, Users, ShoppingBag, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, AlertCircle, Search, User, Filter, Medal, Activity, BarChart3, Star, Percent, Info, ChevronDown, CheckSquare, Square, Tag, Package, X, Briefcase, CheckCircle2, XCircle, Download, Loader2 } from 'lucide-react';
+import { Trophy, Target, Users, ShoppingBag, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, AlertCircle, Search, User, Filter, Medal, Activity, BarChart3, Star, Percent, Info, ChevronDown, CheckSquare, Square, Tag, Package, X, Briefcase, CheckCircle2, XCircle, Download, Loader2, Sparkles } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
@@ -29,7 +29,6 @@ const ScoreRulesModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
                     <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                            <span className="text-xs font-black text-slate-700 uppercase">2. Qualidade da Carteira</span>
                             <span className="text-xs font-black text-purple-600 bg-purple-50 px-2 py-1 rounded-lg">Peso 25%</span>
                         </div>
                         <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
@@ -40,7 +39,6 @@ const ScoreRulesModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
                     <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                            <span className="text-xs font-black text-slate-700 uppercase">3. Evolução de Mix</span>
                             <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">Peso 15%</span>
                         </div>
                         <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
@@ -69,7 +67,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
     const [isExporting, setIsExporting] = useState(false);
     
     const dropdownRef = useRef<HTMLDivElement>(null);
-    // Ref específica para o container de exportação
     const exportRef = useRef<HTMLDivElement>(null);
 
     const users = totalDataStore.users.sort((a, b) => a.nome.localeCompare(b.nome));
@@ -102,13 +99,11 @@ export const ManagerScoreCardScreen: React.FC = () => {
         return `${selectedMonths.length} MESES`;
     };
     
-    // Motor de Cálculo do Score
     const scoreData = useMemo(() => {
         const sales = totalDataStore.sales;
         const targets = totalDataStore.targets;
         const clients = totalDataStore.clients;
 
-        // Filtro Base
         const filterSales = (s: any, yearToCheck: number) => {
             const d = new Date(s.data + 'T00:00:00');
             const m = d.getUTCMonth() + 1;
@@ -116,35 +111,25 @@ export const ManagerScoreCardScreen: React.FC = () => {
             return y === yearToCheck && selectedMonths.includes(m) && (selectedRepId === 'all' ? true : s.usuario_id === selectedRepId);
         };
         
-        // Vendas Atuais
         const currentSales = sales.filter(s => filterSales(s, selectedYear));
-        
-        // Vendas Ano Anterior (Para Comparativo de Mix e Crescimento Clientes)
         const prevSales = sales.filter(s => filterSales(s, selectedYear - 1));
-        
-        // Métricas Totais
         const totalFaturado = currentSales.reduce((acc, curr) => acc + Number(curr.faturamento), 0);
         
-        // Meta
         const currentTargets = targets.filter(t => t.ano === selectedYear && selectedMonths.includes(t.mes) && (selectedRepId === 'all' ? true : t.usuario_id === selectedRepId));
         const totalMeta = currentTargets.reduce((acc, curr) => acc + Number(curr.valor), 0);
 
-        // Positivação
         const activeCnpjs = new Set(currentSales.map(s => String(s.cnpj || '').replace(/\D/g, '')));
         const totalPortfolio = clients.filter(c => selectedRepId === 'all' ? true : c.usuario_id === selectedRepId).length || 1; 
         const positivacaoCount = activeCnpjs.size;
         
-        // Mix e Ticket
         const uniqueSkus = new Set(currentSales.map(s => s.codigo_produto)).size;
         const uniqueSkusPrev = new Set(prevSales.map(s => s.codigo_produto)).size;
         
-        // Média Mensal
         const monthsCount = selectedMonths.length || 1;
         const mediaMensal = totalFaturado / monthsCount;
 
-        // --- ALGORITMO DE SCORE (0 a 100) - RÍGIDO ---
-        const pctMeta = totalMeta > 0 ? (totalFaturado / totalMeta) : 0;
-        const scoreFinanceiro = Math.min(pctMeta, 1.0) * 60; 
+        const pctMeta = totalMeta > 0 ? (totalFaturado / totalMeta) * 100 : 0;
+        const scoreFinanceiro = Math.min((totalFaturado / (totalMeta || 1)), 1.0) * 60; 
 
         const pctPositivacao = (positivacaoCount / totalPortfolio);
         const scoreCarteira = Math.min(pctPositivacao, 1.0) * 25;
@@ -160,7 +145,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
 
         const finalScore = Math.round(scoreFinanceiro + scoreCarteira + scoreMix);
 
-        // Dados Mensais para Tabela
         const monthlyData = selectedMonths.sort((a,b) => a-b).map(month => {
             const mSales = currentSales.filter(s => {
                 const d = new Date(s.data + 'T00:00:00');
@@ -174,7 +158,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
 
         const monthsHit = monthlyData.filter(m => m.target > 0 && m.sales >= m.target).length;
 
-        // --- ANÁLISE DE SEGMENTAÇÃO (Canais) ---
         const segmentMap = new Map<string, number>();
         currentSales.forEach(s => {
             const seg = s.canal_vendas || 'GERAL / OUTROS';
@@ -184,7 +167,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
             .map(([label, value]) => ({ label, value, percent: totalFaturado > 0 ? (value / totalFaturado) * 100 : 0 }))
             .sort((a, b) => b.value - a.value);
 
-        // --- TOP PRODUTOS (Em %) ---
         const productMap = new Map<string, number>();
         currentSales.forEach(s => {
             const prod = s.produto || 'PRODUTO N/I';
@@ -199,7 +181,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
             .sort((a, b) => b.value - a.value)
             .slice(0, 5);
 
-        // --- TOP CLIENTES (Em % e Atingimento vs Ano Anterior) ---
         const clientMap = new Map<string, { current: number, prev: number }>();
         const clientNameMap = new Map<string, string>();
         
@@ -225,7 +206,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
 
         const topClients = Array.from(clientMap.entries())
             .map(([cnpj, data]) => {
-                // Cálculo de atingimento: (Atual / Anterior) * 100
                 const achievement = data.prev > 0 ? (data.current / data.prev) * 100 : (data.current > 0 ? 100 : 0);
                 return {
                     name: clientNameMap.get(cnpj) || 'Cliente',
@@ -241,7 +221,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
         return {
             totalFaturado,
             totalMeta,
-            pctMeta: pctMeta * 100,
+            pctMeta,
             positivacaoCount,
             totalPortfolio,
             pctPositivacao: pctPositivacao * 100,
@@ -262,81 +242,63 @@ export const ManagerScoreCardScreen: React.FC = () => {
     }, [selectedYear, selectedRepId, selectedMonths]);
 
     const getScoreLabel = (score: number) => {
-        if (score >= 90) return { label: 'ELITE', color: 'text-blue-500', bg: 'bg-blue-500', border: 'border-blue-200' };
-        if (score >= 80) return { label: 'ALTA PERFORMANCE', color: 'text-emerald-500', bg: 'bg-emerald-500', border: 'border-emerald-200' };
-        if (score >= 60) return { label: 'REGULAR', color: 'text-amber-500', bg: 'bg-amber-500', border: 'border-amber-200' };
-        return { label: 'CRÍTICO', color: 'text-red-500', bg: 'bg-red-500', border: 'border-red-200' };
+        if (score >= 90) return { label: 'ELITE', color: 'text-blue-500', bg: 'bg-blue-500', border: 'border-blue-200', hex: '#3b82f6', bgHex: '#eff6ff' };
+        if (score >= 80) return { label: 'ALTA PERFORMANCE', color: 'text-emerald-500', bg: 'bg-emerald-500', border: 'border-emerald-200', hex: '#10b981', bgHex: '#ecfdf5' };
+        if (score >= 60) return { label: 'REGULAR', color: 'text-amber-500', bg: 'bg-amber-500', border: 'border-amber-200', hex: '#f59e0b', bgHex: '#fffbeb' };
+        return { label: 'CRÍTICO', color: 'text-red-500', bg: 'bg-red-500', border: 'border-red-200', hex: '#ef4444', bgHex: '#fef2f2' };
     };
 
     const scoreStyle = getScoreLabel(scoreData.finalScore);
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
-    // Helpers de Cores para o Export (Evita classes Tailwind dinâmicas no html2canvas que podem falhar)
-    const getHexColor = (colorClass: string) => {
-        if (colorClass.includes('blue')) return '#3b82f6';
-        if (colorClass.includes('emerald')) return '#10b981';
-        if (colorClass.includes('amber')) return '#f59e0b';
-        if (colorClass.includes('red')) return '#ef4444';
-        return '#3b82f6';
-    };
-
-    const getBorderHex = (borderClass: string) => {
-        if (borderClass.includes('blue')) return '#bfdbfe';
-        if (borderClass.includes('emerald')) return '#a7f3d0';
-        if (borderClass.includes('amber')) return '#fde68a';
-        if (borderClass.includes('red')) return '#fecaca';
-        return '#bfdbfe';
-    };
-
     const handleExportImage = async () => {
         if (!exportRef.current) return;
         setIsExporting(true);
+        
         try {
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 2000));
             
             const element = exportRef.current;
-            
-            // Força o scroll para o topo para garantir que html2canvas capture desde o início
-            window.scrollTo(0, 0);
+            element.style.display = 'block';
+            element.style.visibility = 'visible';
 
             const canvas = await html2canvas(element, {
-                scale: 2, 
+                scale: 3, 
                 useCORS: true,
-                backgroundColor: '#ffffff', // Força fundo branco sólido
+                allowTaint: true,
+                backgroundColor: '#ffffff',
                 logging: false,
                 width: 1200, 
-                windowWidth: 1200,
-                // IMPORTANTE: Definir altura explicitamente baseada no scrollHeight do elemento
-                height: element.scrollHeight,
-                windowHeight: element.scrollHeight,
-                x: 0,
-                y: 0,
+                height: element.offsetHeight,
                 scrollX: 0,
                 scrollY: 0,
+                windowWidth: 1200,
                 onclone: (clonedDoc) => {
                     const el = clonedDoc.getElementById('scorecard-export-content');
                     if (el) {
-                        // Garante que no clone o elemento seja visível e tenha o estilo correto
-                        el.style.display = 'block'; 
+                        el.style.display = 'block';
                         el.style.visibility = 'visible';
-                        el.style.position = 'static'; // Reseta posicionamento para fluxo normal
-                        el.style.width = '1200px';
-                        el.style.height = 'auto';
-                        el.style.padding = '40px';
-                        el.style.margin = '0';
-                        el.style.backgroundColor = '#ffffff';
+                        el.style.position = 'static';
+                        el.style.transform = 'none';
+                        el.style.margin = '0 auto';
                     }
                 }
             });
             
+            element.style.display = 'none';
+            element.style.visibility = 'hidden';
+
             const link = document.createElement('a');
             const repName = selectedRepId === 'all' ? 'Regional' : users.find(u => u.id === selectedRepId)?.nome || 'Representante';
             link.download = `ScoreCard_${repName.replace(/\s/g, '_')}_${selectedYear}.png`;
-            link.href = canvas.toDataURL('image/png');
+            link.href = canvas.toDataURL('image/png', 1.0);
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
+            
         } catch (e) {
             console.error('Export error:', e);
-            alert('Erro ao gerar imagem.');
+            alert('Falha ao gerar imagem.');
         } finally {
             setIsExporting(false);
         }
@@ -344,6 +306,19 @@ export const ManagerScoreCardScreen: React.FC = () => {
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-20">
+            {/* Overlay de carregamento global para o export */}
+            {isExporting && createPortal(
+                <div className="fixed inset-0 z-[500] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center text-white">
+                    <div className="relative mb-8">
+                        <div className="w-24 h-24 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+                        <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 text-blue-400 animate-pulse" />
+                    </div>
+                    <h3 className="text-2xl font-black uppercase tracking-widest mb-2 text-center px-4">Gerando Score Card Realista</h3>
+                    <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.3em] animate-pulse">Organizando métricas e indicadores...</p>
+                </div>,
+                document.body
+            )}
+
             {/* Header */}
             <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
                 <div className="flex items-center gap-4">
@@ -361,10 +336,19 @@ export const ManagerScoreCardScreen: React.FC = () => {
                     <button 
                         onClick={handleExportImage}
                         disabled={isExporting}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-slate-800 transition-all disabled:opacity-50"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-slate-800 transition-all disabled:opacity-50 min-w-[180px] justify-center"
                     >
-                        {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                        Compartilhar Card
+                        {isExporting ? (
+                            <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                Carregando...
+                            </>
+                        ) : (
+                            <>
+                                <Download className="w-3.5 h-3.5" />
+                                Compartilhar Card
+                            </>
+                        )}
                     </button>
 
                     <div className="relative flex-1 md:flex-none w-full md:w-48">
@@ -394,7 +378,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                                 setTempSelectedMonths([...selectedMonths]);
                                 setShowMonthDropdown(!showMonthDropdown);
                             }}
-                            className="w-full md:w-auto bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase flex items-center justify-between gap-3 shadow-sm hover:bg-slate-50"
+                            className="w-full md:w-auto bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50"
                         >
                             <span className="truncate max-w-[120px]">{getMonthsLabel()}</span>
                             <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
@@ -411,7 +395,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                                         <button 
                                             key={i} 
                                             onClick={() => toggleTempMonth(i + 1)}
-                                            className={`flex items-center gap-2 p-2.5 rounded-xl text-[10px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                                            className={`flex items-center gap-2 p-2 rounded-xl text-[10px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
                                         >
                                             {tempSelectedMonths.includes(i + 1) ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 opacity-20" />}
                                             {m}
@@ -432,12 +416,8 @@ export const ManagerScoreCardScreen: React.FC = () => {
                 </div>
             </div>
 
-            {/* VISUALIZAÇÃO NA TELA (INTERATIVA) */}
+            {/* VISUALIZAÇÃO NA TELA */}
             <div className="space-y-6">
-                {/* Score Card + KPIs - Reutiliza mesmos componentes do export */}
-                {/* ... (Renderização normal dos cards - mantida igual para o usuário interagir) ... */}
-                {/* Por brevidade, vou renderizar o conteúdo principal abaixo, mas o importante é o exportRef */}
-                
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                     <div className="lg:col-span-4 bg-white rounded-[40px] border border-slate-200 shadow-lg p-8 flex flex-col items-center justify-center relative overflow-hidden">
                         <button onClick={() => setShowInfoModal(true)} className="absolute top-4 right-4 p-2 bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><Info className="w-4 h-4" /></button>
@@ -472,7 +452,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Top Clientes - Visualização Tela */}
                     <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-full">
                         <div className="flex items-center gap-3 mb-6"><Briefcase className="w-5 h-5 text-emerald-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top 5 Clientes</h3></div>
                         {scoreData.topClients.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem clientes</p></div>) : (
@@ -489,7 +468,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             </div>
                         )}
                     </div>
-                    {/* Top Produtos - Visualização Tela */}
                     <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-full">
                         <div className="flex items-center gap-3 mb-6"><Package className="w-5 h-5 text-purple-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top 5 Produtos</h3></div>
                         {scoreData.topProducts.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><ShoppingBag className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem vendas</p></div>) : (
@@ -506,7 +484,6 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             </div>
                         )}
                     </div>
-                    {/* Segmentação - Visualização Tela */}
                     <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col h-full">
                         <div className="flex items-center gap-3 mb-6"><Tag className="w-5 h-5 text-blue-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Segmentação</h3></div>
                         {scoreData.segmentationData.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem dados</p></div>) : (
@@ -537,112 +514,217 @@ export const ManagerScoreCardScreen: React.FC = () => {
                 </div>
             </div>
 
-            {/* --- LAYOUT DEDICADO PARA EXPORTAÇÃO (INVISÍVEL NA TELA) --- */}
-            {/* Este layout tem largura fixa de 1200px para evitar quebra de texto e fundo branco sólido */}
-            <div ref={exportRef} id="scorecard-export-content" style={{ position: 'fixed', left: '-9999px', top: 0, width: '1200px', backgroundColor: '#ffffff', padding: '40px', visibility: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '30px', borderBottom: '2px solid #f1f5f9', paddingBottom: '20px' }}>
+            {/* --- LAYOUT DEDICADO PARA EXPORTAÇÃO (SÓ APARECE DURANTE O CAPTURE) --- */}
+            <div 
+                ref={exportRef} 
+                id="scorecard-export-content" 
+                style={{ 
+                    position: 'fixed', 
+                    left: '-9999px', 
+                    top: 0, 
+                    width: '1200px', 
+                    backgroundColor: '#ffffff', 
+                    padding: '60px',
+                    visibility: 'hidden',
+                    display: 'none',
+                    zIndex: -1,
+                    fontFamily: "'Inter', sans-serif"
+                }}
+            >
+                {/* Header Export */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '60px', borderBottom: '4px solid #0f172a', paddingBottom: '30px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                        <div style={{ padding: '15px', backgroundColor: '#0f172a', borderRadius: '16px', color: 'white' }}><Trophy style={{ width: '32px', height: '32px', color: '#facc15' }} /></div>
-                        <div>
-                            <h2 style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', margin: 0 }}>Score Card</h2>
-                            <p style={{ fontSize: '12px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px', marginTop: '5px' }}>{selectedRepId === 'all' ? 'VISÃO REGIONAL' : users.find(u => u.id === selectedRepId)?.nome || 'REPRESENTANTE'} • {getMonthsLabel()} {selectedYear}</p>
+                        <div style={{ padding: '20px', backgroundColor: '#0f172a', borderRadius: '24px', color: 'white' }}>
+                            <svg width="35" height="35" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg>
                         </div>
+                        <div>
+                            <h2 style={{ fontSize: '32px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', margin: 0, letterSpacing: '-1px', lineHeight: '1.1' }}>Score Card Performance</h2>
+                            <p style={{ fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginTop: '5px' }}>
+                                {selectedRepId === 'all' ? 'VISÃO REGIONAL CONSOLIDADA' : users.find(u => u.id === selectedRepId)?.nome || 'REPRESENTANTE'} • {getMonthsLabel()} {selectedYear}
+                            </p>
+                        </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                        <p style={{ fontSize: '10px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px' }}>Data da Emissão</p>
+                        <p style={{ fontSize: '14px', fontWeight: '900', color: '#0f172a', marginTop: '2px' }}>{new Date().toLocaleDateString('pt-BR')}</p>
                     </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '30px', marginBottom: '30px' }}>
-                    {/* Score Principal (SEM OVERFLOW HIDDEN) */}
-                    <div style={{ backgroundColor: '#ffffff', borderRadius: '32px', border: '2px solid #e2e8f0', padding: '30px', textAlign: 'center', position: 'relative' }}>
-                        <div style={{ height: '8px', width: '100%', backgroundColor: getHexColor(scoreStyle.bg), position: 'absolute', top: 0, left: 0, borderTopLeftRadius: '30px', borderTopRightRadius: '30px' }}></div>
-                        <p style={{ fontSize: '12px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '3px' }}>Pontuação Geral</p>
-                        {/* Line height fix to prevent cutting */}
-                        <h1 style={{ fontSize: '96px', fontWeight: '900', margin: '10px 0', lineHeight: '1', color: getHexColor(scoreStyle.color) }}>{scoreData.finalScore}</h1>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '8px 20px', borderRadius: '99px', border: `2px solid ${getBorderHex(scoreStyle.border)}`, backgroundColor: '#f8fafc' }}>
-                            <span style={{ fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px', color: getHexColor(scoreStyle.color) }}>Nível {scoreStyle.label}</span>
+                    {/* Score Central Export - Corrigido para garantir respiro vertical total e centralização da pontuação */}
+                    <div style={{ 
+                        backgroundColor: '#ffffff', 
+                        borderRadius: '40px', 
+                        border: '4px solid #f1f5f9', 
+                        padding: '80px 30px', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        textAlign: 'center', 
+                        position: 'relative',
+                        minHeight: '520px'
+                    }}>
+                        <div style={{ height: '10px', width: '100%', backgroundColor: scoreStyle.hex, position: 'absolute', top: 0, left: 0, borderTopLeftRadius: '36px', borderTopRightRadius: '36px' }}></div>
+                        
+                        <p style={{ fontSize: '15px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '5px', marginBottom: '40px' }}>Pontuação Final</p>
+                        
+                        <h1 style={{ fontSize: '150px', fontWeight: '900', margin: 0, lineHeight: '1', color: scoreStyle.hex, letterSpacing: '-8px' }}>
+                            {scoreData.finalScore}
+                        </h1>
+                        
+                        {/* Selo de Nível - Ajustado para ser simétrico em relação ao título superior */}
+                        <div style={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '12px',
+                            padding: '14px 35px', 
+                            borderRadius: '99px', 
+                            border: `4px solid ${scoreStyle.hex}`, 
+                            backgroundColor: scoreStyle.bgHex,
+                            minWidth: '260px',
+                            marginTop: '40px',
+                            marginBottom: '40px'
+                        }}>
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={scoreStyle.hex} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M8.21 13.89L7 23l5-3 5 3-1.21-9.12"></path><circle cx="12" cy="8" r="7"></circle></svg>
+                            <span style={{ fontSize: '17px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px', color: scoreStyle.hex }}>Nível {scoreStyle.label}</span>
+                        </div>
+
+                        {/* Pontuações individuais de rodapé */}
+                        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '10px' }}>
+                            <div style={{ textAlign: 'center' }}>
+                                <p style={{ fontSize: '10px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Meta</p>
+                                <div style={{ height: '8px', backgroundColor: '#f1f5f9', borderRadius: '99px', marginBottom: '8px', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${Math.min(scoreData.pctMeta, 100)}%`, backgroundColor: '#3b82f6', borderRadius: '99px', position: 'absolute', top: 0, left: 0 }}></div>
+                                </div>
+                                <p style={{ fontSize: '13px', fontWeight: '900', color: '#334155' }}>{scoreData.scoreFinanceiro.toFixed(1)} <span style={{ fontSize: '10px', color: '#cbd5e1' }}>/ 60</span></p>
+                            </div>
+                            <div style={{ textAlign: 'center' }}>
+                                <p style={{ fontSize: '10px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Portfólio</p>
+                                <div style={{ height: '8px', backgroundColor: '#f1f5f9', borderRadius: '99px', marginBottom: '8px', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${Math.min(scoreData.pctPositivacao, 100)}%`, backgroundColor: '#a855f7', borderRadius: '99px', position: 'absolute', top: 0, left: 0 }}></div>
+                                </div>
+                                <p style={{ fontSize: '13px', fontWeight: '900', color: '#334155' }}>{scoreData.scoreCarteira.toFixed(1)} <span style={{ fontSize: '10px', color: '#cbd5e1' }}>/ 25</span></p>
+                            </div>
+                            <div style={{ textAlign: 'center' }}>
+                                <p style={{ fontSize: '10px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Mix</p>
+                                <div style={{ height: '8px', backgroundColor: '#f1f5f9', borderRadius: '99px', marginBottom: '8px', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${Math.min(scoreData.mixEvolutionPct, 100)}%`, backgroundColor: '#10b981', borderRadius: '99px', position: 'absolute', top: 0, left: 0 }}></div>
+                                </div>
+                                <p style={{ fontSize: '13px', fontWeight: '900', color: '#334155' }}>{scoreData.scoreMix.toFixed(1)} <span style={{ fontSize: '10px', color: '#cbd5e1' }}>/ 15</span></p>
+                            </div>
                         </div>
                     </div>
                     
+                    {/* Quadrantes KPI Export */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                        <div style={{ backgroundColor: '#0f172a', color: 'white', padding: '25px', borderRadius: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                            <div><p style={{ fontSize: '11px', fontWeight: '900', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '1px' }}>Performance Financeira</p><h3 style={{ fontSize: '28px', fontWeight: '900', margin: '5px 0' }}>{formatBRL(scoreData.totalFaturado)}</h3><p style={{ fontSize: '11px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase' }}>Meta: {formatBRL(scoreData.totalMeta)}</p></div>
-                            <div style={{ marginTop: '15px', padding: '5px 10px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', width: 'fit-content', fontSize: '12px', fontWeight: '800' }}>{scoreData.pctMeta.toFixed(2)}% Atingimento</div>
+                        <div style={{ backgroundColor: '#0f172a', color: 'white', padding: '30px', borderRadius: '32px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', borderBottom: '6px solid #3b82f6' }}>
+                            <div>
+                                <p style={{ fontSize: '11px', fontWeight: '900', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '2px' }}>Faturamento Real</p>
+                                <h3 style={{ fontSize: '32px', fontWeight: '900', margin: '10px 0' }}>{formatBRL(scoreData.totalFaturado)}</h3>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase' }}>Meta: {formatBRL(scoreData.totalMeta)}</p>
+                            </div>
+                            <div style={{ marginTop: '20px', height: '8px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '99px' }}>
+                                <div style={{ height: '100%', width: `${Math.min(scoreData.pctMeta, 100)}%`, backgroundColor: '#3b82f6', borderRadius: '99px' }}></div>
+                            </div>
+                            <p style={{ fontSize: '11px', fontWeight: '900', color: '#60a5fa', marginTop: '10px' }}>{scoreData.pctMeta.toFixed(2)}% de Atingimento</p>
                         </div>
-                        <div style={{ backgroundColor: '#ffffff', border: '2px solid #e2e8f0', padding: '25px', borderRadius: '24px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><div><p style={{ fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Carteira</p><h3 style={{ fontSize: '28px', fontWeight: '900', margin: '5px 0', color: '#0f172a' }}>{scoreData.positivacaoCount} <span style={{ fontSize: '16px', color: '#94a3b8' }}>/ {scoreData.totalPortfolio}</span></h3></div></div>
-                            <div style={{ marginTop: '10px', fontSize: '12px', fontWeight: '800', color: '#2563eb', backgroundColor: '#eff6ff', padding: '5px 10px', borderRadius: '8px', width: 'fit-content' }}>{scoreData.pctPositivacao.toFixed(1)}% Positivado</div>
+                        <div style={{ backgroundColor: '#ffffff', border: '4px solid #f1f5f9', padding: '30px', borderRadius: '32px' }}>
+                            <p style={{ fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px' }}>Positivação Carteira</p>
+                            <h3 style={{ fontSize: '32px', fontWeight: '900', margin: '10px 0', color: '#0f172a' }}>{scoreData.positivacaoCount} <span style={{ fontSize: '18px', color: '#cbd5e1' }}>/ {scoreData.totalPortfolio}</span></h3>
+                            <div style={{ display: 'inline-block', marginTop: '10px', fontSize: '11px', fontWeight: '900', color: '#2563eb', backgroundColor: '#eff6ff', padding: '8px 16px', borderRadius: '12px' }}>{scoreData.pctPositivacao.toFixed(1)}% Cobertura</div>
                         </div>
-                        <div style={{ backgroundColor: '#ffffff', border: '2px solid #e2e8f0', padding: '25px', borderRadius: '24px' }}>
-                            <p style={{ fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Média Mensal</p><h3 style={{ fontSize: '28px', fontWeight: '900', margin: '5px 0', color: '#059669' }}>{formatBRL(scoreData.mediaMensal)}</h3>
+                        <div style={{ backgroundColor: '#ffffff', border: '4px solid #f1f5f9', padding: '30px', borderRadius: '32px' }}>
+                            <p style={{ fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px' }}>Média de Vendas</p>
+                            <h3 style={{ fontSize: '32px', fontWeight: '900', margin: '10px 0', color: '#059669' }}>{formatBRL(scoreData.mediaMensal)}</h3>
+                            <p style={{ fontSize: '10px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Consolidado Médio do Período</p>
                         </div>
-                        <div style={{ backgroundColor: '#ffffff', border: '2px solid #e2e8f0', padding: '25px', borderRadius: '24px' }}>
-                            <p style={{ fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Mix SKUs</p><h3 style={{ fontSize: '28px', fontWeight: '900', margin: '5px 0', color: '#7c3aed' }}>{scoreData.uniqueSkus}</h3>
+                        <div style={{ backgroundColor: '#ffffff', border: '4px solid #f1f5f9', padding: '30px', borderRadius: '32px' }}>
+                            <p style={{ fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '2px' }}>Mix de SKUs Ativos</p>
+                            <h3 style={{ fontSize: '32px', fontWeight: '900', margin: '10px 0', color: '#7c3aed' }}>{scoreData.uniqueSkus} <span style={{ fontSize: '18px', color: '#cbd5e1' }}>itens</span></h3>
+                            <p style={{ fontSize: '10px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>vs {scoreData.uniqueSkusPrev} do Ano Anterior</p>
                         </div>
                     </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '30px' }}>
-                    {/* Top Clientes Fixed Layout */}
-                    <div style={{ backgroundColor: '#ffffff', border: '2px solid #e2e8f0', borderRadius: '24px', padding: '25px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}><Briefcase size={20} color="#059669" /><h3 style={{ fontSize: '14px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '1px' }}>Top 5 Clientes</h3></div>
+                    {/* Top Clientes Export - Corrigido para evitar nomes cortados e melhorar alinhamento */}
+                    <div style={{ backgroundColor: '#ffffff', border: '4px solid #f1f5f9', borderRadius: '32px', padding: '25px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                            Top 5 Clientes
+                        </h3>
                         {scoreData.topClients.map((client, idx) => (
-                            <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, overflow: 'hidden' }}>
-                                    <div style={{ width: '24px', height: '24px', backgroundColor: idx===0?'#059669':'#f1f5f9', color: idx===0?'white':'#64748b', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '900' }}>{idx+1}</div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                        <span style={{ fontSize: '11px', fontWeight: '800', color: '#334155', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>{client.name}</span>
-                                        <span style={{ fontSize: '10px', fontWeight: '800', color: client.achievement >= 100 ? '#059669' : '#ef4444' }}>{client.achievement >= 100 ? '▲' : '▼'} {client.achievement.toFixed(0)}% vs Ano Ant</span>
+                            <div key={idx} style={{ display: 'flex', alignItems: 'center', padding: '16px 0', borderBottom: idx === 4 ? 'none' : '2px solid #f8fafc', justifyContent: 'space-between', gap: '15px', minHeight: '60px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
+                                    <div style={{ width: '32px', height: '32px', backgroundColor: idx === 0 ? '#059669' : '#f1f5f9', color: idx === 0 ? 'white' : '#94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '900', flexShrink: 0 }}>{idx + 1}</div>
+                                    <div style={{ minWidth: 0 }}>
+                                        <p style={{ fontSize: '11px', fontWeight: '900', color: '#334155', textTransform: 'uppercase', margin: 0, lineHeight: '1.4', whiteSpace: 'normal', wordBreak: 'break-word' }}>{client.name}</p>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                            {client.achievement >= 100 ? (
+                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                                            ) : (
+                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                            )}
+                                            <span style={{ fontSize: '10px', fontWeight: '900', color: client.achievement >= 100 ? '#059669' : '#ef4444' }}>
+                                                {client.achievement.toFixed(0)}% vs {selectedYear - 1}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
-                                <div style={{ textAlign: 'right', minWidth: '60px' }}>
-                                    <span style={{ fontSize: '11px', fontWeight: '900', color: '#047857' }}>{client.percent.toFixed(1)}%</span>
-                                </div>
+                                <span style={{ fontSize: '14px', fontWeight: '900', color: '#059669', flexShrink: 0, alignSelf: 'flex-start' }}>{client.percent.toFixed(1)}%</span>
                             </div>
                         ))}
                     </div>
 
-                    {/* Top Produtos Fixed Layout */}
-                    <div style={{ backgroundColor: '#ffffff', border: '2px solid #e2e8f0', borderRadius: '24px', padding: '25px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}><Package size={20} color="#7c3aed" /><h3 style={{ fontSize: '14px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '1px' }}>Top 5 Produtos</h3></div>
+                    {/* Principais Itens Export - Corrigido para nomes longos e respiro vertical */}
+                    <div style={{ backgroundColor: '#ffffff', border: '4px solid #f1f5f9', borderRadius: '32px', padding: '25px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15"></path><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
+                            Principais Itens
+                        </h3>
                         {scoreData.topProducts.map((prod, idx) => (
-                            <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, overflow: 'hidden' }}>
-                                    <div style={{ width: '24px', height: '24px', backgroundColor: idx===0?'#7c3aed':'#f1f5f9', color: idx===0?'white':'#64748b', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '900' }}>{idx+1}</div>
-                                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#334155', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>{prod.name}</span>
+                            <div key={idx} style={{ display: 'flex', alignItems: 'center', padding: '18px 0', borderBottom: idx === 4 ? 'none' : '2px solid #f8fafc', justifyContent: 'space-between', gap: '15px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                                    <div style={{ width: '30px', height: '30px', backgroundColor: idx === 0 ? '#7c3aed' : '#f1f5f9', color: idx === 0 ? 'white' : '#94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '900', flexShrink: 0 }}>{idx + 1}</div>
+                                    <p style={{ fontSize: '11px', fontWeight: '900', color: '#334155', textTransform: 'uppercase', margin: 0, lineHeight: '1.5', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{prod.name}</p>
                                 </div>
-                                <div style={{ textAlign: 'right', minWidth: '50px' }}>
-                                    <span style={{ fontSize: '11px', fontWeight: '900', color: '#6d28d9' }}>{prod.percent.toFixed(1)}%</span>
-                                </div>
+                                <span style={{ fontSize: '13px', fontWeight: '900', color: '#7c3aed', flexShrink: 0, alignSelf: 'flex-start' }}>{prod.percent.toFixed(1)}%</span>
                             </div>
                         ))}
                     </div>
 
-                    {/* Segmentação Fixed Layout */}
-                    <div style={{ backgroundColor: '#ffffff', border: '2px solid #e2e8f0', borderRadius: '24px', padding: '25px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}><Tag size={20} color="#2563eb" /><h3 style={{ fontSize: '14px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '1px' }}>Segmentação</h3></div>
-                        {scoreData.segmentationData.slice(0, 5).map((seg, idx) => (
-                            <div key={idx} style={{ marginBottom: '15px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#334155', textTransform: 'uppercase' }}>{seg.label}</span>
-                                    <span style={{ fontSize: '11px', fontWeight: '900', color: '#2563eb' }}>{seg.percent.toFixed(1)}%</span>
+                    {/* Canais Export */}
+                    <div style={{ backgroundColor: '#ffffff', border: '4px solid #f1f5f9', borderRadius: '32px', padding: '25px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2H2v10h10H12z"></path><path d="M22 12H12v10h10H22z"></path><path d="M12 12H2v10h10H12z"></path><path d="M22 2H12v10h10H22z"></path></svg>
+                            Mix de Canais
+                        </h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            {scoreData.segmentationData.slice(0, 5).map((seg, idx) => (
+                                <div key={idx}>
+                                    <div style={{ display: 'flex', marginBottom: '8px', justifyContent: 'space-between' }}>
+                                        <span style={{ fontSize: '11px', fontWeight: '900', color: '#334155', textTransform: 'uppercase' }}>{seg.label}</span>
+                                        <span style={{ fontSize: '11px', fontWeight: '900', color: '#3b82f6' }}>{seg.percent.toFixed(1)}%</span>
+                                    </div>
+                                    <div style={{ width: '100%', height: '8px', backgroundColor: '#f1f5f9', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}>
+                                        <div style={{ height: '100%', width: `${Math.min(seg.percent, 100)}%`, backgroundColor: '#3b82f6', borderRadius: '99px', position: 'absolute', top: 0, left: 0 }}></div>
+                                    </div>
                                 </div>
-                                <div style={{ width: '100%', height: '6px', backgroundColor: '#f1f5f9', borderRadius: '99px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', width: `${Math.min(seg.percent, 100)}%`, backgroundColor: '#2563eb' }}></div>
-                                </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                {/* Table Fixed Layout */}
-                <div style={{ border: '2px solid #e2e8f0', borderRadius: '24px', overflow: 'hidden' }}>
+                <div style={{ border: '3px solid #f1f5f9', borderRadius: '32px', overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                        <thead style={{ backgroundColor: '#f8fafc', borderBottom: '3px solid #f1f5f9' }}>
                             <tr>
-                                <th style={{ padding: '15px 25px', textAlign: 'left', fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Mês</th>
-                                <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Meta</th>
-                                <th style={{ padding: '15px 25px', textAlign: 'right', fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Realizado</th>
-                                <th style={{ padding: '15px 25px', textAlign: 'center', fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Status</th>
-                                <th style={{ padding: '15px 25px', textAlign: 'center', fontSize: '11px', fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Eficiência</th>
+                                <th style={{ padding: '20px 30px', textAlign: 'left', fontSize: '12px', fontWeight: '900', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Mês Analítico</th>
+                                <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '12px', fontWeight: '900', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Cota</th>
+                                <th style={{ padding: '20px 30px', textAlign: 'right', fontSize: '12px', fontWeight: '900', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Realizado</th>
+                                <th style={{ padding: '20px 30px', textAlign: 'center', fontSize: '12px', fontWeight: '900', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Eficiência</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -650,21 +732,16 @@ export const ManagerScoreCardScreen: React.FC = () => {
                                 const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                                 const isSuccess = achievement >= 100;
                                 return (
-                                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                        <td style={{ padding: '15px 25px', fontSize: '12px', fontWeight: '800', color: '#334155', textTransform: 'uppercase' }}>{monthShort[m.month-1]}</td>
-                                        <td style={{ padding: '15px 25px', textAlign: 'right', fontSize: '12px', fontWeight: '700', color: '#94a3b8' }}>{formatBRL(m.target)}</td>
-                                        <td style={{ padding: '15px 25px', textAlign: 'right', fontSize: '12px', fontWeight: '900', color: '#0f172a' }}>{formatBRL(m.sales)}</td>
-                                        <td style={{ padding: '15px 25px', textAlign: 'center' }}>
-                                            <span style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', padding: '4px 10px', borderRadius: '6px', backgroundColor: isSuccess ? '#ecfdf5' : '#fef2f2', color: isSuccess ? '#059669' : '#dc2626' }}>
-                                                {isSuccess ? 'Superado' : 'Abaixo'}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '15px 25px', textAlign: 'center' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                                                <div style={{ width: '60px', height: '6px', backgroundColor: '#f1f5f9', borderRadius: '99px', overflow: 'hidden' }}>
-                                                    <div style={{ height: '100%', width: `${Math.min(achievement, 100)}%`, backgroundColor: isSuccess ? '#10b981' : '#ef4444' }}></div>
+                                    <tr key={idx} style={{ borderBottom: '2px solid #f8fafc' }}>
+                                        <td style={{ padding: '18px 30px', fontSize: '13px', fontWeight: '900', color: '#334155', textTransform: 'uppercase' }}>{monthNames[m.month-1]}</td>
+                                        <td style={{ padding: '18px 30px', textAlign: 'right', fontSize: '13px', fontWeight: '700', color: '#94a3b8' }}>{formatBRL(m.target)}</td>
+                                        <td style={{ padding: '18px 30px', textAlign: 'right', fontSize: '15px', fontWeight: '900', color: isSuccess ? '#059669' : '#0f172a' }}>{formatBRL(m.sales)}</td>
+                                        <td style={{ padding: '18px 30px', textAlign: 'center' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                                                <div style={{ width: '80px', height: '8px', backgroundColor: '#f1f5f9', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}>
+                                                    <div style={{ height: '100%', width: `${Math.min(achievement, 100)}%`, backgroundColor: isSuccess ? '#10b981' : '#ef4444', borderRadius: '99px', position: 'absolute', top: 0, left: 0 }}></div>
                                                 </div>
-                                                <span style={{ fontSize: '11px', fontWeight: '900', color: '#475569' }}>{achievement.toFixed(0)}%</span>
+                                                <span style={{ fontSize: '14px', fontWeight: '900', color: isSuccess ? '#059669' : '#ef4444', minWidth: '45px' }}>{achievement.toFixed(0)}%</span>
                                             </div>
                                         </td>
                                     </tr>
@@ -673,8 +750,9 @@ export const ManagerScoreCardScreen: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
-                <div style={{ marginTop: '30px', textAlign: 'center', borderTop: '2px solid #f1f5f9', paddingTop: '20px' }}>
-                    <p style={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: '#cbd5e1', letterSpacing: '4px' }}>Portal Centro-Norte • Inteligência de Dados</p>
+
+                <div style={{ marginTop: '50px', textAlign: 'center', borderTop: '3px solid #f1f5f9', paddingTop: '30px' }}>
+                    <p style={{ fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', color: '#cbd5e1', letterSpacing: '6px' }}>Portal Centro-Norte • Inteligência Comercial Avançada</p>
                 </div>
             </div>
 

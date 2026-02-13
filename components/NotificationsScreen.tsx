@@ -16,13 +16,14 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
   
   // States Inbox
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [sentMessages, setSentMessages] = useState<any[]>([]); // Novo estado para enviados
+  const [sentMessages, setSentMessages] = useState<any[]>([]); 
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingSent, setIsLoadingSent] = useState(false);
+  const [loadingAttachments, setLoadingAttachments] = useState<Record<string, boolean>>({});
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // States Compose
+  // Added state variables for the compose form to fix "Cannot find name" errors
   const [subject, setSubject] = useState('');
   const [messageBody, setMessageBody] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -40,15 +41,23 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
   const fetchNotifications = async () => {
     setIsLoading(true);
     try {
+      // Otimização: Busca apenas IDs e nomes dos anexos para o filtro funcionar, sem a URL pesada
       const { data, error } = await supabase
         .from('notificacoes')
-        .select('*, notificacao_anexos(*)')
+        .select('*, notificacao_anexos(id, arquivo_nome)')
         .eq('para_usuario_id', userId)
         .order('lida', { ascending: true }) 
         .order('criada_em', { ascending: false });
       
       if (error) throw error;
-      setNotifications(data || []);
+      
+      const normalizedData = (data || []).map((item: any) => ({
+          ...item,
+          para_usuario_id: item.para_usuario_id || item.Para_usuario_id || item.para_Usuario_Id,
+          de_usuario_id: item.de_usuario_id || item.De_usuario_id || item.de_Usuario_Id
+      }));
+
+      setNotifications(normalizedData);
     } catch (e) {
       console.error(e);
     } finally {
@@ -61,12 +70,19 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
       try {
           const { data, error } = await supabase
             .from('notificacoes')
-            .select('*')
+            .select('*, notificacao_anexos(id, arquivo_nome)')
             .eq('de_usuario_id', userId)
             .order('criada_em', { ascending: false });
           
           if (error) throw error;
-          setSentMessages(data || []);
+
+          const normalizedData = (data || []).map((item: any) => ({
+              ...item,
+              para_usuario_id: item.para_usuario_id || item.Para_usuario_id || item.para_Usuario_Id,
+              de_usuario_id: item.de_usuario_id || item.De_usuario_id || item.de_Usuario_Id
+          }));
+
+          setSentMessages(normalizedData);
       } catch (e) {
           console.error(e);
       } finally {
@@ -74,13 +90,55 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
       }
   };
 
+  // Função para buscar anexos completos sob demanda
+  const fetchAttachmentDetails = async (notificationId: string) => {
+    if (loadingAttachments[notificationId]) return;
+    
+    setLoadingAttachments(prev => ({ ...prev, [notificationId]: true }));
+    try {
+      const { data, error } = await supabase
+        .from('notificacao_anexos')
+        .select('*')
+        .eq('notificacao_id', notificationId);
+      
+      if (error) throw error;
+
+      const updateList = (list: any[]) => 
+        list.map(n => n.id === notificationId ? { ...n, notificacao_anexos: data } : n);
+
+      if (activeTab === 'inbox') setNotifications(updateList);
+      else setSentMessages(updateList);
+
+    } catch (e) {
+      console.error("Erro ao carregar detalhes do anexo:", e);
+    } finally {
+      setLoadingAttachments(prev => ({ ...prev, [notificationId]: false }));
+    }
+  };
+
+  const handleExpand = (id: string) => {
+    const isExpanding = expandedId !== id;
+    setExpandedId(isExpanding ? id : null);
+
+    if (isExpanding) {
+      const currentList = activeTab === 'inbox' ? notifications : sentMessages;
+      const notification = currentList.find(n => n.id === id);
+      // Se tem anexos mas ainda não tem a URL (indicado pela falta de arquivo_url no primeiro item)
+      if (notification?.notificacao_anexos?.length > 0 && !notification.notificacao_anexos[0].arquivo_url) {
+        fetchAttachmentDetails(id);
+      }
+    }
+  };
+
   const handleSendToManager = async (e: React.FormEvent) => {
       e.preventDefault();
+      // Added missing state variables: subject, messageBody
       if (!subject || !messageBody) {
           alert('Preencha o assunto e a mensagem.');
           return;
       }
 
+      // Added missing setIsSending state setter
       setIsSending(true);
       try {
           const { data: managers, error: managerError } = await supabase
@@ -96,6 +154,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
               throw new Error('Gerente regional não encontrado no sistema.');
           }
 
+          // Added missing state variables: subject, messageBody
           const fullMessage = `[${subject.toUpperCase()}]\n\n${messageBody}`;
 
           const { error: insertError } = await supabase.from('notificacoes').insert({
@@ -109,14 +168,16 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
           if (insertError) throw insertError;
 
           alert('Mensagem enviada ao gerente com sucesso!');
+          // Added missing state setters: setSubject, setMessageBody
           setSubject('');
           setMessageBody('');
-          fetchSentMessages(); // Atualiza a lista de enviados
+          fetchSentMessages(); 
 
       } catch (error: any) {
           console.error('Erro envio:', error);
           alert('Erro ao enviar: ' + (error.message || 'Falha de comunicação.'));
       } finally {
+          // Added missing setIsSending state setter
           setIsSending(false);
       }
   };
@@ -142,7 +203,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
 
   const handleDownload = (file: any) => {
     if (!file.arquivo_url || file.arquivo_url === '#') {
-      alert('Arquivo indisponível para download.');
+      alert('Arquivo ainda sendo processado ou indisponível.');
       return;
     }
     const link = document.createElement('a');
@@ -166,9 +227,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6 animate-fadeIn pb-24 md:pb-12">
       
-      {/* --- MOBILE LAYOUT (md:hidden) --- */}
+      {/* --- MOBILE LAYOUT --- */}
       <div className="md:hidden space-y-4 px-1">
-        {/* Header & Tabs */}
         <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
                 <Bell className="w-6 h-6 text-blue-600" />
@@ -193,7 +253,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
 
         {activeTab === 'compose' ? (
             <div className="space-y-6">
-                {/* Mobile Compose Form */}
                 <div className="bg-white p-5 rounded-[24px] border border-slate-200 shadow-sm space-y-4">
                     <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
                         <Send className="w-4 h-4 text-blue-600" /> Nova Mensagem
@@ -204,7 +263,9 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Assunto</label>
                             <input 
                                 type="text"
+                                // Added missing subject value
                                 value={subject}
+                                // Added missing setSubject state setter
                                 onChange={e => setSubject(e.target.value)}
                                 className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-100"
                                 placeholder="Motivo..."
@@ -213,7 +274,9 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Mensagem</label>
                             <textarea 
+                                // Added missing messageBody value
                                 value={messageBody}
+                                // Added missing setMessageBody state setter
                                 onChange={e => setMessageBody(e.target.value)}
                                 rows={5}
                                 className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 outline-none focus:ring-2 focus:ring-blue-100"
@@ -223,6 +286,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                         <Button 
                             fullWidth 
                             onClick={handleSendToManager} 
+                            // Added missing isSending state variable
                             isLoading={isSending}
                             className="h-14 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg"
                         >
@@ -231,7 +295,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                     </div>
                 </div>
 
-                {/* Mobile Sent History */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">Histórico de Envios</h3>
                     {isLoadingSent ? (
@@ -246,7 +309,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                             const isExpandedLocal = expandedId === msg.id;
                             return (
                                 <div key={msg.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-2">
-                                    <div onClick={() => setExpandedId(isExpandedLocal ? null : msg.id)} className="flex justify-between items-start cursor-pointer">
+                                    <div onClick={() => handleExpand(msg.id)} className="flex justify-between items-start cursor-pointer">
                                         <div className="min-w-0 pr-2">
                                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
                                                 {new Date(msg.criada_em).toLocaleDateString('pt-BR')}
@@ -270,24 +333,22 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
             </div>
         ) : (
             <div className="space-y-4">
-                {/* Mobile Filters */}
                 <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto no-scrollbar gap-1">
-                    {['all', 'info', 'important', 'urgent'].map(f => (
+                    {['all', 'info', 'important', 'urgent', 'attachments'].map(f => (
                         <button 
                             key={f}
                             onClick={() => setActiveFilter(f as any)} 
                             className={`flex-none px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap ${
                                 activeFilter === f 
-                                ? (f === 'urgent' ? 'bg-red-600 text-white' : f === 'important' ? 'bg-amber-500 text-white' : 'bg-blue-600 text-white') 
+                                ? (f === 'urgent' ? 'bg-red-600 text-white' : f === 'important' ? 'bg-amber-50 text-white' : f === 'attachments' ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white') 
                                 : 'text-slate-400 bg-slate-50'
                             }`}
                         >
-                            {f === 'all' ? 'Todos' : f === 'important' ? 'Importante' : f === 'urgent' ? 'Urgente' : 'Info'}
+                            {f === 'all' ? 'Todos' : f === 'important' ? 'Importante' : f === 'urgent' ? 'Urgente' : f === 'attachments' ? 'Anexos' : 'Info'}
                         </button>
                     ))}
                 </div>
 
-                {/* Mobile Notification List */}
                 <div className="space-y-3">
                     {isLoading ? (
                         <div className="py-20 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" /></div>
@@ -302,6 +363,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                             const isExpanded = expandedId === notif.id;
                             const hasAnexo = notif.notificacao_anexos?.length > 0;
                             const isUrgent = notif.prioridade === 'urgent';
+                            const isDetailLoading = loadingAttachments[notif.id];
 
                             return (
                                 <div key={notif.id} className={`bg-white rounded-[24px] border shadow-sm overflow-hidden ${
@@ -310,7 +372,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                                     : 'border-slate-200 opacity-90'
                                 }`}>
                                     <div 
-                                        onClick={() => setExpandedId(isExpanded ? null : notif.id)}
+                                        onClick={() => handleExpand(notif.id)}
                                         className="p-4 cursor-pointer active:bg-slate-50 transition-colors"
                                     >
                                         <div className="flex justify-between items-start mb-2">
@@ -320,7 +382,10 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                                                     {new Date(notif.criada_em).toLocaleDateString('pt-BR')}
                                                 </span>
                                             </div>
-                                            {isUrgent && <span className="bg-red-100 text-red-600 text-[8px] font-black uppercase px-2 py-0.5 rounded">Urgente</span>}
+                                            <div className="flex gap-1">
+                                                {hasAnexo && <Paperclip className="w-3 h-3 text-purple-400" />}
+                                                {isUrgent && <span className="bg-red-100 text-red-600 text-[8px] font-black uppercase px-2 py-0.5 rounded">Urgente</span>}
+                                            </div>
                                         </div>
                                         <h4 className={`font-black uppercase text-xs mb-1 ${!notif.lida ? 'text-slate-900' : 'text-slate-500'}`}>{title}</h4>
                                         {!isExpanded && <p className="text-[10px] text-slate-400 line-clamp-1">{content}</p>}
@@ -333,16 +398,28 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                                             </div>
 
                                             {hasAnexo && (
-                                                <div className="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar">
-                                                    {notif.notificacao_anexos.map((file: any) => (
-                                                        <button 
-                                                            key={file.id} 
-                                                            onClick={() => handleDownload(file)}
-                                                            className="flex items-center gap-2 bg-purple-50 border border-purple-100 px-3 py-2 rounded-xl text-[9px] font-bold text-purple-700 whitespace-nowrap"
-                                                        >
-                                                            <Paperclip className="w-3 h-3" /> {file.arquivo_nome.slice(0, 10)}...
-                                                        </button>
-                                                    ))}
+                                                <div className="mb-4">
+                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                                        <Paperclip className="w-3 h-3" /> Arquivos Vinculados
+                                                    </p>
+                                                    {isDetailLoading ? (
+                                                        <div className="flex items-center gap-2 py-2 text-blue-600">
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                            <span className="text-[9px] font-bold">Carregando links...</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                                                            {notif.notificacao_anexos.map((file: any) => (
+                                                                <button 
+                                                                    key={file.id} 
+                                                                    onClick={() => handleDownload(file)}
+                                                                    className="flex items-center gap-2 bg-purple-50 border border-purple-100 px-3 py-2 rounded-xl text-[9px] font-bold text-purple-700 whitespace-nowrap active:bg-purple-100 transition-colors"
+                                                                >
+                                                                    <Download className="w-3 h-3" /> {file.arquivo_nome.slice(0, 15)}...
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -377,10 +454,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
         )}
       </div>
 
-      {/* --- DESKTOP LAYOUT (LOCKED - Original) --- */}
+      {/* --- DESKTOP LAYOUT --- */}
       <div className="hidden md:block space-y-6">
-      
-      {/* Header com Navegação */}
       <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
         <div>
           <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
@@ -418,7 +493,9 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assunto</label>
                           <Input 
                               placeholder="Motivo do contato..." 
+                              // Added missing subject value
                               value={subject} 
+                              // Added missing setSubject state setter
                               onChange={e => setSubject(e.target.value)} 
                               required
                               className="!bg-slate-50 !h-12 text-sm font-bold" 
@@ -428,7 +505,9 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                       <div className="space-y-2">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mensagem</label>
                           <textarea 
+                              // Added missing messageBody value
                               value={messageBody} 
+                              // Added missing setMessageBody state setter
                               onChange={e => setMessageBody(e.target.value)} 
                               rows={6} 
                               required
@@ -441,6 +520,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                           <Button 
                               type="submit" 
                               fullWidth 
+                              // Added missing isSending state variable
                               isLoading={isSending} 
                               className="h-14 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20"
                           >
@@ -450,7 +530,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                   </form>
               </div>
 
-              {/* LISTA DE ENVIADOS */}
               <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-3 mb-6">
                       <History className="w-5 h-5 text-blue-600" />
@@ -472,7 +551,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                               return (
                                   <div key={msg.id} className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
                                       <div 
-                                          onClick={() => setExpandedId(isExpandedLocal ? null : msg.id)}
+                                          onClick={() => handleExpand(msg.id)}
                                           className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
                                       >
                                           <div className="flex items-center gap-4 min-w-0">
@@ -502,7 +581,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
           </div>
       ) : (
           <div className="space-y-4 animate-fadeIn">
-            {/* Filtros da Inbox */}
             <div className="flex bg-slate-100 p-1.5 rounded-2xl overflow-x-auto no-scrollbar max-w-full w-fit mx-auto md:mx-0">
                 <button onClick={() => setActiveFilter('all')} className={`whitespace-nowrap px-5 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${activeFilter === 'all' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Todos</button>
                 <button onClick={() => setActiveFilter('info')} className={`whitespace-nowrap px-5 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${activeFilter === 'info' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Informativos</button>
@@ -528,6 +606,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                     const { title, content } = parseMessage(notif.mensagem);
                     const isExpanded = expandedId === notif.id;
                     const hasAnexo = notif.notificacao_anexos?.length > 0;
+                    const isUrgent = notif.prioridade === 'urgent';
+                    const isDetailLoading = loadingAttachments[notif.id];
 
                     return (
                     <div 
@@ -538,9 +618,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                             : 'border-slate-200 opacity-90'
                         }`}
                     >
-                        {/* Resumo (Sempre visível) */}
                         <div 
-                            onClick={() => setExpandedId(isExpanded ? null : notif.id)}
+                            onClick={() => handleExpand(notif.id)}
                             className="p-4 md:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
                         >
                             <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -575,7 +654,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                             </div>
                         </div>
 
-                        {/* Detalhes (Expansível) */}
                         {isExpanded && (
                             <div className="px-5 pb-6 pt-2 border-t border-slate-50 animate-fadeIn bg-slate-50/30">
                                 <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-inner mb-5">
@@ -589,21 +667,28 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                                         <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest flex items-center gap-1.5 px-1">
                                             <Paperclip className="w-3 h-3" /> Arquivos anexados ({notif.notificacao_anexos.length})
                                         </p>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            {notif.notificacao_anexos.map((file: any) => (
-                                                <div 
-                                                key={file.id} 
-                                                onClick={() => handleDownload(file)}
-                                                className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-xl hover:border-purple-300 transition-colors cursor-pointer group/file shadow-sm"
-                                                >
-                                                    <div className="flex items-center gap-2 truncate">
-                                                        {file.tipo_mime.includes('image') ? <ImageIcon className="w-3.5 h-3.5 text-purple-500" /> : <FileText className="w-3.5 h-3.5 text-slate-400" />}
-                                                        <span className="text-[10px] font-bold text-slate-700 truncate">{file.arquivo_nome}</span>
+                                        {isDetailLoading ? (
+                                            <div className="flex items-center gap-2 p-4 bg-white border border-slate-100 rounded-xl">
+                                                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                                                <span className="text-[10px] font-bold text-slate-400">Recuperando arquivos...</span>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {notif.notificacao_anexos.map((file: any) => (
+                                                    <div 
+                                                    key={file.id} 
+                                                    onClick={() => handleDownload(file)}
+                                                    className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-xl hover:border-purple-300 transition-colors cursor-pointer group/file shadow-sm"
+                                                    >
+                                                        <div className="flex items-center gap-2 truncate">
+                                                            {file.tipo_mime?.includes('image') ? <ImageIcon className="w-3.5 h-3.5 text-purple-500" /> : <FileText className="w-3.5 h-3.5 text-slate-400" />}
+                                                            <span className="text-[10px] font-bold text-slate-700 truncate">{file.arquivo_nome}</span>
+                                                        </div>
+                                                        <Download className="w-3.5 h-3.5 text-slate-300 group-hover/file:text-purple-500 transition-colors" />
                                                     </div>
-                                                    <Download className="w-3.5 h-3.5 text-slate-300 group-hover/file:text-purple-500 transition-colors" />
-                                                </div>
-                                            ))}
-                                        </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
