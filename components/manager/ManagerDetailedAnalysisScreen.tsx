@@ -20,7 +20,7 @@ interface GroupData {
 }
 
 // Componente extraído para suportar estado de busca local sem perder foco
-const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, isSimple = false, disabled = false, openUp = false, activeDropdown, setActiveDropdown }: any) => {
+const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, onSelectAll, isSimple = false, disabled = false, openUp = false, activeDropdown, setActiveDropdown }: any) => {
     const [searchTerm, setSearchTerm] = useState('');
     const listContainerRef = useRef<HTMLDivElement>(null);
 
@@ -77,9 +77,27 @@ const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, on
             )}
 
             {activeDropdown === id && !disabled && (
-                <div className={`absolute ${openUp ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[300] overflow-hidden animate-slideUp`}>
+                <div className={`absolute ${openUp ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[300] overflow-hidden animate-slideUp`}>
                     <div className="p-3 bg-slate-50 border-b border-slate-100 space-y-2">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">{label}</span>
+                        <div className="flex justify-between items-center">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
+                            {!isSimple && onSelectAll && (
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={(e) => { e.preventDefault(); onSelectAll(filteredOptions.map((o: any) => typeof o === 'object' ? (o.id || o.nome) : o)); }}
+                                        className="text-[9px] font-black text-blue-600 hover:underline"
+                                    >
+                                        Todos
+                                    </button>
+                                    <button 
+                                        onClick={(e) => { e.preventDefault(); onClear(); }}
+                                        className="text-[9px] font-black text-red-500 hover:underline"
+                                    >
+                                        Limpar
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                         {/* Campo de Busca */}
                         <div className="relative">
                             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
@@ -142,6 +160,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             filterCanais: [] as string[],
             filterGrupos: [] as string[],
             filterClients: [] as string[],
+            filterProducts: [] as string[],
             displayMode: 'value' as 'value' | 'percent',
             searchTerm: '',
             topLimit: 'all' as number | 'all'
@@ -160,9 +179,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const [filterCanais, setFilterCanais] = useState<string[]>(initialState.filterCanais);
     const [filterGrupos, setFilterGrupos] = useState<string[]>(initialState.filterGrupos);
     const [filterClients, setFilterClients] = useState<string[]>(initialState.filterClients);
+    const [filterProducts, setFilterProducts] = useState<string[]>(initialState.filterProducts || []);
     const [topLimit, setTopLimit] = useState<number | 'all'>(initialState.topLimit);
     
-    const [activeDropdown, setActiveDropdown] = useState<'dims' | 'reps' | 'canais' | 'grupos' | 'clients' | 'top' | null>(null);
+    const [activeDropdown, setActiveDropdown] = useState<'dims' | 'reps' | 'canais' | 'grupos' | 'clients' | 'products' | 'top' | null>(null);
 
     const [rowDimensions, setRowDimensions] = useState<Dimension[]>(initialState.rowDimensions);
     const [displayMode, setDisplayMode] = useState<'value' | 'percent'>(initialState.displayMode);
@@ -185,12 +205,13 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             filterCanais,
             filterGrupos,
             filterClients,
+            filterProducts,
             displayMode,
             searchTerm,
             topLimit
         };
         sessionStorage.setItem('pcn_bi_builder_state', JSON.stringify(stateToSave));
-    }, [selectedYear, selectedMonths, rowDimensions, filterReps, filterCanais, filterGrupos, filterClients, displayMode, searchTerm, topLimit]);
+    }, [selectedYear, selectedMonths, rowDimensions, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, displayMode, searchTerm, topLimit]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -208,6 +229,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         setFilterCanais([]);
         setFilterGrupos([]);
         setFilterClients([]);
+        setFilterProducts([]);
         setRowDimensions([]);
         setTopLimit('all');
         setSearchTerm('');
@@ -220,10 +242,17 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         const clients = totalDataStore.clients;
         const canais = new Set<string>();
         const grupos = new Set<string>();
+        const productMap = new Map();
         
         sales.forEach(s => {
             if (s.canal_vendas) canais.add(s.canal_vendas);
             if (s.grupo) grupos.add(s.grupo);
+            
+            // Build Product List
+            const pKey = s.codigo_produto || s.produto;
+            if (pKey && !productMap.has(pKey)) {
+                productMap.set(pKey, { id: pKey, nome: s.produto || 'Sem Descrição' });
+            }
         });
 
         // Prepara Set de CNPJs permitidos se houver filtro de clientes
@@ -235,7 +264,8 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             reps: totalDataStore.users.sort((a, b) => a.nome.localeCompare(b.nome)),
             canais: Array.from(canais).sort(),
             grupos: Array.from(grupos).sort(),
-            clients: dynamicClients.sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia))
+            clients: dynamicClients.sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia)),
+            products: Array.from(productMap.values()).sort((a: any, b: any) => a.nome.localeCompare(b.nome))
         };
     }, [filterReps, isAdmin]);
 
@@ -280,6 +310,12 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             if (filterClients.length > 0) {
                 const saleCnpj = String(s.cnpj || '').replace(/\D/g, '');
                 if (!allowedClientCnpjs.has(saleCnpj)) return false;
+            }
+
+            // Filtro de Produtos (NOVO) - Aplica sobre o TOTAL e sobre os ITENS
+            if (filterProducts.length > 0) {
+                const pKey = s.codigo_produto || s.produto;
+                if (!filterProducts.includes(pKey)) return false;
             }
             
             return true;
@@ -363,7 +399,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             items: filteredList,
             totals: { faturamento: grandTotalFaturamento, quantidade: grandTotalQuantidade, skus: grandTotalSkuSet.size }
         };
-    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, rowDimensions, searchTerm, isAdmin, topLimit]);
+    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin, topLimit]);
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
@@ -598,7 +634,19 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 onClear={() => setFilterClients([])}
                                 activeDropdown={activeDropdown}
                                 setActiveDropdown={setActiveDropdown}
-                                // openUp={true} // Removido para abrir para baixo
+                            />
+                            {/* NOVO FILTRO DE PRODUTOS */}
+                            <FilterDropdown 
+                                id="products" 
+                                label="Produtos" 
+                                icon={Package} 
+                                options={filterOptions.products} 
+                                selected={filterProducts} 
+                                onToggle={(val: any) => toggleFilter(filterProducts, setFilterProducts, val)} 
+                                onClear={() => setFilterProducts([])}
+                                onSelectAll={(allIds: string[]) => setFilterProducts(allIds)}
+                                activeDropdown={activeDropdown}
+                                setActiveDropdown={setActiveDropdown}
                             />
                         </div>
                     </div>
@@ -683,7 +731,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     <div className="p-6 md:p-8 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-center gap-6 md:gap-10 px-8 md:px-12 border-t-4 border-blue-600 shadow-2xl">
                         <div className="text-center md:text-left">
                             <span className="text-[8px] md:text-[9px] font-black uppercase tracking-[0.4em] text-blue-400 block mb-1.5">Consolidado da Consulta</span>
-                            <p className="text-[10px] md:text-xs font-bold text-slate-400">{selectedMonths.length === 12 ? 'ANO COMPLETO' : `${selectedMonths.length} MESES`} • {selectedYear}</p>
+                            <p className="text-[10px] md:text-xs font-bold text-slate-400">{selectedMonths.length === 12 ? 'ANO COMPLETO' : `${selectedMonths.length} MESES`} • {selectedYear} • {filterProducts.length > 0 ? `${filterProducts.length} Produtos Filtrados` : 'Todos Produtos'}</p>
                         </div>
                         <div className="grid grid-cols-3 gap-6 md:gap-16 w-full md:w-auto">
                             <div className="text-center md:text-right">
