@@ -13,6 +13,13 @@ interface BoxConfig {
 
 export const ManagerProductAnalysisScreen: React.FC = () => {
     const now = new Date();
+    
+    // Sessão e Permissões
+    const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+    const userRole = session.role as 'admin' | 'rep';
+    const userId = session.id;
+    const isAdmin = userRole === 'admin';
+
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
@@ -23,6 +30,9 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
     const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
     const [showProductFilter, setShowProductFilter] = useState(false);
     
+    // Filtro de Representante (Novo)
+    const [selectedRepId, setSelectedRepId] = useState<string>(isAdmin ? 'all' : userId);
+
     // Configurações de Caixa
     const [boxConfigs, setBoxConfigs] = useState<BoxConfig[]>([]);
     const [showBoxConfigModal, setShowBoxConfigModal] = useState(false);
@@ -54,6 +64,14 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Forçar ID do rep se não for admin
+    useEffect(() => {
+        if (!isAdmin) {
+            setSelectedRepId(userId);
+            setClientTabRepFilter(userId); // Força filtro na aba de clientes também
+        }
+    }, [isAdmin, userId]);
+
     const allProducts = useMemo(() => {
         const productMap = new Map();
         totalDataStore.sales.forEach(s => {
@@ -74,8 +92,14 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
         const sales = totalDataStore.sales;
         const users = totalDataStore.users;
 
+        // Filtrar vendas pelo representante selecionado (se houver filtro)
+        const salesScope = selectedRepId === 'all' 
+            ? sales 
+            : sales.filter(s => s.usuario_id === selectedRepId);
+
         const repReferenceMap = new Map<string, { totalQty: number, groupsQty: Map<string, number> }>();
-        sales.filter(s => {
+        
+        salesScope.filter(s => {
             const d = new Date(s.data + 'T00:00:00');
             return d.getUTCFullYear() === selectedYear && selectedMonths.includes(d.getUTCMonth() + 1);
         }).forEach(s => {
@@ -88,7 +112,7 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
             ref.groupsQty.set(grp, (ref.groupsQty.get(grp) || 0) + qty);
         });
 
-        const targetSales = sales.filter(s => {
+        const targetSales = salesScope.filter(s => {
             const d = new Date(s.data + 'T00:00:00');
             const m = d.getUTCMonth() + 1;
             const y = d.getUTCFullYear();
@@ -98,7 +122,13 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
 
         const results: any[] = [];
         const repsInSales = Array.from(new Set(targetSales.map(s => s.usuario_id)));
-        const sortedReps = users.filter(u => repsInSales.includes(u.id)).sort((a, b) => a.nome.localeCompare(b.nome));
+        
+        // Se filtro de rep estiver ativo, filtrar lista de usuários também
+        let sortedReps = users.filter(u => repsInSales.includes(u.id));
+        if (selectedRepId !== 'all') {
+            sortedReps = sortedReps.filter(u => u.id === selectedRepId);
+        }
+        sortedReps = sortedReps.sort((a, b) => a.nome.localeCompare(b.nome));
 
         sortedReps.forEach(rep => {
             const repSales = targetSales.filter(s => s.usuario_id === rep.id);
@@ -130,10 +160,19 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
             results.push({ repId: rep.id, repNome: rep.nome, products });
         });
         return results;
-    }, [selectedYear, selectedMonths, selectedProductIds, boxConfigs]);
+    }, [selectedYear, selectedMonths, selectedProductIds, boxConfigs, selectedRepId]);
 
     const toggleProductSelection = (id: string) => {
         setSelectedProductIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    };
+
+    const handleSelectAllProducts = () => {
+        const ids = filteredProductsForSelect.map((p: any) => p.id);
+        // Adiciona apenas os que ainda não estão selecionados
+        setSelectedProductIds(prev => {
+            const newSet = new Set([...prev, ...ids]);
+            return Array.from(newSet);
+        });
     };
 
     const handleApplyMonthFilter = () => {
@@ -151,8 +190,16 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
         totalDataStore.sales.filter(s => {
             const d = new Date(s.data + 'T00:00:00');
             const pk = s.codigo_produto || s.produto;
-            const repMatch = clientTabRepFilter === 'all' || s.usuario_id === clientTabRepFilter;
-            return d.getUTCFullYear() === selectedYear && selectedMonths.includes(d.getUTCMonth() + 1) && selectedProductIds.includes(pk) && repMatch;
+            
+            // Lógica de filtro combinada (Rep Principal + Rep da Aba de Clientes)
+            // Se for rep logado, selectedRepId já é o ID dele.
+            const mainRepMatch = selectedRepId === 'all' || s.usuario_id === selectedRepId;
+            const tabRepMatch = clientTabRepFilter === 'all' || s.usuario_id === clientTabRepFilter;
+
+            return d.getUTCFullYear() === selectedYear && 
+                   selectedMonths.includes(d.getUTCMonth() + 1) && 
+                   selectedProductIds.includes(pk) && 
+                   mainRepMatch && tabRepMatch;
         }).forEach(s => {
             const cnpj = String(s.cnpj).replace(/\D/g, '');
             const pk = s.codigo_produto || s.produto;
@@ -227,6 +274,23 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
+                    {/* Seletor de Representante (Visível apenas para Admin/Gerente) */}
+                    {isAdmin && (
+                        <div className="relative">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                            <select 
+                                value={selectedRepId} 
+                                onChange={(e) => { setSelectedRepId(e.target.value); setClientTabRepFilter(e.target.value); }} 
+                                className="pl-9 pr-8 py-1.5 bg-slate-100 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer text-slate-600 border-none"
+                            >
+                                <option value="all">TODOS REPRESENTANTES</option>
+                                {totalDataStore.users.sort((a,b) => a.nome.localeCompare(b.nome)).map(u => (
+                                    <option key={u.id} value={u.id}>{u.nome.toUpperCase()}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div className="flex bg-slate-100 p-1 rounded-xl">
                         <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="bg-transparent border-none text-[10px] font-black uppercase px-3 py-1.5 cursor-pointer text-slate-600">
                             {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
@@ -266,10 +330,14 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
                     </button>
                     {showProductFilter && (
                         <div className="absolute top-full left-0 mt-2 w-[350px] bg-white border border-slate-200 rounded-2xl shadow-2xl z-[200] overflow-hidden animate-slideUp">
-                            <div className="p-4 border-b border-slate-100 bg-slate-50">
+                            <div className="p-4 border-b border-slate-100 bg-slate-50 space-y-3">
                                 <div className="relative">
                                     <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                     <input type="text" autoFocus placeholder="Filtrar por nome ou SKU..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <button onClick={handleSelectAllProducts} className="text-[9px] font-black text-blue-600 uppercase hover:underline">Selecionar Todos</button>
+                                    <span className="text-[8px] font-bold text-slate-400">{filteredProductsForSelect.length} listados</span>
                                 </div>
                             </div>
                             <div className="max-h-[350px] overflow-y-auto p-2 custom-scrollbar">
@@ -440,27 +508,37 @@ export const ManagerProductAnalysisScreen: React.FC = () => {
                                 <div className="flex flex-wrap gap-2" data-html2canvas-ignore>
                                     <div className="relative">
                                         <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                        <select value={clientTabRepFilter} onChange={e => setClientTabRepFilter(e.target.value)} className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500">
-                                            <option value="all">TODOS REPRESENTANTES</option>
-                                            {totalDataStore.users.map(u => <option key={u.id} value={u.id}>{u.nome.toUpperCase()}</option>)}
+                                        {/* Dropdown de Rep filtrado */}
+                                        <select 
+                                            value={clientTabRepFilter} 
+                                            onChange={e => setClientTabRepFilter(e.target.value)} 
+                                            disabled={!isAdmin} // Reps não podem mudar isso
+                                            className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                                        >
+                                            {isAdmin && <option value="all">TODOS REPRESENTANTES</option>}
+                                            {totalDataStore.users.filter(u => isAdmin || u.id === userId).map(u => <option key={u.id} value={u.id}>{u.nome.toUpperCase()}</option>)}
                                         </select>
                                     </div>
                                     <button onClick={handleExportExcelClients} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase shadow-sm"><FileSpreadsheet className="w-4 h-4" /> Excel</button>
                                     <button onClick={() => handleExportPngElement(clientsTableExportRef, `Clientes_Faturamento`)} className="flex items-center gap-2 px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase shadow-sm"><Download className="w-4 h-4" /> PNG</button>
                                 </div>
                             </div>
-                            <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm"><table className="w-full text-left border-collapse"><thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10"><tr className="text-slate-400 text-[9px] font-black uppercase tracking-widest"><th className="px-8 py-5">Razão Social / CNPJ</th><th className="px-6 py-5">Produto</th><th className="px-6 py-5 text-right">Unidades</th>{boxConfigs.length > 0 && <th className="px-6 py-5 text-right">Caixas</th>}<th className="px-8 py-5 text-right">Última Compra</th></tr></thead><tbody className="divide-y divide-slate-100 font-bold text-slate-700 uppercase text-xs">{(() => {
+                            <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm"><table className="w-full text-left border-collapse"><thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10"><tr className="text-slate-400 text-[9px] font-black uppercase tracking-widest"><th className="px-8 py-5">Razão Social / CNPJ</th><th className="px-6 py-5 text-center">Mix Positivado</th><th className="px-6 py-5 text-right">Unidades</th>{boxConfigs.length > 0 && <th className="px-6 py-5 text-right">Caixas</th>}<th className="px-8 py-5 text-right">Última Compra</th></tr></thead><tbody className="divide-y divide-slate-100 font-bold text-slate-700 uppercase text-xs">{(() => {
                                 const clientMap = new Map<string, any>();
                                 const clientLookup = new Map(totalDataStore.clients.map(c => [String(c.cnpj).replace(/\D/g, ''), c]));
                                 
                                 totalDataStore.sales.filter(s => {
                                     const d = new Date(s.data + 'T00:00:00');
                                     const pk = s.codigo_produto || s.produto;
-                                    const repMatch = clientTabRepFilter === 'all' || s.usuario_id === clientTabRepFilter;
+                                    
+                                    // Logica combinada: Filtro da aba de clientes + Filtro Principal de Rep (se houver)
+                                    const mainRepMatch = selectedRepId === 'all' || s.usuario_id === selectedRepId;
+                                    const tabRepMatch = clientTabRepFilter === 'all' || s.usuario_id === clientTabRepFilter;
+
                                     return d.getUTCFullYear() === selectedYear && 
                                            selectedMonths.includes(d.getUTCMonth() + 1) && 
                                            selectedProductIds.includes(pk) && 
-                                           repMatch;
+                                           mainRepMatch && tabRepMatch;
                                 }).forEach(s => {
                                     const cnpj = String(s.cnpj).replace(/\D/g, '');
                                     const pk = s.codigo_produto || s.produto;

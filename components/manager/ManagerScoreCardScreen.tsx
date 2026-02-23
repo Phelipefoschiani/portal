@@ -58,10 +58,20 @@ const ScoreRulesModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
 export const ManagerScoreCardScreen: React.FC = () => {
     const now = new Date();
+    
+    // Sessão
+    const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+    const userRole = session.role as 'admin' | 'rep';
+    const userId = session.id;
+    const isAdmin = userRole === 'admin';
+
     const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([1,2,3,4,5,6,7,8,9,10,11,12]);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([1,2,3,4,5,6,7,8,9,10,11,12]);
-    const [selectedRepId, setSelectedRepId] = useState<string>('all');
+    
+    // Se for rep, já começa com o ID dele. Se for admin, começa com 'all'
+    const [selectedRepId, setSelectedRepId] = useState<string>(isAdmin ? 'all' : userId);
+    
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const [showInfoModal, setShowInfoModal] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
@@ -82,6 +92,11 @@ export const ManagerScoreCardScreen: React.FC = () => {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Garante que o rep não possa mudar o ID
+    useEffect(() => {
+        if (!isAdmin) setSelectedRepId(userId);
+    }, [isAdmin, userId]);
 
     const toggleTempMonth = (m: number) => {
         setTempSelectedMonths(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
@@ -351,17 +366,21 @@ export const ManagerScoreCardScreen: React.FC = () => {
                         )}
                     </button>
 
-                    <div className="relative flex-1 md:flex-none w-full md:w-48">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                        <select 
-                            value={selectedRepId} 
-                            onChange={(e) => setSelectedRepId(e.target.value)} 
-                            className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
-                        >
-                            <option value="all">Visão Regional (Média)</option>
-                            {users.map(u => <option key={u.id} value={u.id}>{u.nome.toUpperCase()}</option>)}
-                        </select>
-                    </div>
+                    {/* SE FOR ADMIN MOSTRA O SELETOR DE REP */}
+                    {isAdmin && (
+                        <div className="relative flex-1 md:flex-none w-full md:w-48">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                            <select 
+                                value={selectedRepId} 
+                                onChange={(e) => setSelectedRepId(e.target.value)} 
+                                className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+                            >
+                                <option value="all">Visão Regional (Média)</option>
+                                {users.map(u => <option key={u.id} value={u.id}>{u.nome.toUpperCase()}</option>)}
+                            </select>
+                        </div>
+                    )}
+
                     <div className="relative flex-1 md:flex-none w-full md:w-32">
                         <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                         <select 
@@ -511,6 +530,10 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             })}
                         </tbody>
                     </table>
+                </div>
+
+                <div style={{ marginTop: '50px', textAlign: 'center', borderTop: '3px solid #f1f5f9', paddingTop: '30px' }}>
+                    <p style={{ fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', color: '#cbd5e1', letterSpacing: '6px' }}>Portal Centro-Norte • Inteligência Comercial Avançada</p>
                 </div>
             </div>
 

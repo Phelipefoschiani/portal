@@ -190,6 +190,8 @@ const App: React.FC = () => {
                <>
                 {currentView === 'dashboard' && <Dashboard />}
                 {currentView === 'rep-analysis' && <RepAnalysisScreen />}
+                {currentView === 'rep-scorecard' && <ManagerScoreCardScreen />}
+                {currentView === 'rep-product-analysis' && <ManagerProductAnalysisScreen />}
                 {currentView === 'rep-bi-builder' && <ManagerDetailedAnalysisScreen />}
                 {currentView === 'clients' && <ClientsScreen />}
                 {currentView === 'campaigns' && <CampaignsScreen onNavigateToInvestments={() => setCurrentView('investments')} />}
