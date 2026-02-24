@@ -83,7 +83,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const repMenuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'rep-analysis', label: 'Análise de Metas', icon: BarChart3 },
-    { id: 'rep-scorecard', label: 'Score Card', icon: Trophy },
     { id: 'rep-product-analysis', label: 'Análise de Produtos', icon: PackageSearch },
     { id: 'rep-bi-builder', label: 'Construtor de BI', icon: Table2 },
     { id: 'clients', label: 'Meus Clientes', icon: Users },

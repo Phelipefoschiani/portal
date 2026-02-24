@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Trophy, Target, Users, ShoppingBag, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, AlertCircle, Search, User, Filter, Medal, Activity, BarChart3, Star, Percent, Info, ChevronDown, CheckSquare, Square, Tag, Package, X, Briefcase, CheckCircle2, XCircle, Download, Loader2, Sparkles } from 'lucide-react';
+import { Trophy, Target, Users, ShoppingBag, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, AlertCircle, Search, User, Filter, Medal, Activity, BarChart3, Star, Percent, Info, ChevronDown, CheckSquare, Square, Tag, Package, X, Briefcase, CheckCircle2, XCircle, Download, Loader2, Sparkles, FileText } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 const ScoreRulesModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     return createPortal(
@@ -305,8 +306,8 @@ export const ManagerScoreCardScreen: React.FC = () => {
 
             const link = document.createElement('a');
             const repName = selectedRepId === 'all' ? 'Regional' : users.find(u => u.id === selectedRepId)?.nome || 'Representante';
-            link.download = `ScoreCard_${repName.replace(/\s/g, '_')}_${selectedYear}.png`;
-            link.href = canvas.toDataURL('image/png', 1.0);
+            link.download = `ScoreCard_${repName.replace(/\s/g, '_')}_${selectedYear}.jpg`;
+            link.href = canvas.toDataURL('image/jpeg', 0.9);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -314,6 +315,63 @@ export const ManagerScoreCardScreen: React.FC = () => {
         } catch (e) {
             console.error('Export error:', e);
             alert('Falha ao gerar imagem.');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleExportPDF = async () => {
+        if (!exportRef.current) return;
+        setIsExporting(true);
+        
+        try {
+            await new Promise(r => setTimeout(r, 2000));
+            
+            const element = exportRef.current;
+            element.style.display = 'block';
+            element.style.visibility = 'visible';
+
+            const canvas = await html2canvas(element, {
+                scale: 2, 
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                width: 1200, 
+                height: element.offsetHeight,
+                scrollX: 0,
+                scrollY: 0,
+                windowWidth: 1200,
+                onclone: (clonedDoc) => {
+                    const el = clonedDoc.getElementById('scorecard-export-content');
+                    if (el) {
+                        el.style.display = 'block';
+                        el.style.visibility = 'visible';
+                        el.style.position = 'static';
+                        el.style.transform = 'none';
+                        el.style.margin = '0 auto';
+                    }
+                }
+            });
+            
+            element.style.display = 'none';
+            element.style.visibility = 'hidden';
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.85);
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'px',
+                format: [canvas.width, canvas.height]
+            });
+
+            pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+            
+            const repName = selectedRepId === 'all' ? 'Regional' : users.find(u => u.id === selectedRepId)?.nome || 'Representante';
+            pdf.save(`ScoreCard_${repName.replace(/\s/g, '_')}_${selectedYear}.pdf`);
+            
+        } catch (e) {
+            console.error('Export error:', e);
+            alert('Falha ao gerar PDF.');
         } finally {
             setIsExporting(false);
         }
@@ -348,23 +406,26 @@ export const ManagerScoreCardScreen: React.FC = () => {
                 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                     {/* Botão de Exportação */}
-                    <button 
-                        onClick={handleExportImage}
-                        disabled={isExporting}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-slate-800 transition-all disabled:opacity-50 min-w-[180px] justify-center"
-                    >
-                        {isExporting ? (
-                            <>
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                Carregando...
-                            </>
-                        ) : (
-                            <>
-                                <Download className="w-3.5 h-3.5" />
-                                Compartilhar Card
-                            </>
-                        )}
-                    </button>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={handleExportImage}
+                            disabled={isExporting}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-slate-800 transition-all disabled:opacity-50 justify-center"
+                            title="Baixar como Imagem (JPG)"
+                        >
+                            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                            JPG
+                        </button>
+                        <button 
+                            onClick={handleExportPDF}
+                            disabled={isExporting}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all disabled:opacity-50 justify-center"
+                            title="Baixar como PDF"
+                        >
+                            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                            PDF
+                        </button>
+                    </div>
 
                     {/* SE FOR ADMIN MOSTRA O SELETOR DE REP */}
                     {isAdmin && (

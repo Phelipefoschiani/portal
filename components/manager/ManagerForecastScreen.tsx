@@ -28,6 +28,7 @@ export const ManagerForecastScreen: React.FC = () => {
 
     // Modal de Detalhe do Histórico
     const [selectedHistoryReport, setSelectedHistoryReport] = useState<any | null>(null);
+    const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
     // Ref para a área de exportação oculta
     const exportContainerRef = useRef<HTMLDivElement>(null);
@@ -55,6 +56,7 @@ export const ManagerForecastScreen: React.FC = () => {
                         previsao_clientes (
                             id,
                             cliente_id,
+                            previsao_id,
                             valor_previsto_cliente,
                             clientes (nome_fantasia, cnpj)
                         )
@@ -230,6 +232,73 @@ export const ManagerForecastScreen: React.FC = () => {
             setShowResetModal(false);
             alert('Ciclo resetado.');
         } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
+    };
+
+    const handleDeleteClientItem = (itemId: string) => {
+        setItemToDelete(itemId);
+    };
+
+    const confirmDeleteClientItem = async () => {
+        if (!itemToDelete) return;
+        
+        setIsActionLoading(true);
+        try {
+            // 1. Get the item to be deleted to know its parent
+            const { data: itemToDeleteData, error: fetchError } = await supabase
+                .from('previsao_clientes')
+                .select('previsao_id')
+                .eq('id', itemToDelete)
+                .single();
+            
+            if (fetchError || !itemToDeleteData) throw new Error('Item não encontrado ou já excluído.');
+
+            const { previsao_id } = itemToDeleteData;
+
+            // 2. Delete the item
+            const { error: deleteError } = await supabase
+                .from('previsao_clientes')
+                .delete()
+                .eq('id', itemToDelete);
+            
+            if (deleteError) throw deleteError;
+
+            // 3. Recalculate parent total by summing remaining items
+            const { data: remainingItems, error: remainingError } = await supabase
+                .from('previsao_clientes')
+                .select('valor_previsto_cliente')
+                .eq('previsao_id', previsao_id);
+            
+            if (!remainingError && remainingItems) {
+                 const newTotal = remainingItems.reduce((acc, curr) => acc + Number(curr.valor_previsto_cliente), 0);
+                 await supabase
+                    .from('previsoes')
+                    .update({ previsao_total: newTotal })
+                    .eq('id', previsao_id);
+            }
+
+            await fetchData();
+            
+            // Update local state to reflect removal immediately
+            setSelectedHistoryReport((prev: any) => {
+                if (!prev) return null;
+                const updatedClients = prev.previsao_clientes.filter((item: any) => item.id !== itemToDelete);
+                const updatedTotal = updatedClients.reduce((acc: number, curr: any) => acc + Number(curr.valor_previsto_cliente), 0);
+                
+                return {
+                    ...prev,
+                    previsao_total: updatedTotal,
+                    previsao_clientes: updatedClients
+                };
+            });
+            
+            setItemToDelete(null);
+
+        } catch (e: any) {
+            console.error(e);
+            alert('Erro ao excluir item: ' + (e.message || 'Erro desconhecido'));
+        } finally {
+            setIsActionLoading(false);
+        }
     };
 
     return (
@@ -459,16 +528,30 @@ export const ManagerForecastScreen: React.FC = () => {
                             </div>
                             <table className="w-full text-left border-collapse bg-white rounded-3xl border border-slate-200 overflow-hidden">
                                 <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase border-b border-slate-100">
-                                    <tr><th className="px-6 py-4">Cliente / CNPJ</th><th className="px-6 py-4 text-right">Previsão Somada</th></tr>
+                                    <tr>
+                                        <th className="px-6 py-4">Cliente / CNPJ</th>
+                                        <th className="px-6 py-4 text-right">Previsão Somada</th>
+                                        <th className="px-6 py-4 text-center">Ação</th>
+                                    </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {(selectedHistoryReport.previsao_clientes || []).map((item: any, idx: number) => (
-                                        <tr key={idx}>
+                                        <tr key={idx} className="group hover:bg-slate-50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <p className="font-black text-slate-800 uppercase text-[11px] truncate">{item.clientes?.nome_fantasia}</p>
                                                 <p className="text-[9px] font-bold text-slate-400">{item.clientes?.cnpj}</p>
                                             </td>
                                             <td className="px-6 py-4 text-right font-black text-blue-600 text-[11px] tabular-nums">{formatBRL(item.valor_previsto_cliente)}</td>
+                                            <td className="px-6 py-4 text-center">
+                                                <button 
+                                                    onClick={() => handleDeleteClientItem(item.id)}
+                                                    disabled={isActionLoading}
+                                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                    title="Remover lançamento"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -532,6 +615,36 @@ export const ManagerForecastScreen: React.FC = () => {
                         <div className="grid grid-cols-1 gap-3 mt-10">
                             <Button onClick={executeResetCycle} isLoading={isActionLoading} className="bg-red-600 hover:bg-red-700 h-16 rounded-2xl font-black uppercase text-xs tracking-widest">Apagar Tudo</Button>
                             <Button variant="outline" onClick={() => setShowResetModal(false)} className="h-14 rounded-2xl font-black uppercase text-[10px] border-slate-200">Cancelar</Button>
+                        </div>
+                    </div>
+                </div>, document.body
+            )}
+            {/* Delete Confirmation Modal */}
+            {itemToDelete && createPortal(
+                <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white w-full max-w-sm rounded-[40px] p-10 shadow-2xl text-center border border-white/20">
+                        <div className="w-24 h-24 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-8 animate-pulse">
+                            <Trash2 className="w-12 h-12" />
+                        </div>
+                        <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Excluir Item?</h3>
+                        <p className="text-sm text-slate-500 mt-4 font-medium leading-relaxed">
+                            O representante precisará lançar novamente se necessário.
+                        </p>
+                        <div className="grid grid-cols-1 gap-3 mt-10">
+                            <Button 
+                                onClick={confirmDeleteClientItem} 
+                                isLoading={isActionLoading} 
+                                className="bg-red-600 hover:bg-red-700 h-16 rounded-2xl font-black uppercase text-xs tracking-widest"
+                            >
+                                Sim, Excluir
+                            </Button>
+                            <Button 
+                                variant="outline" 
+                                onClick={() => setItemToDelete(null)} 
+                                className="h-14 rounded-2xl font-black uppercase text-[10px] border-slate-200"
+                            >
+                                Cancelar
+                            </Button>
                         </div>
                     </div>
                 </div>, document.body
