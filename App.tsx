@@ -32,13 +32,15 @@ import { ManagerUsersScreen } from './components/manager/ManagerUsersScreen';
 import { ManagerScoreCardScreen } from './components/manager/ManagerScoreCardScreen';
 import { ManagerProductAnalysisScreen } from './components/manager/ManagerProductAnalysisScreen';
 
+import { DirectorDashboard } from './components/director/DirectorDashboard';
+
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [userName, setUserName] = useState('Visitante'); 
-  const [userRole, setUserRole] = useState<'admin' | 'rep'>('rep');
+  const [userRole, setUserRole] = useState<'admin' | 'rep' | 'director'>('rep');
   const [userId, setUserId] = useState<string | null>(null);
   const [forecastToEditId, setForecastToEditId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -55,7 +57,7 @@ const App: React.FC = () => {
       setUserId(id);
       setIsAuthenticated(true);
       setIsHydrated(false); 
-      setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
+      setCurrentView(role === 'admin' ? 'admin-dashboard' : role === 'director' ? 'director-dashboard' : 'dashboard');
       
       if (role === 'rep') {
           noticeTimer = window.setTimeout(() => checkImportantNotices(id), 5 * 60 * 1000);
@@ -92,12 +94,12 @@ const App: React.FC = () => {
       }
   };
 
-  const handleLogin = (name: string, role: 'admin' | 'rep', id: string) => {
+  const handleLogin = (name: string, role: 'admin' | 'rep' | 'director', id: string) => {
     setUserName(name);
     setUserRole(role);
     setUserId(id);
     setIsAuthenticated(true);
-    setCurrentView(role === 'admin' ? 'admin-dashboard' : 'dashboard');
+    setCurrentView(role === 'admin' ? 'admin-dashboard' : role === 'director' ? 'director-dashboard' : 'dashboard');
     sessionStorage.setItem('pcn_session', JSON.stringify({ name, role, id }));
     if (role === 'rep') {
         checkAndMarkDeliveredNotifications();
@@ -213,6 +215,11 @@ const App: React.FC = () => {
                 {currentView === 'admin-product-analysis' && <ManagerProductAnalysisScreen />}
                 {currentView === 'admin-clients' && <ManagerClientsScreen />}
                 {currentView === 'admin-targets' && <ManagerTargetsScreen />}
+               </>
+           )}
+           {userRole === 'director' && (
+               <>
+                {currentView === 'director-dashboard' && <DirectorDashboard />}
                </>
            )}
         </div>

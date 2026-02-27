@@ -10,7 +10,7 @@ interface SidebarProps {
   onChangeView: (view: string) => void;
   onLogout: () => void;
   userName: string;
-  userRole: 'admin' | 'rep';
+  userRole: 'admin' | 'rep' | 'director';
   isOpen: boolean;
   onToggle: (state: boolean) => void;
 }
@@ -107,7 +107,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-scorecard', label: 'Score Card', icon: Trophy },
   ];
 
-  const menuItems = userRole === 'admin' ? adminMenuItems : repMenuItems;
+  const directorMenuItems: MenuItem[] = [
+    { id: 'director-dashboard', label: 'Visão Geral', icon: LayoutDashboard },
+  ];
+
+  const menuItems = userRole === 'admin' ? adminMenuItems : userRole === 'director' ? directorMenuItems : repMenuItems;
 
   const handleMenuClick = (id: string) => {
     onChangeView(id);
@@ -132,7 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="min-w-0">
               <h1 className="text-lg font-bold leading-none tracking-tight text-slate-100 truncate">Centro-Norte</h1>
               <p className="text-[10px] text-blue-400 font-semibold mt-1 uppercase tracking-widest leading-tight">
-                  {userRole === 'admin' ? 'Gerência Regional' : 'Portal do Representante'}
+                  {userRole === 'admin' ? 'Gerência Regional' : userRole === 'director' ? 'Diretoria Executiva' : 'Portal do Representante'}
               </p>
             </div>
           </div>

@@ -6,7 +6,7 @@ import { Input } from './Input';
 import { supabase } from '../lib/supabase';
 
 interface LoginScreenProps {
-  onLogin: (name: string, role: 'admin' | 'rep', userId: string) => void;
+  onLogin: (name: string, role: 'admin' | 'rep' | 'director', userId: string) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
@@ -42,15 +42,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         return;
       }
 
-      await supabase
+      const { error: updateError } = await supabase
         .from('usuarios')
         .update({ 
-          ultimo_acesso: new Date().toISOString() 
+          ultimo_acesso: new Date()
         })
-        .eq('id', data.id);
+        .eq('id', data.id)
+        .select();
+
+      if (updateError) {
+        console.error('Erro ao atualizar ultimo_acesso:', updateError);
+      }
 
       const accessLevel = data.nivel_acesso.toLowerCase();
-      const mappedRole: 'admin' | 'rep' = (accessLevel === 'gerente' || accessLevel === 'admin') ? 'admin' : 'rep';
+      const mappedRole: 'admin' | 'rep' | 'director' = 
+        (accessLevel === 'diretor') ? 'director' : 
+        (accessLevel === 'gerente' || accessLevel === 'admin') ? 'admin' : 'rep';
       
       setIsLoading(false);
       onLogin(data.nome, mappedRole, data.id);

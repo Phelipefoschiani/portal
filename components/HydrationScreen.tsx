@@ -6,7 +6,7 @@ import { totalDataStore } from '../lib/dataStore';
 
 interface HydrationScreenProps {
   userId: string;
-  userRole: 'admin' | 'rep';
+  userRole: 'admin' | 'rep' | 'director';
   onComplete: () => void;
 }
 
@@ -41,7 +41,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       .gte('data', startDate)
       .lte('data', endDate);
     
-    if (role !== 'admin') countQuery = countQuery.eq('usuario_id', uid);
+    if (role !== 'admin' && role !== 'director') countQuery = countQuery.eq('usuario_id', uid);
     
     const { count, error: countError } = await countQuery;
     if (countError) throw countError;
@@ -63,7 +63,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
         .lte('data', endDate)
         .range(from, to);
 
-      if (role !== 'admin') query = query.eq('usuario_id', uid);
+      if (role !== 'admin' && role !== 'director') query = query.eq('usuario_id', uid);
 
       promises.push(
         query.then(res => {
@@ -97,7 +97,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       setStatus('Mapeando carteira...');
       setProgress(25);
       let clientQuery = supabase.from('clientes').select('*, usuarios(nome, id)');
-      if (userRole !== 'admin') clientQuery = clientQuery.eq('usuario_id', userId);
+      if (userRole !== 'admin' && userRole !== 'director') clientQuery = clientQuery.eq('usuario_id', userId);
       const { data: clients } = await clientQuery;
       totalDataStore.clients = clients || [];
 
@@ -111,12 +111,12 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       setStatus('Consolidando metas...');
       
       let targetQuery = supabase.from('metas_usuarios').select('*').in('ano', [2024, 2025, 2026, 2027]);
-      if (userRole !== 'admin') targetQuery = targetQuery.eq('usuario_id', userId);
+      if (userRole !== 'admin' && userRole !== 'director') targetQuery = targetQuery.eq('usuario_id', userId);
       const { data: targets } = await targetQuery;
       totalDataStore.targets = targets || [];
 
       let invQuery = supabase.from('investimentos').select('*').gte('data', `2024-01-01`).eq('status', 'approved');
-      if (userRole !== 'admin') invQuery = invQuery.eq('usuario_id', userId);
+      if (userRole !== 'admin' && userRole !== 'director') invQuery = invQuery.eq('usuario_id', userId);
       const { data: invs } = await invQuery;
       totalDataStore.investments = invs || [];
 

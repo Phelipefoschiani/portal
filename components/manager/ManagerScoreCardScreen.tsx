@@ -57,6 +57,66 @@ const ScoreRulesModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     );
 };
 
+const ClientDetailModal: React.FC<{ 
+    client: any; 
+    year: number; 
+    monthsLabel: string;
+    onClose: () => void;
+}> = ({ client, year, monthsLabel, onClose }) => {
+    const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
+    const isGrowth = client.achievement >= 0;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border border-white/20">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><Briefcase className="w-5 h-5" /></div>
+                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight truncate max-w-[200px]">{client.name}</h3>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X className="w-5 h-5" /></button>
+                </div>
+                
+                <div className="p-6 space-y-6">
+                    <div className="text-center pb-4 border-b border-slate-100">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Variação no Período</p>
+                        <div className={`inline-flex items-center gap-2 px-6 py-3 rounded-2xl ${isGrowth ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'}`}>
+                            {isGrowth ? <ArrowUpRight className="w-6 h-6" /> : <ArrowDownRight className="w-6 h-6" />}
+                            <span className="text-3xl font-black tracking-tighter">{Math.abs(client.achievement).toFixed(2)}%</span>
+                        </div>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-3 tracking-widest">{isGrowth ? 'Crescimento' : 'Retração'} vs Período Anterior</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{year}</p>
+                            <p className="text-xl font-black text-slate-900">{formatBRL(client.value)}</p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">{monthsLabel}</p>
+                        </div>
+                        <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{year - 1}</p>
+                            <p className="text-xl font-black text-slate-500">{formatBRL(client.prevValue)}</p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">{monthsLabel}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-start gap-3">
+                        <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-blue-700 font-medium leading-relaxed">
+                            Este comparativo considera apenas as vendas realizadas nos meses selecionados ({monthsLabel}) em ambos os anos.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
+                    <button onClick={onClose} className="text-[10px] font-black uppercase text-slate-400 hover:text-slate-600">Fechar Detalhes</button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
+
 export const ManagerScoreCardScreen: React.FC = () => {
     const now = new Date();
     
@@ -75,6 +135,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
     
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const [showInfoModal, setShowInfoModal] = useState(false);
+    const [selectedClientDetail, setSelectedClientDetail] = useState<any | null>(null);
     const [isExporting, setIsExporting] = useState(false);
     
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -115,146 +176,183 @@ export const ManagerScoreCardScreen: React.FC = () => {
         return `${selectedMonths.length} MESES`;
     };
     
-    const scoreData = useMemo(() => {
-        const sales = totalDataStore.sales;
-        const targets = totalDataStore.targets;
-        const clients = totalDataStore.clients;
+    const [scoreData, setScoreData] = useState<any>(null);
+    const [isCalculating, setIsCalculating] = useState(true);
 
-        const filterSales = (s: any, yearToCheck: number) => {
-            const d = new Date(s.data + 'T00:00:00');
-            const m = d.getUTCMonth() + 1;
-            const y = d.getUTCFullYear();
-            return y === yearToCheck && selectedMonths.includes(m) && (selectedRepId === 'all' ? true : s.usuario_id === selectedRepId);
-        };
-        
-        const currentSales = sales.filter(s => filterSales(s, selectedYear));
-        const prevSales = sales.filter(s => filterSales(s, selectedYear - 1));
-        const totalFaturado = currentSales.reduce((acc, curr) => acc + Number(curr.faturamento), 0);
-        
-        const currentTargets = targets.filter(t => t.ano === selectedYear && selectedMonths.includes(t.mes) && (selectedRepId === 'all' ? true : t.usuario_id === selectedRepId));
-        const totalMeta = currentTargets.reduce((acc, curr) => acc + Number(curr.valor), 0);
+    // ... (keep existing refs and effects)
 
-        const activeCnpjs = new Set(currentSales.map(s => String(s.cnpj || '').replace(/\D/g, '')));
-        const totalPortfolio = clients.filter(c => selectedRepId === 'all' ? true : c.usuario_id === selectedRepId).length || 1; 
-        const positivacaoCount = activeCnpjs.size;
-        
-        const uniqueSkus = new Set(currentSales.map(s => s.codigo_produto)).size;
-        const uniqueSkusPrev = new Set(prevSales.map(s => s.codigo_produto)).size;
-        
-        const monthsCount = selectedMonths.length || 1;
-        const mediaMensal = totalFaturado / monthsCount;
+    useEffect(() => {
+        setIsCalculating(true);
+        setScoreData(null); 
 
-        const pctMeta = totalMeta > 0 ? (totalFaturado / totalMeta) * 100 : 0;
-        const scoreFinanceiro = Math.min((totalFaturado / (totalMeta || 1)), 1.0) * 60; 
+        const timer = setTimeout(() => {
+            try {
+                const sales = totalDataStore.sales || [];
+                const targets = totalDataStore.targets || [];
+                const clients = totalDataStore.clients || [];
 
-        const pctPositivacao = (positivacaoCount / totalPortfolio);
-        const scoreCarteira = Math.min(pctPositivacao, 1.0) * 25;
-
-        let mixRatio = 0;
-        if (uniqueSkusPrev > 0) {
-            mixRatio = uniqueSkus / uniqueSkusPrev;
-        } else {
-            const targetMix = monthsCount * 20; 
-            mixRatio = uniqueSkus / targetMix;
-        }
-        const scoreMix = Math.min(mixRatio, 1.0) * 15; 
-
-        const finalScore = Math.round(scoreFinanceiro + scoreCarteira + scoreMix);
-
-        const monthlyData = selectedMonths.sort((a,b) => a-b).map(month => {
-            const mSales = currentSales.filter(s => {
-                const d = new Date(s.data + 'T00:00:00');
-                return d.getUTCMonth() + 1 === month;
-            }).reduce((a, b) => a + Number(b.faturamento), 0);
-            
-            const mTarget = currentTargets.filter(t => t.mes === month).reduce((a, b) => a + Number(b.valor), 0);
-            
-            return { month, sales: mSales, target: mTarget };
-        });
-
-        const monthsHit = monthlyData.filter(m => m.target > 0 && m.sales >= m.target).length;
-
-        const segmentMap = new Map<string, number>();
-        currentSales.forEach(s => {
-            const seg = s.canal_vendas || 'GERAL / OUTROS';
-            segmentMap.set(seg, (segmentMap.get(seg) || 0) + Number(s.faturamento));
-        });
-        const segmentationData = Array.from(segmentMap.entries())
-            .map(([label, value]) => ({ label, value, percent: totalFaturado > 0 ? (value / totalFaturado) * 100 : 0 }))
-            .sort((a, b) => b.value - a.value);
-
-        const productMap = new Map<string, number>();
-        currentSales.forEach(s => {
-            const prod = s.produto || 'PRODUTO N/I';
-            productMap.set(prod, (productMap.get(prod) || 0) + Number(s.faturamento));
-        });
-        const topProducts = Array.from(productMap.entries())
-            .map(([name, value]) => ({ 
-                name, 
-                value,
-                percent: totalFaturado > 0 ? (value / totalFaturado) * 100 : 0
-            }))
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 5);
-
-        const clientMap = new Map<string, { current: number, prev: number }>();
-        const clientNameMap = new Map<string, string>();
-        
-        currentSales.forEach(s => {
-            const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
-            if (!clientNameMap.has(cnpjClean)) {
-                const clientObj = clients.find(c => String(c.cnpj).replace(/\D/g,'') === cnpjClean);
-                clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || s.cliente_nome || `CNPJ ${s.cnpj}`);
-            }
-            const current = clientMap.get(cnpjClean) || { current: 0, prev: 0 };
-            current.current += Number(s.faturamento);
-            clientMap.set(cnpjClean, current);
-        });
-
-        prevSales.forEach(s => {
-            const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
-            const current = clientMap.get(cnpjClean);
-            if (current) {
-                current.prev += Number(s.faturamento);
-                clientMap.set(cnpjClean, current);
-            }
-        });
-
-        const topClients = Array.from(clientMap.entries())
-            .map(([cnpj, data]) => {
-                const achievement = data.prev > 0 ? (data.current / data.prev) * 100 : (data.current > 0 ? 100 : 0);
-                return {
-                    name: clientNameMap.get(cnpj) || 'Cliente',
-                    value: data.current,
-                    prevValue: data.prev,
-                    percent: totalFaturado > 0 ? (data.current / totalFaturado) * 100 : 0,
-                    achievement: achievement
+                const filterSales = (s: any, yearToCheck: number) => {
+                    if (!s.data) return false;
+                    const d = new Date(s.data + 'T00:00:00');
+                    const m = d.getUTCMonth() + 1;
+                    const y = d.getUTCFullYear();
+                    
+                    const matchesYear = y === yearToCheck;
+                    const matchesMonth = selectedMonths.includes(m);
+                    const matchesRep = selectedRepId === 'all' ? true : String(s.usuario_id) === String(selectedRepId);
+                    
+                    return matchesYear && matchesMonth && matchesRep;
                 };
-            })
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 5);
+                
+                const currentSales = sales.filter(s => filterSales(s, selectedYear));
+                const prevSales = sales.filter(s => filterSales(s, selectedYear - 1));
+                const totalFaturado = currentSales.reduce((acc, curr) => acc + Number(curr.faturamento || 0), 0);
+                
+                const currentTargets = targets.filter(t => t.ano === selectedYear && selectedMonths.includes(t.mes) && (selectedRepId === 'all' ? true : t.usuario_id === selectedRepId));
+                const totalMeta = currentTargets.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
 
-        return {
-            totalFaturado,
-            totalMeta,
-            pctMeta,
-            positivacaoCount,
-            totalPortfolio,
-            pctPositivacao: pctPositivacao * 100,
-            mediaMensal,
-            uniqueSkus,
-            uniqueSkusPrev,
-            mixEvolutionPct: mixRatio * 100,
-            finalScore: Math.min(finalScore, 100),
-            scoreFinanceiro,
-            scoreCarteira,
-            scoreMix,
-            monthlyData,
-            monthsHit,
-            segmentationData,
-            topProducts,
-            topClients
-        };
+                const activeCnpjs = new Set(currentSales.map(s => String(s.cnpj || '').replace(/\D/g, '')));
+                const totalPortfolio = clients.filter(c => selectedRepId === 'all' ? true : c.usuario_id === selectedRepId).length || 1; 
+                const positivacaoCount = activeCnpjs.size;
+                
+                const uniqueSkus = new Set(currentSales.map(s => s.codigo_produto)).size;
+                const uniqueSkusPrev = new Set(prevSales.map(s => s.codigo_produto)).size;
+                
+                const monthsCount = selectedMonths.length || 1;
+                const mediaMensal = totalFaturado / monthsCount;
+
+                const pctMeta = totalMeta > 0 ? (totalFaturado / totalMeta) * 100 : 0;
+                const scoreFinanceiro = Math.min((totalFaturado / (totalMeta || 1)), 1.0) * 60; 
+
+                const pctPositivacao = (positivacaoCount / totalPortfolio);
+                const scoreCarteira = Math.min(pctPositivacao, 1.0) * 25;
+
+                let mixRatio = 0;
+                if (uniqueSkusPrev > 0) {
+                    mixRatio = uniqueSkus / uniqueSkusPrev;
+                } else {
+                    const targetMix = monthsCount * 20; 
+                    mixRatio = uniqueSkus / targetMix;
+                }
+                const scoreMix = Math.min(mixRatio, 1.0) * 15; 
+
+                const finalScore = Math.round(scoreFinanceiro + scoreCarteira + scoreMix);
+
+                const monthlyData = selectedMonths.sort((a,b) => a-b).map(month => {
+                    const mSales = currentSales.filter(s => {
+                        if (!s.data) return false;
+                        const d = new Date(s.data + 'T00:00:00');
+                        return d.getUTCMonth() + 1 === month;
+                    }).reduce((a, b) => a + Number(b.faturamento || 0), 0);
+                    
+                    const mTarget = currentTargets.filter(t => t.mes === month).reduce((a, b) => a + Number(b.valor || 0), 0);
+                    
+                    return { month, sales: mSales, target: mTarget };
+                });
+
+                const monthsHit = monthlyData.filter(m => m.target > 0 && m.sales >= m.target).length;
+
+                const segmentMap = new Map<string, number>();
+                currentSales.forEach(s => {
+                    const seg = s.canal_vendas || 'GERAL / OUTROS';
+                    segmentMap.set(seg, (segmentMap.get(seg) || 0) + Number(s.faturamento || 0));
+                });
+                const segmentationData = Array.from(segmentMap.entries())
+                    .map(([label, value]) => ({ label, value, percent: totalFaturado > 0 ? (value / totalFaturado) * 100 : 0 }))
+                    .sort((a, b) => b.value - a.value);
+
+                const productMap = new Map<string, number>();
+                currentSales.forEach(s => {
+                    const prod = s.produto || 'PRODUTO N/I';
+                    productMap.set(prod, (productMap.get(prod) || 0) + Number(s.faturamento || 0));
+                });
+                const topProducts = Array.from(productMap.entries())
+                    .map(([name, value]) => ({ 
+                        name, 
+                        value,
+                        percent: totalFaturado > 0 ? (value / totalFaturado) * 100 : 0
+                    }))
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 5);
+
+                const clientMap = new Map<string, { current: number, prev: number }>();
+                const clientNameMap = new Map<string, string>();
+                
+                currentSales.forEach(s => {
+                    const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
+                    if (!cnpjClean) return;
+
+                    if (!clientNameMap.has(cnpjClean)) {
+                        const clientObj = clients.find(c => String(c.cnpj || '').replace(/\D/g,'') === cnpjClean);
+                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || s.cliente_nome || `CNPJ ${s.cnpj}`);
+                    }
+                    const data = clientMap.get(cnpjClean) || { current: 0, prev: 0 };
+                    data.current += Number(s.faturamento || 0);
+                    clientMap.set(cnpjClean, data);
+                });
+
+                prevSales.forEach(s => {
+                    const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
+                    if (!cnpjClean) return;
+                    
+                    if (!clientNameMap.has(cnpjClean)) {
+                        const clientObj = clients.find(c => String(c.cnpj || '').replace(/\D/g,'') === cnpjClean);
+                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || s.cliente_nome || `CNPJ ${s.cnpj}`);
+                    }
+
+                    const data = clientMap.get(cnpjClean) || { current: 0, prev: 0 };
+                    data.prev += Number(s.faturamento || 0);
+                    clientMap.set(cnpjClean, data);
+                });
+
+                const topClients = Array.from(clientMap.entries())
+                    .map(([cnpj, data]) => {
+                        // Cálculo de crescimento: ((Atual / Anterior) - 1) * 100
+                        const achievement = data.prev > 0 
+                            ? ((data.current / data.prev) - 1) * 100 
+                            : (data.current > 0 ? 100 : 0);
+                            
+                        return {
+                            cnpj,
+                            name: clientNameMap.get(cnpj) || 'Cliente',
+                            value: data.current,
+                            prevValue: data.prev,
+                            percent: totalFaturado > 0 ? (data.current / totalFaturado) * 100 : 0,
+                            achievement: achievement
+                        };
+                    })
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 5);
+
+                setScoreData({
+                    totalFaturado,
+                    totalMeta,
+                    pctMeta,
+                    positivacaoCount,
+                    totalPortfolio,
+                    pctPositivacao: pctPositivacao * 100,
+                    mediaMensal,
+                    uniqueSkus,
+                    uniqueSkusPrev,
+                    mixEvolutionPct: mixRatio * 100,
+                    finalScore: Math.min(finalScore, 100),
+                    scoreFinanceiro,
+                    scoreCarteira,
+                    scoreMix,
+                    monthlyData,
+                    monthsHit,
+                    segmentationData,
+                    topProducts,
+                    topClients
+                });
+            } catch (error) {
+                console.error("Erro ao calcular Score Card:", error);
+            } finally {
+                setIsCalculating(false);
+            }
+        }, 1500);
+
+        return () => clearTimeout(timer);
     }, [selectedYear, selectedRepId, selectedMonths]);
 
     const getScoreLabel = (score: number) => {
@@ -264,7 +362,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
         return { label: 'CRÍTICO', color: 'text-red-500', bg: 'bg-red-500', border: 'border-red-200', hex: '#ef4444', bgHex: '#fef2f2' };
     };
 
-    const scoreStyle = getScoreLabel(scoreData.finalScore);
+    const scoreStyle = scoreData ? getScoreLabel(scoreData.finalScore) : { label: '...', color: 'text-slate-300', bg: 'bg-slate-100', border: 'border-slate-100', hex: '#cbd5e1', bgHex: '#f8fafc' };
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
     const handleExportImage = async () => {
@@ -378,7 +476,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
     };
 
     return (
-        <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-20">
+        <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-20 relative">
             {/* Overlay de carregamento global para o export */}
             {isExporting && createPortal(
                 <div className="fixed inset-0 z-[500] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center text-white">
@@ -390,6 +488,14 @@ export const ManagerScoreCardScreen: React.FC = () => {
                     <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.3em] animate-pulse">Organizando métricas e indicadores...</p>
                 </div>,
                 document.body
+            )}
+
+            {/* Overlay de cálculo de dados */}
+            {isCalculating && (
+                <div className="absolute inset-0 z-[50] bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-[32px]">
+                    <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+                    <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest animate-pulse">Atualizando Indicadores...</p>
+                </div>
             )}
 
             {/* Header */}
@@ -497,8 +603,9 @@ export const ManagerScoreCardScreen: React.FC = () => {
             </div>
 
             {/* VISUALIZAÇÃO NA TELA */}
-            <div className="space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {!isCalculating && scoreData && (
+                <div className="space-y-6 animate-fadeIn">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                     <div className="lg:col-span-4 bg-white rounded-[40px] border border-slate-200 shadow-lg p-8 flex flex-col items-center justify-center relative overflow-hidden">
                         <button onClick={() => setShowInfoModal(true)} className="absolute top-4 right-4 p-2 bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><Info className="w-4 h-4" /></button>
                         <div className={`absolute top-0 w-full h-2 ${scoreStyle.bg}`}></div>
@@ -536,14 +643,27 @@ export const ManagerScoreCardScreen: React.FC = () => {
                         <div className="flex items-center gap-3 mb-6"><Briefcase className="w-5 h-5 text-emerald-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top 5 Clientes</h3></div>
                         {scoreData.topClients.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem clientes</p></div>) : (
                             <div className="space-y-3 flex-1">
-                                {scoreData.topClients.map((client, idx) => (
-                                    <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl">
+                                {scoreData.topClients.map((client: any, idx: number) => (
+                                    <button 
+                                        key={idx} 
+                                        onClick={() => setSelectedClientDetail(client)}
+                                        className="w-full flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left group"
+                                    >
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-[9px] shrink-0 ${idx === 0 ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>{idx + 1}</div>
-                                            <div className="min-w-0"><span className="text-[9px] font-bold text-slate-700 uppercase truncate max-w-[100px] block">{client.name}</span><span className={`text-[8px] font-black flex items-center gap-0.5 ${client.achievement >= 100 ? 'text-emerald-600' : 'text-red-500'}`}>{client.achievement >= 100 ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}{client.achievement.toFixed(0)}% vs Ano Ant</span></div>
+                                            <div className="min-w-0">
+                                                <span className="text-[9px] font-bold text-slate-700 uppercase truncate max-w-[100px] block group-hover:text-blue-700">{client.name}</span>
+                                                <span className={`text-[8px] font-black flex items-center gap-0.5 ${client.achievement >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                    {client.achievement >= 0 ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
+                                                    {Math.abs(client.achievement).toFixed(2)}% vs Ano Ant
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className="text-right shrink-0"><span className="block text-[9px] font-black text-emerald-700 tabular-nums">{client.percent.toFixed(1)}%</span><span className="text-[7px] text-slate-400 font-bold uppercase">Share</span></div>
-                                    </div>
+                                        <div className="text-right shrink-0">
+                                            <span className="block text-[9px] font-black text-emerald-700 tabular-nums group-hover:text-blue-700">{client.percent.toFixed(1)}%</span>
+                                            <span className="text-[7px] text-slate-400 font-bold uppercase">Share</span>
+                                        </div>
+                                    </button>
                                 ))}
                             </div>
                         )}
@@ -552,7 +672,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                         <div className="flex items-center gap-3 mb-6"><Package className="w-5 h-5 text-purple-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top 5 Produtos</h3></div>
                         {scoreData.topProducts.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><ShoppingBag className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem vendas</p></div>) : (
                             <div className="space-y-3 flex-1">
-                                {scoreData.topProducts.map((prod, idx) => (
+                                {scoreData.topProducts.map((prod: any, idx: number) => (
                                     <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-[9px] shrink-0 ${idx === 0 ? 'bg-purple-600 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>{idx + 1}</div>
@@ -568,7 +688,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                         <div className="flex items-center gap-3 mb-6"><Tag className="w-5 h-5 text-blue-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Segmentação</h3></div>
                         {scoreData.segmentationData.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem dados</p></div>) : (
                             <div className="space-y-4 flex-1">
-                                {scoreData.segmentationData.slice(0, 5).map((seg, idx) => (
+                                {scoreData.segmentationData.slice(0, 5).map((seg: any, idx: number) => (
                                     <div key={idx} className="space-y-1.5">
                                         <div className="flex justify-between items-end"><span className="text-[9px] font-black text-slate-700 uppercase tracking-tight">{seg.label}</span><span className="text-[9px] font-black text-blue-600">{seg.percent.toFixed(1)}%</span></div>
                                         <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(seg.percent, 100)}%` }}></div></div>
@@ -583,7 +703,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b border-slate-100"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-widest"><th className="px-8 py-5">Mês</th><th className="px-6 py-5 text-right">Meta</th><th className="px-6 py-5 text-right">Realizado</th><th className="px-6 py-5 text-center">Status</th><th className="px-6 py-5 text-center">Eficiência</th></tr></thead>
                         <tbody className="divide-y divide-slate-50">
-                            {scoreData.monthlyData.map((m, idx) => {
+                            {scoreData.monthlyData.map((m: any, idx: number) => {
                                 const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                                 const isSuccess = achievement >= 100;
                                 const isPending = m.sales === 0 && m.target > 0 && m.month > (new Date().getMonth() + 1);
@@ -597,8 +717,10 @@ export const ManagerScoreCardScreen: React.FC = () => {
                     <p style={{ fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', color: '#cbd5e1', letterSpacing: '6px' }}>Portal Centro-Norte • Inteligência Comercial Avançada</p>
                 </div>
             </div>
+            )}
 
             {/* --- LAYOUT DEDICADO PARA EXPORTAÇÃO (SÓ APARECE DURANTE O CAPTURE) --- */}
+            {scoreData && (
             <div 
                 ref={exportRef} 
                 id="scorecard-export-content" 
@@ -739,20 +861,20 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                             Top 5 Clientes
                         </h3>
-                        {scoreData.topClients.map((client, idx) => (
+                        {scoreData.topClients.map((client: any, idx: number) => (
                             <div key={idx} style={{ display: 'flex', alignItems: 'center', padding: '16px 0', borderBottom: idx === 4 ? 'none' : '2px solid #f8fafc', justifyContent: 'space-between', gap: '15px', minHeight: '60px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
                                     <div style={{ width: '32px', height: '32px', backgroundColor: idx === 0 ? '#059669' : '#f1f5f9', color: idx === 0 ? 'white' : '#94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '900', flexShrink: 0 }}>{idx + 1}</div>
                                     <div style={{ minWidth: 0 }}>
                                         <p style={{ fontSize: '11px', fontWeight: '900', color: '#334155', textTransform: 'uppercase', margin: 0, lineHeight: '1.4', whiteSpace: 'normal', wordBreak: 'break-word' }}>{client.name}</p>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                                            {client.achievement >= 100 ? (
+                                            {client.achievement >= 0 ? (
                                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
                                             ) : (
                                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                                             )}
-                                            <span style={{ fontSize: '10px', fontWeight: '900', color: client.achievement >= 100 ? '#059669' : '#ef4444' }}>
-                                                {client.achievement.toFixed(0)}% vs {selectedYear - 1}
+                                            <span style={{ fontSize: '10px', fontWeight: '900', color: client.achievement >= 0 ? '#059669' : '#ef4444' }}>
+                                                {Math.abs(client.achievement).toFixed(2)}% vs {selectedYear - 1}
                                             </span>
                                         </div>
                                     </div>
@@ -768,7 +890,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15"></path><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
                             Principais Itens
                         </h3>
-                        {scoreData.topProducts.map((prod, idx) => (
+                        {scoreData.topProducts.map((prod: any, idx: number) => (
                             <div key={idx} style={{ display: 'flex', alignItems: 'center', padding: '18px 0', borderBottom: idx === 4 ? 'none' : '2px solid #f8fafc', justifyContent: 'space-between', gap: '15px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
                                     <div style={{ width: '30px', height: '30px', backgroundColor: idx === 0 ? '#7c3aed' : '#f1f5f9', color: idx === 0 ? 'white' : '#94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '900', flexShrink: 0 }}>{idx + 1}</div>
@@ -786,7 +908,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             Mix de Canais
                         </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            {scoreData.segmentationData.slice(0, 5).map((seg, idx) => (
+                            {scoreData.segmentationData.slice(0, 5).map((seg: any, idx: number) => (
                                 <div key={idx}>
                                     <div style={{ display: 'flex', marginBottom: '8px', justifyContent: 'space-between' }}>
                                         <span style={{ fontSize: '11px', fontWeight: '900', color: '#334155', textTransform: 'uppercase' }}>{seg.label}</span>
@@ -812,7 +934,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {scoreData.monthlyData.map((m, idx) => {
+                            {scoreData.monthlyData.map((m: any, idx: number) => {
                                 const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                                 const isSuccess = achievement >= 100;
                                 return (
@@ -839,8 +961,16 @@ export const ManagerScoreCardScreen: React.FC = () => {
                     <p style={{ fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', color: '#cbd5e1', letterSpacing: '6px' }}>Portal Centro-Norte • Inteligência Comercial Avançada</p>
                 </div>
             </div>
-
+            )} 
             {showInfoModal && <ScoreRulesModal onClose={() => setShowInfoModal(false)} />}
+            {selectedClientDetail && (
+                <ClientDetailModal 
+                    client={selectedClientDetail} 
+                    year={selectedYear} 
+                    monthsLabel={getMonthsLabel()}
+                    onClose={() => setSelectedClientDetail(null)} 
+                />
+            )}
         </div>
     );
 };
