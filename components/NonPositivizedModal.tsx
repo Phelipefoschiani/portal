@@ -44,7 +44,27 @@ export const NonPositivizedModal: React.FC<NonPositivizedModalProps> = ({ onClos
       }
     });
     
-    return myClients.filter(client => {
+    const portfolio = myClients.filter(c => {
+      if (c.usuario_id !== userId) return false;
+      
+      // Regra de Carteira: Clientes ativos no final do ano anterior 
+      // OU que compraram no ano selecionado
+      const lastPurchaseDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
+      if (!lastPurchaseDate) return false;
+
+      const lastPurchaseYear = lastPurchaseDate.getUTCFullYear();
+      const lastPurchaseMonth = lastPurchaseDate.getUTCMonth() + 1;
+      
+      // Se comprou no ano selecionado, está na carteira
+      if (lastPurchaseYear === selectedYear) return true;
+      
+      // Se era ativo no final do ano anterior (comprou nos últimos 3 meses de Y-1)
+      if (lastPurchaseYear === selectedYear - 1 && lastPurchaseMonth >= 10) return true;
+      
+      return false;
+    });
+    
+    return portfolio.filter(client => {
       const clientCnpjClean = cleanCnpj(client.cnpj);
       return !salesInPeriodCnpjs.has(clientCnpjClean);
     }).map(client => ({

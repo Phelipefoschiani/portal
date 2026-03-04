@@ -55,9 +55,29 @@ export const Dashboard: React.FC = () => {
       return s.usuario_id === userId && selectedMonths.includes(m) && y === selectedYear;
     });
 
+    const portfolio = clients.filter(c => {
+      if (c.usuario_id !== userId) return false;
+      
+      // Regra de Carteira: Clientes ativos no final do ano anterior 
+      // OU que compraram no ano selecionado
+      const lastPurchaseDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
+      if (!lastPurchaseDate) return false;
+
+      const lastPurchaseYear = lastPurchaseDate.getUTCFullYear();
+      const lastPurchaseMonth = lastPurchaseDate.getUTCMonth() + 1;
+      
+      // Se comprou no ano selecionado, está na carteira
+      if (lastPurchaseYear === selectedYear) return true;
+      
+      // Se era ativo no final do ano anterior (comprou nos últimos 3 meses de Y-1)
+      if (lastPurchaseYear === selectedYear - 1 && lastPurchaseMonth >= 10) return true;
+      
+      return false;
+    });
+
     const totalFaturado = filteredSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
     const salesCnpjs = new Set(filteredSales.map(s => cleanCnpj(s.cnpj)));
-    const positivadosCount = clients.filter(c => salesCnpjs.has(cleanCnpj(c.cnpj))).length;
+    const positivadosCount = portfolio.filter(c => salesCnpjs.has(cleanCnpj(c.cnpj))).length;
 
     const prevYearSales = sales.filter(s => {
         const d = new Date(s.data + 'T00:00:00');
@@ -72,7 +92,7 @@ export const Dashboard: React.FC = () => {
       meta: totalMeta,
       faturado: totalFaturado,
       clientesPositivados: positivadosCount,
-      totalClientes: clients.length,
+      totalClientes: portfolio.length,
       growthPercent,
       hasPrevData: totalPrevFaturado > 0
     };

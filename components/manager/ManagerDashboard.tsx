@@ -548,7 +548,26 @@ export const ManagerDashboard: React.FC = () => {
                 return inv.usuario_id === rep.id && d.getUTCFullYear() === selectedYear && inv.status === 'approved';
             }).reduce((a, b) => a + Number(b.valor_total_investimento), 0);
 
-            const repClients = portfolio.filter(c => c.usuario_id === rep.id);
+            const repClients = portfolio.filter(c => {
+                if (c.usuario_id !== rep.id) return false;
+                
+                // Regra de Carteira: Clientes ativos no final do ano anterior 
+                // OU que compraram no ano selecionado
+                const lastPurchaseDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
+                if (!lastPurchaseDate) return false;
+
+                const lastPurchaseYear = lastPurchaseDate.getUTCFullYear();
+                const lastPurchaseMonth = lastPurchaseDate.getUTCMonth() + 1;
+                
+                // Se comprou no ano selecionado, está na carteira
+                if (lastPurchaseYear === selectedYear) return true;
+                
+                // Se era ativo no final do ano anterior (comprou nos últimos 3 meses de Y-1)
+                // Outubro, Novembro ou Dezembro
+                if (lastPurchaseYear === selectedYear - 1 && lastPurchaseMonth >= 10) return true;
+                
+                return false;
+            });
             const salesCnpjs = new Set(repSalesList.map(s => String(s.cnpj || '').replace(/\D/g, '')));
             const repPosit = repClients.filter(c => salesCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;
 

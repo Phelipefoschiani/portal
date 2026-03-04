@@ -212,8 +212,26 @@ export const ManagerScoreCardScreen: React.FC = () => {
                 const totalMeta = currentTargets.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
 
                 const activeCnpjs = new Set(currentSales.map(s => String(s.cnpj || '').replace(/\D/g, '')));
-                const totalPortfolio = clients.filter(c => selectedRepId === 'all' ? true : c.usuario_id === selectedRepId).length || 1; 
-                const positivacaoCount = activeCnpjs.size;
+                
+                // Regra de Carteira Dinâmica: Clientes ativos no final do ano anterior OU que compraram no ano selecionado
+                const portfolioClients = clients.filter(c => {
+                    const matchesRep = selectedRepId === 'all' ? true : String(c.usuario_id) === String(selectedRepId);
+                    if (!matchesRep) return false;
+
+                    const lpDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
+                    if (!lpDate) return false;
+
+                    const lpYear = lpDate.getUTCFullYear();
+                    const lpMonth = lpDate.getUTCMonth() + 1;
+
+                    const isCurrentYear = lpYear === selectedYear;
+                    const isActiveAtEndOfPrev = lpYear === selectedYear - 1 && lpMonth >= 10;
+
+                    return isCurrentYear || isActiveAtEndOfPrev;
+                });
+
+                const totalPortfolio = portfolioClients.length || 1; 
+                const positivacaoCount = portfolioClients.filter(c => activeCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;
                 
                 const uniqueSkus = new Set(currentSales.map(s => s.codigo_produto)).size;
                 const uniqueSkusPrev = new Set(prevSales.map(s => s.codigo_produto)).size;

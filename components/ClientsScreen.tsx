@@ -34,7 +34,24 @@ export const ClientsScreen: React.FC = () => {
       const matchSearch = c.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase()) || 
                          (c.cnpj && c.cnpj.includes(searchTerm));
       const matchChannel = selectedChannel === 'all' ? true : c.canal_vendas === selectedChannel;
-      return matchSearch && matchChannel;
+      
+      // Regra de Carteira: Clientes ativos no final do ano anterior 
+      // OU que compraram no ano selecionado
+      let portfolioMatch = true;
+      if (typeof selectedYear === 'number') {
+          const lpDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
+          if (!lpDate) {
+              portfolioMatch = false;
+          } else {
+              const lpYear = lpDate.getUTCFullYear();
+              const lpMonth = lpDate.getUTCMonth() + 1;
+              const isCurrentYear = lpYear === selectedYear;
+              const isActiveAtEndOfPrev = lpYear === selectedYear - 1 && lpMonth >= 10;
+              portfolioMatch = isCurrentYear || isActiveAtEndOfPrev;
+          }
+      }
+
+      return matchSearch && matchChannel && portfolioMatch;
     });
 
     const filteredClientCnpjs = new Set(filteredClientsBase.map(c => String(c.cnpj || '').replace(/\D/g, '')));
@@ -66,11 +83,28 @@ export const ClientsScreen: React.FC = () => {
     const ranking = filteredClientsBase.map(c => {
       const stats = statsMap.get(String(c.cnpj || '').replace(/\D/g, ''));
       const fat = stats?.faturamento || 0;
+      
+      // Status dinâmico:
+      // Se ano selecionado, Ativo se comprou no período filtrado.
+      // Se histórico total, Ativo se comprou nos últimos 3 meses (regra geral).
+      let isAtivo = false;
+      if (selectedYear === 'all') {
+          const lpDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
+          if (lpDate) {
+              const threeMonthsAgo = new Date();
+              threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+              isAtivo = lpDate >= threeMonthsAgo;
+          }
+      } else {
+          isAtivo = fat > 0;
+      }
+
       return {
         ...c,
         faturamentoPeriodo: fat,
         lastPurchase: stats?.lastDate || null,
-        participation: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0
+        participation: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0,
+        isAtivo
       };
     }).sort((a, b) => b.faturamentoPeriodo - a.faturamentoPeriodo);
 
@@ -166,6 +200,7 @@ export const ClientsScreen: React.FC = () => {
                 <th className="px-6 py-5">Cliente / Entidade</th>
                 <th className="px-6 py-5">CNPJ</th>
                 <th className="px-6 py-5">Canal</th>
+                <th className="px-6 py-5">Status</th>
                 <th className="px-6 py-5">Última Compra</th>
                 <th className="px-6 py-5 text-right">% Participação</th>
                 <th className="px-8 py-5 text-center">Ver</th>
@@ -194,6 +229,22 @@ export const ClientsScreen: React.FC = () => {
                     <span className="inline-flex items-center gap-1.5 text-[9px] font-black text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg uppercase tracking-wider">
                       {client.canal_vendas || 'GERAL'}
                     </span>
+                  </td>
+                  <td className="px-6 py-5">
+                    {client.isAtivo ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 text-[8px] font-black uppercase border border-emerald-100">
+                        Ativo
+                      </span>
+                    ) : (
+                      <div className="flex flex-col">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 text-red-600 text-[8px] font-black uppercase border border-red-100 w-fit">
+                          Inativo
+                        </span>
+                        {client.data_inativacao && (
+                          <span className="text-[7px] font-bold text-slate-400 mt-0.5 uppercase">Inat: {new Date(client.data_inativacao + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-5">
                     {client.lastPurchase ? (
@@ -248,11 +299,21 @@ export const ClientsScreen: React.FC = () => {
 
               <div className="flex justify-between items-start mb-4 pt-2">
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-black text-slate-800 uppercase text-xs tracking-tight truncate leading-tight">{client.nome_fantasia}</h3>
-                  <div className="flex items-center gap-1 mt-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-black text-slate-800 uppercase text-xs tracking-tight truncate leading-tight">{client.nome_fantasia}</h3>
+                    {client.isAtivo ? (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 text-[7px] font-black uppercase border border-emerald-100">Ativo</span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[7px] font-black uppercase border border-red-100">Inativo</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
                     <MapPin className="w-2.5 h-2.5 text-slate-300" />
                     <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{client.city || 'CIDADE N/I'}</span>
                   </div>
+                  {!client.isAtivo && client.data_inativacao && (
+                    <p className="text-[7px] font-black text-red-400 uppercase mt-1">Inativado em: {new Date(client.data_inativacao + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                  )}
                 </div>
                 <div className="text-right ml-4 shrink-0">
                   <p className="text-xs font-black text-blue-600 tabular-nums">{client.participation.toFixed(2)}%</p>

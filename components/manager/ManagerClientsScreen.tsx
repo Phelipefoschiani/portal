@@ -67,7 +67,24 @@ export const ManagerClientsScreen: React.FC = () => {
             const channelMatch = selectedChannel === 'all' ? true : c.canal_vendas === selectedChannel;
             const searchMatch = c.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                (c.cnpj && c.cnpj.includes(searchTerm));
-            return repMatch && channelMatch && searchMatch;
+            
+            // Regra de Carteira: Clientes ativos no final do ano anterior 
+            // OU que compraram no ano selecionado
+            let portfolioMatch = true;
+            if (typeof selectedYear === 'number') {
+                const lpDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
+                if (!lpDate) {
+                    portfolioMatch = false;
+                } else {
+                    const lpYear = lpDate.getUTCFullYear();
+                    const lpMonth = lpDate.getUTCMonth() + 1;
+                    const isCurrentYear = lpYear === selectedYear;
+                    const isActiveAtEndOfPrev = lpYear === selectedYear - 1 && lpMonth >= 10;
+                    portfolioMatch = isCurrentYear || isActiveAtEndOfPrev;
+                }
+            }
+
+            return repMatch && channelMatch && searchMatch && portfolioMatch;
         });
 
         const filteredCnpjs = new Set(filteredClientsBase.map(c => String(c.cnpj || '').replace(/\D/g, '')));
@@ -101,12 +118,28 @@ export const ManagerClientsScreen: React.FC = () => {
             const fat = stats?.faturamento || 0;
             const lastDate = stats?.lastDate || null;
             
+            // Status dinâmico:
+            // Se ano selecionado, Ativo se comprou no período filtrado.
+            // Se histórico total, Ativo se comprou nos últimos 3 meses (regra geral).
+            let isAtivo = false;
+            if (selectedYear === 'all') {
+                const lpDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
+                if (lpDate) {
+                    const threeMonthsAgo = new Date();
+                    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+                    isAtivo = lpDate >= threeMonthsAgo;
+                }
+            } else {
+                isAtivo = fat > 0;
+            }
+
             return {
                 ...c,
                 totalPurchase: fat,
                 lastPurchase: lastDate,
                 repName: usersMap.get(c.usuario_id) || 'Sem Rep.',
-                participation: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0
+                participation: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0,
+                isAtivo
             };
         }).sort((a, b) => b.totalPurchase - a.totalPurchase);
 
@@ -348,6 +381,7 @@ export const ManagerClientsScreen: React.FC = () => {
                          <thead className="bg-slate-50 border-b border-slate-200">
                             <tr className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
                                 <th className="px-8 py-5">Cliente / Local</th>
+                                <th className="px-6 py-5">Status</th>
                                 <th className="px-6 py-5">Última Compra</th>
                                 <th className="px-6 py-5">Representante</th>
                                 <th className="px-6 py-5">Canal</th>
@@ -366,6 +400,22 @@ export const ManagerClientsScreen: React.FC = () => {
                                                 <p className="font-black text-slate-800 group-hover:text-blue-600 transition-colors uppercase tracking-tight text-xs">{client.nome_fantasia}</p>
                                                 <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5 tracking-wider">{client.city || 'S/ CIDADE'} • {client.cnpj}</p>
                                             </div>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            {client.isAtivo ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 text-[8px] font-black uppercase border border-emerald-100">
+                                                    Ativo
+                                                </span>
+                                            ) : (
+                                                <div className="flex flex-col">
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 text-red-600 text-[8px] font-black uppercase border border-red-100 w-fit">
+                                                        Inativo
+                                                    </span>
+                                                    {client.data_inativacao && (
+                                                        <span className="text-[7px] font-bold text-slate-400 mt-0.5 uppercase">Inat: {new Date(client.data_inativacao + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                                                    )}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-6 py-5">
                                             <div className="flex items-center gap-2">

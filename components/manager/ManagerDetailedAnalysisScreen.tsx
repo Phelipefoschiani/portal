@@ -1,9 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Table2, Filter, ChevronRight, FileSpreadsheet, Percent, Calculator, Search, User, Boxes, Tag, Package, Building2, BarChart4, Download, Layers, CheckSquare, Square, X as XIcon, ChevronDown, ListFilter, ArrowRight, Calendar, FileText, Loader2, Trash2, ListChecks, CalendarDays, Hash, RotateCcw, AlertCircle } from 'lucide-react';
+import { ChevronRight, FileSpreadsheet, Search, User, Boxes, Tag, Package, Building2, BarChart4, Layers, CheckSquare, Square, ChevronDown, Trash2, RotateCcw, CalendarDays } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import * as XLSX from 'xlsx';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 import { Button } from '../Button';
 
 type Dimension = 'representante' | 'canal' | 'grupo' | 'cliente' | 'produto';
@@ -19,21 +17,37 @@ interface GroupData {
     children?: Map<string, GroupData>;
 }
 
+interface FilterOption {
+    id?: string;
+    nome?: string;
+    label?: string;
+    nome_fantasia?: string;
+}
+
+interface FilterDropdownProps {
+    id: string;
+    label: string;
+    icon: React.ElementType;
+    options: (string | FilterOption)[];
+    selected: string | string[];
+    onToggle: (val: string) => void;
+    onClear: () => void;
+    onSelectAll?: (allIds: string[]) => void;
+    isSimple?: boolean;
+    disabled?: boolean;
+    openUp?: boolean;
+    activeDropdown: string | null;
+    setActiveDropdown: (id: any) => void;
+}
+
 // Componente extraído para suportar estado de busca local sem perder foco
-const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, onSelectAll, isSimple = false, disabled = false, openUp = false, activeDropdown, setActiveDropdown }: any) => {
+const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, onClear, onSelectAll, isSimple = false, disabled = false, openUp = false, activeDropdown, setActiveDropdown }: FilterDropdownProps) => {
     const [searchTerm, setSearchTerm] = useState('');
     const listContainerRef = useRef<HTMLDivElement>(null);
 
-    // Reseta a busca quando o dropdown fecha
-    useEffect(() => {
-        if (activeDropdown !== id) {
-            setSearchTerm('');
-        }
-    }, [activeDropdown, id]);
-
     const filteredOptions = useMemo(() => {
         if (!searchTerm) return options;
-        return options.filter((opt: any) => {
+        return options.filter((opt) => {
             const val = typeof opt === 'object' ? (opt.nome || opt.label || opt.nome_fantasia) : opt;
             return String(val).toLowerCase().includes(searchTerm.toLowerCase());
         });
@@ -44,19 +58,23 @@ const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, on
             <button 
                 type="button"
                 disabled={disabled}
-                onClick={() => setActiveDropdown(activeDropdown === id ? null : id)}
+                onClick={() => {
+                    const next = activeDropdown === id ? null : id;
+                    if (next === id) setSearchTerm('');
+                    setActiveDropdown(next);
+                }}
                 className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all text-[10px] font-black uppercase tracking-tight shadow-sm min-w-[140px] justify-between ${
-                    (isSimple ? selected !== 'all' : selected.length > 0) 
+                    (isSimple ? selected !== 'all' : (selected as string[]).length > 0) 
                     ? 'bg-blue-600 border-blue-600 text-white' 
                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
             >
                 <div className="flex items-center gap-2">
-                    <Icon className={`w-3.5 h-3.5 ${(isSimple ? selected !== 'all' : selected.length > 0) ? 'text-white' : 'text-slate-400'}`} />
+                    <Icon className={`w-3.5 h-3.5 ${(isSimple ? selected !== 'all' : (selected as string[]).length > 0) ? 'text-white' : 'text-slate-400'}`} />
                     <span className="truncate max-w-[110px]">
                         {id === 'top' 
                           ? (selected === 'all' ? label : `Top ${selected} Clts`)
-                          : (selected.length > 0 ? `${selected.length} Sel.` : label)
+                          : ((selected as string[]).length > 0 ? `${(selected as string[]).length} Sel.` : label)
                         }
                     </span>
                 </div>
@@ -68,9 +86,9 @@ const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, on
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onClear(); }}
                     className={`p-2.5 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-red-500 hover:border-red-200 transition-all shadow-sm ${
-                        (isSimple ? selected === 'all' : selected.length === 0) ? 'opacity-30 cursor-not-allowed' : ''
+                        (isSimple ? selected === 'all' : (selected as string[]).length === 0) ? 'opacity-30 cursor-not-allowed' : ''
                     }`}
-                    disabled={(isSimple ? selected === 'all' : selected.length === 0)}
+                    disabled={(isSimple ? selected === 'all' : (selected as string[]).length === 0)}
                 >
                     <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -84,7 +102,7 @@ const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, on
                             {!isSimple && onSelectAll && (
                                 <div className="flex gap-2">
                                     <button 
-                                        onClick={(e) => { e.preventDefault(); onSelectAll(filteredOptions.map((o: any) => typeof o === 'object' ? (o.id || o.nome) : o)); }}
+                                        onClick={(e) => { e.preventDefault(); onSelectAll(filteredOptions.map((o) => typeof o === 'object' ? (o.id || o.nome || '') : o)); }}
                                         className="text-[9px] font-black text-blue-600 hover:underline"
                                     >
                                         Todos
@@ -116,10 +134,10 @@ const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, on
                         {filteredOptions.length === 0 ? (
                             <div className="text-center py-4 text-[10px] text-slate-400 font-bold uppercase">Nenhum resultado</div>
                         ) : (
-                            filteredOptions.map((opt: any) => {
-                                const val = typeof opt === 'object' ? (opt.id || opt.nome) : opt;
+                            filteredOptions.map((opt) => {
+                                const val = typeof opt === 'object' ? (opt.id || opt.nome || '') : opt;
                                 const optLabel = typeof opt === 'object' ? (opt.nome || opt.label || opt.nome_fantasia) : opt;
-                                const isSelected = isSimple ? selected === val : selected.includes(val);
+                                const isSelected = isSimple ? selected === val : (selected as string[]).includes(val);
                                 
                                 return (
                                     <button 
@@ -265,7 +283,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             canais: Array.from(canais).sort(),
             grupos: Array.from(grupos).sort(),
             clients: dynamicClients.sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia)),
-            products: Array.from(productMap.values()).sort((a: any, b: any) => a.nome.localeCompare(b.nome))
+            products: Array.from(productMap.values()).sort((a, b) => a.nome.localeCompare(b.nome))
         };
     }, [filterReps, isAdmin]);
 
@@ -274,7 +292,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     };
 
     const processedBI = useMemo(() => {
-        let sales = totalDataStore.sales;
+        const sales = totalDataStore.sales;
         if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0 } };
 
         const usersMap = new Map(totalDataStore.users.map(u => [u.id, u.nome]));
@@ -295,7 +313,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             });
         }
 
-        let filteredSales = sales.filter(s => {
+        const filteredSales = sales.filter(s => {
             const d = new Date(s.data + 'T00:00:00');
             const m = d.getUTCMonth() + 1;
             const y = d.getUTCFullYear();
@@ -373,7 +391,13 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             });
         });
 
-        const flatList: any[] = [];
+        interface FlatItem extends GroupData {
+            hierarchyLabels: string[];
+            skusCount: number;
+            participation: number;
+        }
+
+        const flatList: FlatItem[] = [];
         const flatten = (nodes: Map<string, GroupData>, parentTotalValue: number, parentLabels: string[] = []) => {
             const sortedNodes = Array.from(nodes.values()).sort((a, b) => b.faturamento - a.faturamento);
             sortedNodes.forEach(node => {
@@ -399,7 +423,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             items: filteredList,
             totals: { faturamento: grandTotalFaturamento, quantidade: grandTotalQuantidade, skus: grandTotalSkuSet.size }
         };
-    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin, topLimit]);
+    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin]);
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
@@ -607,7 +631,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 { id: 'produto', label: 'Produto (SKU)' },
                             ]} 
                             selected={rowDimensions} 
-                            onToggle={(val: any) => setRowDimensions(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val])} 
+                            onToggle={(val) => setRowDimensions(prev => prev.includes(val as Dimension) ? prev.filter(v => v !== val) : [...prev, val as Dimension])} 
                             onClear={() => setRowDimensions([])} 
                             activeDropdown={activeDropdown}
                             setActiveDropdown={setActiveDropdown}
@@ -620,9 +644,9 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">2. Filtros Dinâmicos (Opcional)</span>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-3 items-center">
-                            {isAdmin && <FilterDropdown id="reps" label="Equipe" icon={User} options={filterOptions.reps} selected={filterReps} onToggle={(val: any) => toggleFilter(filterReps, setFilterReps, val)} onClear={() => setFilterReps([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />}
-                            <FilterDropdown id="canais" label="Canais" icon={Tag} options={filterOptions.canais} selected={filterCanais} onToggle={(val: any) => toggleFilter(filterCanais, setFilterCanais, val)} onClear={() => setFilterCanais([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
-                            <FilterDropdown id="grupos" label="Grupos" icon={Boxes} options={filterOptions.grupos} selected={filterGrupos} onToggle={(val: any) => toggleFilter(filterGrupos, setFilterGrupos, val)} onClear={() => setFilterGrupos([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
+                            {isAdmin && <FilterDropdown id="reps" label="Equipe" icon={User} options={filterOptions.reps} selected={filterReps} onToggle={(val) => toggleFilter(filterReps, setFilterReps, val)} onClear={() => setFilterReps([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />}
+                            <FilterDropdown id="canais" label="Canais" icon={Tag} options={filterOptions.canais} selected={filterCanais} onToggle={(val) => toggleFilter(filterCanais, setFilterCanais, val)} onClear={() => setFilterCanais([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
+                            <FilterDropdown id="grupos" label="Grupos" icon={Boxes} options={filterOptions.grupos} selected={filterGrupos} onToggle={(val) => toggleFilter(filterGrupos, setFilterGrupos, val)} onClear={() => setFilterGrupos([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
                             <FilterDropdown 
                                 id="clients" 
                                 label="Clientes" 
@@ -630,7 +654,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 disabled={isAdmin && filterReps.length === 0}
                                 options={filterOptions.clients} 
                                 selected={filterClients} 
-                                onToggle={(val: any) => toggleFilter(filterClients, setFilterClients, val)} 
+                                onToggle={(val) => toggleFilter(filterClients, setFilterClients, val)} 
                                 onClear={() => setFilterClients([])}
                                 activeDropdown={activeDropdown}
                                 setActiveDropdown={setActiveDropdown}
@@ -642,9 +666,9 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 icon={Package} 
                                 options={filterOptions.products} 
                                 selected={filterProducts} 
-                                onToggle={(val: any) => toggleFilter(filterProducts, setFilterProducts, val)} 
+                                onToggle={(val) => toggleFilter(filterProducts, setFilterProducts, val)} 
                                 onClear={() => setFilterProducts([])}
-                                onSelectAll={(allIds: string[]) => setFilterProducts(allIds)}
+                                onSelectAll={(allIds) => setFilterProducts(allIds)}
                                 activeDropdown={activeDropdown}
                                 setActiveDropdown={setActiveDropdown}
                             />
@@ -687,11 +711,11 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                processedBI.items.map((row, idx) => {
+                                processedBI.items.map((row) => {
                                     const isRoot = row.level === 0;
                                     const paddingLeft = row.level * 32 + 32;
                                     return (
-                                        <tr key={idx} className={`group transition-colors ${isRoot ? 'bg-slate-50/50' : 'hover:bg-slate-50/80'}`}>
+                                        <tr key={row.hierarchyLabels.join('-')} className={`group transition-colors ${isRoot ? 'bg-slate-50/50' : 'hover:bg-slate-50/80'}`}>
                                             <td className="px-8 py-4" style={{ paddingLeft: `${paddingLeft}px` }}>
                                                 <div className="flex items-center gap-3">
                                                     {isRoot ? <div className="w-1.5 h-6 bg-blue-600 rounded-full"></div> : <ChevronRight className="w-3 h-3 text-slate-300" />}

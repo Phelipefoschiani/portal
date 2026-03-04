@@ -34,6 +34,7 @@ import { ManagerProductAnalysisScreen } from './components/manager/ManagerProduc
 
 import { DirectorDashboard } from './components/director/DirectorDashboard';
 
+// Force rebuild
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -42,9 +43,25 @@ const App: React.FC = () => {
   const [userName, setUserName] = useState('Visitante'); 
   const [userRole, setUserRole] = useState<'admin' | 'rep' | 'director'>('rep');
   const [userId, setUserId] = useState<string | null>(null);
-  const [forecastToEditId, setForecastToEditId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showImportantNotice, setShowImportantNotice] = useState(false);
+
+  const checkImportantNotices = async (uid: string) => {
+      try {
+          const { data } = await supabase
+              .from('notificacoes')
+              .select('id')
+              .eq('para_usuario_id', uid)
+              .eq('prioridade', 'medium')
+              .eq('lida', false);
+          
+          if (data && data.length > 0) {
+              setShowImportantNotice(true);
+          }
+      } catch (e) {
+          console.error(e);
+      }
+  };
 
   useEffect(() => {
     let noticeTimer: number | undefined;
@@ -66,33 +83,16 @@ const App: React.FC = () => {
     
     setIsCheckingAuth(false);
 
-    const handleNav = (e: any) => {
+    const handleNav = (e: CustomEvent) => {
         if (e.detail) setCurrentView(e.detail);
     };
-    window.addEventListener('pcn_navigate', handleNav);
+    window.addEventListener('pcn_navigate', handleNav as EventListener);
     
     return () => {
-        window.removeEventListener('pcn_navigate', handleNav);
+        window.removeEventListener('pcn_navigate', handleNav as EventListener);
         if (noticeTimer) window.clearTimeout(noticeTimer);
     };
   }, []);
-
-  const checkImportantNotices = async (uid: string) => {
-      try {
-          const { data } = await supabase
-              .from('notificacoes')
-              .select('id')
-              .eq('para_usuario_id', uid)
-              .eq('prioridade', 'medium')
-              .eq('lida', false);
-          
-          if (data && data.length > 0) {
-              setShowImportantNotice(true);
-          }
-      } catch (e) {
-          console.error(e);
-      }
-  };
 
   const handleLogin = (name: string, role: 'admin' | 'rep' | 'director', id: string) => {
     setUserName(name);
@@ -117,8 +117,7 @@ const App: React.FC = () => {
     setIsSidebarOpen(false);
   };
 
-  const handleNavigateToForecastCorrection = (forecastId: string) => {
-    setForecastToEditId(forecastId);
+  const handleNavigateToForecastCorrection = () => {
     setCurrentView('forecast');
   };
 

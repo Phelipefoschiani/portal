@@ -1,7 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { Megaphone, Save, CheckCircle2, TrendingUp, DollarSign, Percent, AlertCircle, Clock, XCircle, ChevronRight, History, Edit3, RefreshCw, Search, Loader2, Wallet, Plus } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Megaphone, Save, TrendingUp, Percent, AlertCircle, ChevronRight, History, RefreshCw, Loader2, DollarSign } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '../lib/supabase';
+
+interface Client {
+  id: string;
+  nome_fantasia: string;
+}
+
+interface Investment {
+  id: string;
+  usuario_id: string;
+  cliente_id: string;
+  data: string;
+  valor_total_investimento: number;
+  valor_caju: number;
+  valor_dinheiro: number;
+  valor_produto: number;
+  observacao: string;
+  status: 'pendente' | 'approved' | 'rejected';
+  clientes?: {
+    nome_fantasia: string;
+  };
+}
 
 interface CampaignsScreenProps {
   onNavigateToInvestments?: () => void;
@@ -9,8 +30,8 @@ interface CampaignsScreenProps {
 
 export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToInvestments }) => {
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
-  const [clients, setClients] = useState<any[]>([]);
-  const [history, setHistory] = useState<any[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [history, setHistory] = useState<Investment[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   
   // Form States (Strings para máscara)
@@ -26,19 +47,12 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
 
-  useEffect(() => {
-    if (userId) {
-      fetchClients();
-      if (activeTab === 'history') fetchHistory();
-    }
-  }, [userId, activeTab]);
-
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     const { data } = await supabase.from('clientes').select('id, nome_fantasia').eq('usuario_id', userId).order('nome_fantasia');
     setClients(data || []);
-  };
+  }, [userId]);
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     setIsLoadingHistory(true);
     const { data } = await supabase
       .from('investimentos')
@@ -47,7 +61,14 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
       .order('criado_em', { ascending: false });
     setHistory(data || []);
     setIsLoadingHistory(false);
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) {
+      fetchClients();
+      if (activeTab === 'history') fetchHistory();
+    }
+  }, [userId, activeTab, fetchClients, fetchHistory]);
 
   // --- Lógica de Máscara ---
   const formatCurrencyInput = (value: string) => {
@@ -102,22 +123,26 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
 
       alert(editingId ? 'Solicitação revisada e reenviada!' : 'Solicitação enviada com sucesso!');
       
-      // Limpar campos
-      setSelectedClientId('');
-      setDescription('');
-      setOrderValue('');
-      setDinheiro('');
-      setProduto('');
-      setEditingId(null);
+      limparCampos();
       setActiveTab('history');
-    } catch (err: any) {
-        alert('Erro ao enviar: ' + err.message);
+    } catch (err: unknown) {
+        const error = err as Error;
+        alert('Erro ao enviar: ' + error.message);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleEditRejected = (inv: any) => {
+  const limparCampos = () => {
+    setSelectedClientId('');
+    setDescription('');
+    setOrderValue('');
+    setDinheiro('');
+    setProduto('');
+    setEditingId(null);
+  };
+
+  const handleEditRejected = (inv: Investment) => {
     const obs = inv.observacao || '';
     setSelectedClientId(inv.cliente_id);
     

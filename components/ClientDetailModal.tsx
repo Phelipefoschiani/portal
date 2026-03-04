@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, Calendar, AlertCircle, Package, Target, History, Loader2, TrendingUp, DollarSign, ChevronRight, Hash, Building2, MapPin } from 'lucide-react';
+import { X, Download, Calendar, Package, History, Loader2, TrendingUp, Hash, Building2, MapPin } from 'lucide-react';
 import { Button } from './Button';
 import { ClientProductsModal } from './ClientProductsModal';
 import { ClientLastPurchaseModal } from './ClientLastPurchaseModal';
@@ -8,8 +8,31 @@ import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore'; 
 import html2canvas from 'html2canvas';
 
+interface Client {
+  id: string;
+  cnpj: string;
+  nome_fantasia: string;
+  city?: string;
+}
+
+interface HistoryItem {
+  month: number;
+  year: number;
+  value: number;
+  target: number;
+  positivou: boolean;
+}
+
+interface ProductItem {
+  id: string;
+  name: string;
+  totalValue: number;
+  quantity: number;
+  lastPurchaseDate: string;
+}
+
 interface ClientDetailModalProps {
-  client: any; 
+  client: Client; 
   initialYear?: number;
   onClose: () => void;
 }
@@ -20,21 +43,15 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
   const [showLastPurchase, setShowLastPurchase] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [historyData, setHistoryData] = useState<any[]>([]);
-  const [productsData, setProductsData] = useState<any[]>([]);
+  const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
+  const [productsData, setProductsData] = useState<ProductItem[]>([]);
   
   // Ref separada para a área de exportação (layout bonito)
   const exportRef = useRef<HTMLDivElement>(null);
 
   const cleanCnpj = (val: string) => String(val || '').replace(/\D/g, '');
 
-  useEffect(() => {
-    if (client) {
-      fetchClientFullData();
-    }
-  }, [client, year]);
-
-  const fetchClientFullData = async () => {
+  const fetchClientFullData = useCallback(async () => {
     setIsLoading(true);
     const cleanedCnpj = cleanCnpj(client.cnpj);
     
@@ -89,7 +106,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
         };
       });
 
-      const productMap = new Map();
+      const productMap = new Map<string, ProductItem>();
       salesData.forEach(s => {
         const key = s.codigo_produto || s.produto;
         const current = productMap.get(key) || { 
@@ -115,7 +132,13 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [client.cnpj, client.id, year]);
+
+  useEffect(() => {
+    if (client) {
+      fetchClientFullData();
+    }
+  }, [client, year, fetchClientFullData]);
 
   const handleDownloadImage = async () => {
     if (!exportRef.current) return;

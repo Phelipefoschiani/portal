@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Database, Loader2, ShieldCheck, CheckCircle2, CloudDownload, BarChart3, Users, Target } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Database, ShieldCheck, CheckCircle2, BarChart3, Users, Target } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
 
@@ -23,11 +23,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
     { label: 'Pronto', icon: CheckCircle2 }
   ];
 
-  useEffect(() => {
-    startHydration();
-  }, []);
-
-  const fetchAllSalesParallel = async (role: string, uid: string) => {
+  const fetchAllSalesParallel = useCallback(async (role: string, uid: string) => {
     // Range expandido até 2027 conforme solicitação
     const startDate = `2024-01-01`;
     const endDate = `2027-12-31`;
@@ -75,9 +71,9 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
 
     const results = await Promise.all(promises);
     return results.flat();
-  };
+  }, []);
 
-  const startHydration = async () => {
+  const startHydration = useCallback(async () => {
     try {
       totalDataStore.clear();
       
@@ -89,6 +85,7 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
         .select('id, nome, nivel_acesso')
         .not('nivel_acesso', 'ilike', 'admin')
         .not('nivel_acesso', 'ilike', 'gerente')
+        .not('nivel_acesso', 'ilike', 'director')
         .order('nome');
       totalDataStore.users = users || [];
       await new Promise(r => setTimeout(r, 200));
@@ -105,6 +102,37 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       setStatus('Baixando histórico 2024-2027...');
       const sales = await fetchAllSalesParallel(userRole, userId);
       totalDataStore.sales = sales;
+
+      // --- Lógica de Inatividade de Clientes ---
+      // const now = new Date(); // Removed unused
+      // const threeMonthsAgo = new Date(); // Removed unused
+      // threeMonthsAgo.setMonth(now.getMonth() - 3); // Removed unused
+
+      totalDataStore.clients = totalDataStore.clients.map(client => {
+        // Encontrar última compra deste cliente
+        const clientSales = sales.filter(s => s.cnpj === client.cnpj);
+        if (clientSales.length === 0) {
+          return { ...client, ativo: false, data_inativacao: 'Sem compras' };
+        }
+
+        const lastSale = clientSales.reduce((latest, current) => {
+          const currentDate = new Date(current.data + 'T00:00:00');
+          return currentDate > latest ? currentDate : latest;
+        }, new Date(0));
+
+        const lastPurchaseDate = lastSale.toISOString().split('T')[0];
+        
+        // Data de inativação = última compra + 3 meses
+        const inactivationDate = new Date(lastSale);
+        inactivationDate.setMonth(inactivationDate.getMonth() + 3);
+        
+        return {
+          ...client,
+          lastPurchaseDate,
+          data_inativacao: inactivationDate.toISOString().split('T')[0]
+        };
+      });
+
       setProgress(80);
 
       setCurrentStep(3);
@@ -136,7 +164,11 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
       setStatus('Falha na rede. Reconectando...');
       setTimeout(startHydration, 2000);
     }
-  };
+  }, [userId, userRole, onComplete, fetchAllSalesParallel]);
+
+  useEffect(() => {
+    startHydration();
+  }, [startHydration]);
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#0f172a] p-6 font-inter overflow-hidden relative">

@@ -1,16 +1,22 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, FileDown, History, CalendarClock, CheckSquare, Square, AlertTriangle, ListChecks, CheckCircle2, Download, Loader2, FileSpreadsheet } from 'lucide-react';
+import { X, History, CheckSquare, Square, FileSpreadsheet } from 'lucide-react';
 import { Button } from './Button';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
+
+interface Product {
+  id: string;
+  name: string;
+  lastPurchaseDate: string;
+  quantity: number;
+  totalValue: number;
+}
 
 interface ClientLastPurchaseModalProps {
   client: {
     id: string;
     name: string;
-    products: any[];
+    products: Product[];
   };
   onClose: () => void;
 }
@@ -32,7 +38,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  const isRedItem = (product: any) => {
+  const isRedItem = (product: Product) => {
     const today = new Date();
     const purchaseDate = new Date(product.lastPurchaseDate);
     const diffMonths = (today.getFullYear() * 12 + today.getMonth()) - 
@@ -61,8 +67,6 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
 
     setIsExporting(true);
     try {
-      const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
-      
       const data = itemsToExport.map(p => ({
         "Produto": p.name,
         "Última Compra": new Date(p.lastPurchaseDate).toLocaleDateString('pt-BR'),
@@ -72,11 +76,11 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
         "Status": isRedItem(p) ? "VERMELHO (Atenção)" : "BRANCO (Normal)"
       }));
 
-      const ws = X.utils.json_to_sheet(data);
-      const wb = X.utils.book_new();
-      X.utils.book_append_sheet(wb, ws, "Sugestão_Reposição");
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Sugestão_Reposição");
       
-      X.writeFile(wb, `Reposicao_${client.name.replace(/\s/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
+      XLSX.writeFile(wb, `Reposicao_${client.name.replace(/\s/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
     } catch (e) {
       console.error(e);
       alert('Erro ao gerar planilha.');

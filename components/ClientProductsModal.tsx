@@ -1,25 +1,26 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, FileDown, Package, Filter, Loader2, FileSpreadsheet, ChevronRight } from 'lucide-react';
-import { Button } from './Button';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { X, Package, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+interface Product {
+  id: string;
+  name: string;
+  quantity: number;
+  totalValue: number;
+}
 
 interface ClientProductsModalProps {
   client: {
     id: string;
     name: string;
-    products: any[];
+    products: Product[];
   };
   onClose: () => void;
 }
 
 export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client, onClose }) => {
-  const exportPagesRef = useRef<HTMLDivElement>(null);
-  const [isExporting, setIsExporting] = useState(false);
-
   const sortedProducts = useMemo(() => {
     return [...client.products].sort((a, b) => b.totalValue - a.totalValue);
   }, [client.products]);
@@ -28,26 +29,14 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
     return sortedProducts.reduce((acc, curr) => acc + curr.totalValue, 0);
   }, [sortedProducts]);
 
-  const ITEMS_PER_PAGE = 18;
-  const productBatches = useMemo(() => {
-    const batches = [];
-    for (let i = 0; i < sortedProducts.length; i += ITEMS_PER_PAGE) {
-      batches.push(sortedProducts.slice(i, i + ITEMS_PER_PAGE));
-    }
-    return batches;
-  }, [sortedProducts]);
-
   const handleDownloadExcel = () => {
     if (sortedProducts.length === 0) return;
     
-    const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
-    if (!X || !X.utils) return;
-
     const excelData = sortedProducts.map(p => ({ "Produto": p.name, "QTD": p.quantity, "Valor Total": p.totalValue }));
-    const ws = X.utils.json_to_sheet(excelData);
-    const wb = X.utils.book_new();
-    X.utils.book_append_sheet(wb, ws, "Mix");
-    X.writeFile(wb, `mix_${client.name.replace(/\s/g, '_')}.xlsx`);
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Mix");
+    XLSX.writeFile(wb, `mix_${client.name.replace(/\s/g, '_')}.xlsx`);
   };
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
