@@ -1,10 +1,72 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Target, TrendingUp, Users, Calendar, DollarSign, Wallet, Loader2, ChevronRight, BarChart3, Filter, Award, RefreshCw, BarChart, CheckCircle2, AlertCircle, User, X, CheckSquare, Square, ChevronDown, Building2, Layers, Briefcase, Tag, Quote } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Users, ChevronRight, BarChart3, RefreshCw, CheckCircle2, AlertCircle, X, CheckSquare, Square, ChevronDown, Tag } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
 import { Button } from '../Button';
 import { RepPerformanceModal } from './RepPerformanceModal';
+
+interface RepData {
+    id: string;
+    nome: string;
+    role: string;
+}
+
+interface Sale {
+    id: string;
+    data: string;
+    usuario_id: string;
+    faturamento: number | string;
+    canal_vendas?: string;
+    cnpj?: string;
+    cliente_nome?: string;
+}
+
+interface Target {
+    id: string;
+    usuario_id: string;
+    mes: number;
+    ano: number;
+    valor: number | string;
+}
+
+interface Client {
+    id: string;
+    cnpj: string;
+    nome_fantasia: string;
+    usuario_id: string;
+}
+
+interface PerformanceItem {
+    month: number;
+    sales: number;
+    target: number;
+}
+
+interface RepAnalysisItem {
+    rep: RepData;
+    sales: number;
+    target: number;
+    pct: number;
+}
+
+interface Stats {
+    globalPerformance: PerformanceItem[];
+    repData: RepAnalysisItem[];
+}
+
+interface ClientBreakdown {
+    name: string;
+    total: number;
+    shareInChannel: number;
+}
+
+interface ChannelBreakdown {
+    label: string;
+    total: number;
+    shareInMonth: number;
+    clients: ClientBreakdown[];
+}
 
 // --- COMPONENTE DE DECOMPOSIÇÃO POR CANAL (IGUAL AO DO REP) ---
 const MonthlyChannelBreakdown: React.FC<{
@@ -14,7 +76,7 @@ const MonthlyChannelBreakdown: React.FC<{
     formatBRL: (v: number) => string;
 }> = ({ monthIdx, year, userId, formatBRL }) => {
     const breakdown = useMemo(() => {
-        const clientNameLookup = new Map();
+        const clientNameLookup = new Map<string, string>();
         totalDataStore.clients.forEach(c => {
             const clean = String(c.cnpj || '').replace(/\D/g, '');
             clientNameLookup.set(clean, c.nome_fantasia);
@@ -26,14 +88,14 @@ const MonthlyChannelBreakdown: React.FC<{
         });
 
         const monthTotal = sales.reduce((a, b) => a + Number(b.faturamento), 0);
-        const channelMap = new Map<string, any>();
+        const channelMap = new Map<string, { label: string; total: number; clients: Map<string, { name: string; total: number }> }>();
 
         sales.forEach(s => {
             const cName = s.canal_vendas || 'GERAL / OUTROS';
             if (!channelMap.has(cName)) {
                 channelMap.set(cName, { label: cName, total: 0, clients: new Map() });
             }
-            const channel = channelMap.get(cName);
+            const channel = channelMap.get(cName)!;
             channel.total += Number(s.faturamento);
 
             const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
@@ -43,21 +105,22 @@ const MonthlyChannelBreakdown: React.FC<{
                     total: 0 
                 });
             }
-            channel.clients.get(cnpjClean).total += Number(s.faturamento);
+            channel.clients.get(cnpjClean)!.total += Number(s.faturamento);
         });
 
         return Array.from(channelMap.values())
             .sort((a, b) => b.total - a.total)
             .map(ch => ({
-                ...ch,
+                label: ch.label,
+                total: ch.total,
                 shareInMonth: monthTotal > 0 ? (ch.total / monthTotal) * 100 : 0,
                 clients: Array.from(ch.clients.values())
-                    .sort((a: any, b: any) => b.total - a.total)
-                    .map((c: any) => ({
+                    .sort((a, b) => b.total - a.total)
+                    .map(c => ({
                         ...c,
                         shareInChannel: ch.total > 0 ? (c.total / ch.total) * 100 : 0
                     }))
-            }));
+            })) as ChannelBreakdown[];
     }, [monthIdx, year, userId]);
 
     if (breakdown.length === 0) return (
@@ -93,7 +156,7 @@ const MonthlyChannelBreakdown: React.FC<{
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {channel.clients.map((client: any, clIdx: number) => (
+                                {channel.clients.map((client: ClientBreakdown, clIdx: number) => (
                                     <tr key={clIdx} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-6 py-3 text-[11px] font-bold text-slate-700 uppercase truncate max-w-[300px]">{client.name}</td>
                                         <td className="px-6 py-3 text-right font-black text-slate-900 text-[11px] tabular-nums">{formatBRL(client.total)}</td>
@@ -116,24 +179,21 @@ const MonthRepDetailModal: React.FC<{
     monthIdx: number, 
     year: number, 
     onClose: () => void,
-    onSelectRep: (rep: any) => void,
+    onSelectRep: (rep: RepData) => void,
     formatBRL: (v: number) => string 
 }> = ({ monthIdx, year, onClose, onSelectRep, formatBRL }) => {
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     
     const data = useMemo(() => {
-        const sales = totalDataStore.sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return d.getUTCMonth() === monthIdx && d.getUTCFullYear() === year;
-        });
-        const targets = totalDataStore.targets.filter(t => t.mes === monthIdx + 1 && t.ano === year);
-        const reps = totalDataStore.users;
-        const allClients = totalDataStore.clients;
+        const sales = totalDataStore.sales as Sale[];
+        const targets = totalDataStore.targets as Target[];
+        const reps = totalDataStore.users as RepData[];
+        const allClients = totalDataStore.clients as Client[];
 
         return reps.map(rep => {
             const repSales = sales.filter(s => s.usuario_id === rep.id);
             const billed = repSales.reduce((a, b) => a + Number(b.faturamento), 0);
-            const target = targets.find(t => t.usuario_id === rep.id)?.valor || 0;
+            const target = Number(targets.find(t => t.usuario_id === rep.id)?.valor || 0);
             const positivados = new Set(repSales.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
             
             const totalRepClients = allClients.filter(c => c.usuario_id === rep.id).length || 1;
@@ -180,7 +240,7 @@ const MonthRepDetailModal: React.FC<{
                                 {data.map((rep, idx) => (
                                     <tr 
                                         key={idx} 
-                                        onClick={() => onSelectRep(rep)}
+                                        onClick={() => onSelectRep({ id: rep.id, nome: rep.nome, role: rep.role })}
                                         className="hover:bg-blue-50/50 transition-all cursor-pointer group"
                                     >
                                         <td className="px-8 py-4">
@@ -227,7 +287,7 @@ const MonthRepDetailModal: React.FC<{
 
 // --- NOVO MODAL: DETALHAMENTO INDIVIDUAL DO REP (IGUAL AO QUE O REP VÊ) ---
 const IndividualRepMonthlyDetailModal: React.FC<{
-    rep: any;
+    rep: RepData;
     monthIdx: number;
     year: number;
     onClose: () => void;
@@ -236,11 +296,11 @@ const IndividualRepMonthlyDetailModal: React.FC<{
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
     const summary = useMemo(() => {
-        const sales = totalDataStore.sales.filter(s => {
+        const sales = (totalDataStore.sales as Sale[]).filter(s => {
             const d = new Date(s.data + 'T00:00:00');
             return s.usuario_id === rep.id && d.getUTCMonth() === monthIdx && d.getUTCFullYear() === year;
         });
-        const target = totalDataStore.targets.find(t => t.usuario_id === rep.id && t.mes === monthIdx + 1 && t.ano === year)?.valor || 0;
+        const target = Number(totalDataStore.targets.find((t: any) => t.usuario_id === rep.id && t.mes === monthIdx + 1 && t.ano === year)?.valor || 0);
         const billed = sales.reduce((a, b) => a + Number(b.faturamento), 0);
         const positivados = new Set(sales.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
         
@@ -315,9 +375,9 @@ export const ManagerAnalysisScreen: React.FC = () => {
     const dropdownRef = useRef<HTMLDivElement>(null);
     
     const [selectedMonthForDetail, setSelectedMonthForDetail] = useState<number | null>(null);
-    const [selectedRepForMonthlyDetail, setSelectedRepForMonthlyDetail] = useState<any | null>(null);
-    const [selectedRepForPerformance, setSelectedRepForPerformance] = useState<any | null>(null);
-    const [stats, setStats] = useState<any>({ globalPerformance: [], repData: [] });
+    const [selectedRepForMonthlyDetail, setSelectedRepForMonthlyDetail] = useState<RepData | null>(null);
+    const [selectedRepForPerformance, setSelectedRepForPerformance] = useState<RepData | null>(null);
+    const [stats, setStats] = useState<Stats>({ globalPerformance: [], repData: [] });
 
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const monthShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -332,16 +392,12 @@ export const ManagerAnalysisScreen: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    useEffect(() => {
-        processAnalysisData();
-    }, [selectedYear, selectedMonths]);
+    const processAnalysisData = useCallback(() => {
+        const sales = totalDataStore.sales as Sale[];
+        const targets = totalDataStore.targets as Target[];
+        const reps = totalDataStore.users as RepData[];
 
-    const processAnalysisData = () => {
-        const sales = totalDataStore.sales;
-        const targets = totalDataStore.targets;
-        const reps = totalDataStore.users;
-
-        const performance = Array.from({ length: 12 }, (_, i) => {
+        const performance: PerformanceItem[] = Array.from({ length: 12 }, (_, i) => {
             const month = i + 1;
             const monthSales = sales.filter(s => {
                 const d = new Date(s.data + 'T00:00:00');
@@ -352,7 +408,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
             return { month, sales: monthSales, target: monthTarget };
         });
 
-        const repAnalysis = reps.map(rep => {
+        const repAnalysis: RepAnalysisItem[] = reps.map(rep => {
             const rSales = sales.filter(s => {
                 const d = new Date(s.data + 'T00:00:00');
                 const m = d.getUTCMonth() + 1;
@@ -365,7 +421,14 @@ export const ManagerAnalysisScreen: React.FC = () => {
         });
 
         setStats({ globalPerformance: performance, repData: repAnalysis });
-    };
+    }, [selectedYear, selectedMonths]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            processAnalysisData();
+        }, 0);
+        return () => clearTimeout(timer);
+    }, [processAnalysisData]);
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
@@ -382,7 +445,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
     };
 
     const filteredGlobalPerformance = useMemo(() => {
-        return stats.globalPerformance.filter((item: any) => selectedMonths.includes(item.month));
+        return stats.globalPerformance.filter((item: PerformanceItem) => selectedMonths.includes(item.month));
     }, [stats.globalPerformance, selectedMonths]);
 
     return (
@@ -467,8 +530,8 @@ export const ManagerAnalysisScreen: React.FC = () => {
                 </div>
 
                 <div className="h-[350px] w-full flex items-end justify-between gap-3 md:gap-6 px-2 pt-10 border-b border-slate-100">
-                    {filteredGlobalPerformance.map((item: any, idx: number) => {
-                        const maxInChart = Math.max(...stats.globalPerformance.flatMap((d: any) => [d.sales, d.target])) * 1.2 || 1;
+                    {filteredGlobalPerformance.map((item: PerformanceItem, idx: number) => {
+                        const maxInChart = Math.max(...stats.globalPerformance.flatMap((d: PerformanceItem) => [d.sales, d.target])) * 1.2 || 1;
                         const salesHeight = (item.sales / maxInChart) * 100;
                         const targetHeight = (item.target / maxInChart) * 100;
                         const achievement = item.target > 0 ? (item.sales / item.target) * 100 : 0;
@@ -511,7 +574,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
                 </div>
                 
                 <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
-                    {stats.repData.sort((a: any, b: any) => b.sales - a.sales).map((row: any) => (
+                    {stats.repData.sort((a: RepAnalysisItem, b: RepAnalysisItem) => b.sales - a.sales).map((row: RepAnalysisItem) => (
                         <div 
                             key={row.rep.id} 
                             onClick={() => setSelectedRepForPerformance(row.rep)}

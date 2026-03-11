@@ -1,12 +1,32 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, Loader2, Target, BarChart, LineChart, Award } from 'lucide-react';
+import { X, Download, ArrowUpRight, ArrowDownRight, Loader2, Award, LineChart } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import html2canvas from 'html2canvas';
 
+interface RepData {
+    id: string;
+    nome: string;
+    role: string;
+}
+
+interface MonthlyPerformance {
+    month: number;
+    sales: number;
+    target: number;
+    prevSales: number;
+    investment: number;
+    positive: number;
+}
+
+interface PerformanceData {
+    monthly: MonthlyPerformance[];
+    avgAchievement: number;
+}
+
 interface RepPerformanceModalProps {
-    rep: any;
+    rep: RepData;
     year: number;
     selectedMonths?: number[];
     onClose: () => void;
@@ -15,7 +35,7 @@ interface RepPerformanceModalProps {
 export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, year, selectedMonths, onClose }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
-    const [data, setData] = useState<any>(null);
+    const [data, setData] = useState<PerformanceData | null>(null);
     const exportRef = useRef<HTMLDivElement>(null);
 
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -26,7 +46,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
     const cleanCnpj = (val: string) => String(val || '').replace(/\D/g, '');
 
     const fetchAllSales = async (userId: string, start: string, end: string) => {
-        let allData: any[] = [];
+        let allData: { faturamento: number | string; data: string; cnpj: string }[] = [];
         let pageSize = 1000;
         let from = 0;
         let hasMore = true;
@@ -79,26 +99,26 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                     return d.getUTCMonth() + 1 === month;
                 }) || [];
 
-                const mSales = mSalesList.reduce((a: number, b: any) => a + Number(b.faturamento), 0);
+                const mSales = mSalesList.reduce((a: number, b: { faturamento: number | string }) => a + Number(b.faturamento), 0);
                 const mTarget = targets?.find(t => t.mes === month)?.valor || 0;
                 
                 const mPrevSales = prevSales.filter(s => {
                     const d = new Date(s.data + 'T00:00:00');
                     return d.getUTCMonth() + 1 === month;
-                }).reduce((a: number, b: any) => a + Number(b.faturamento), 0) || 0;
+                }).reduce((a: number, b: { faturamento: number | string }) => a + Number(b.faturamento), 0) || 0;
 
                 const mInv = investments?.filter(inv => {
                     const d = new Date(inv.data + 'T00:00:00');
                     return d.getUTCMonth() + 1 === month;
-                }).reduce((a: number, b: any) => a + Number(b.valor_total_investimento), 0) || 0;
+                }).reduce((a: number, b: { valor_total_investimento: number | string }) => a + Number(b.valor_total_investimento), 0) || 0;
 
                 const mPositive = new Set(mSalesList.map(s => cleanCnpj(s.cnpj))).size;
 
                 return { month, sales: mSales, target: mTarget, prevSales: mPrevSales, investment: mInv, positive: mPositive };
             });
 
-            const monthsDone = monthly.filter((m: any) => m.sales > 0);
-            const avgAchievement = monthsDone.length > 0 ? monthsDone.reduce((a: number, b: any) => a + (b.target > 0 ? b.sales / b.target : 0), 0) / monthsDone.length : 0;
+            const monthsDone = monthly.filter((m: MonthlyPerformance) => m.sales > 0);
+            const avgAchievement = monthsDone.length > 0 ? monthsDone.reduce((a: number, b: MonthlyPerformance) => a + (b.target > 0 ? b.sales / b.target : 0), 0) / monthsDone.length : 0;
             
             setData({ monthly, avgAchievement });
         } catch (e) { console.error(e); } finally { setIsLoading(false); }
@@ -107,13 +127,13 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
     const filteredMonthlyData = useMemo(() => {
         if (!data) return [];
         if (!selectedMonths || selectedMonths.length === 0) return data.monthly;
-        return data.monthly.filter((m: any) => selectedMonths.includes(m.month));
+        return data.monthly.filter((m: MonthlyPerformance) => selectedMonths.includes(m.month));
     }, [data, selectedMonths]);
 
-    const totalMeta = useMemo(() => filteredMonthlyData.reduce((a: number, b: any) => a + b.target, 0), [filteredMonthlyData]);
-    const totalSales = useMemo(() => filteredMonthlyData.reduce((a: number, b: any) => a + b.sales, 0), [filteredMonthlyData]);
-    const totalPrevSales = useMemo(() => filteredMonthlyData.reduce((a: number, b: any) => a + b.prevSales, 0), [filteredMonthlyData]);
-    const totalInv = useMemo(() => filteredMonthlyData.reduce((a: number, b: any) => a + b.investment, 0), [filteredMonthlyData]);
+    const totalMeta = useMemo(() => filteredMonthlyData.reduce((a: number, b: MonthlyPerformance) => a + b.target, 0), [filteredMonthlyData]);
+    const totalSales = useMemo(() => filteredMonthlyData.reduce((a: number, b: MonthlyPerformance) => a + b.sales, 0), [filteredMonthlyData]);
+    const totalPrevSales = useMemo(() => filteredMonthlyData.reduce((a: number, b: MonthlyPerformance) => a + b.prevSales, 0), [filteredMonthlyData]);
+    const totalInv = useMemo(() => filteredMonthlyData.reduce((a: number, b: MonthlyPerformance) => a + b.investment, 0), [filteredMonthlyData]);
     const pctTotal = totalMeta > 0 ? (totalSales / totalMeta) * 100 : 0;
     const growthTotal = totalPrevSales > 0 ? ((totalSales / totalPrevSales) - 1) * 100 : 0;
 
@@ -140,18 +160,20 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
 
                         // Remove a classe 'truncate' e força exibição completa do texto
                         const textElements = el.querySelectorAll('.truncate');
-                        textElements.forEach((t: any) => {
-                            t.style.whiteSpace = 'normal';
-                            t.style.overflow = 'visible';
-                            t.style.textOverflow = 'clip';
-                            t.classList.remove('truncate');
+                        textElements.forEach((t: Element) => {
+                            const htmlT = t as HTMLElement;
+                            htmlT.style.whiteSpace = 'normal';
+                            htmlT.style.overflow = 'visible';
+                            htmlT.style.textOverflow = 'clip';
+                            htmlT.classList.remove('truncate');
                         });
                         
                         // Garante que os cards expandam altura
                         const cards = el.querySelectorAll('.rounded-2xl, .rounded-3xl');
-                        cards.forEach((c: any) => {
-                            c.style.height = 'auto';
-                            c.style.minHeight = 'auto';
+                        cards.forEach((c: Element) => {
+                            const htmlC = c as HTMLElement;
+                            htmlC.style.height = 'auto';
+                            htmlC.style.minHeight = 'auto';
                         });
                     }
                 }
@@ -166,9 +188,9 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
     const getPoints = (type: 'sales' | 'target' | 'proj') => {
-        if (filteredMonthlyData.length === 0) return "";
-        const max = Math.max(...filteredMonthlyData.flatMap((d: any) => [d.sales, d.target])) * 1.2 || 1;
-        return filteredMonthlyData.map((m: any, i: number) => {
+        if (filteredMonthlyData.length === 0 || !data) return "";
+        const max = Math.max(...filteredMonthlyData.flatMap((d: MonthlyPerformance) => [d.sales, d.target])) * 1.2 || 1;
+        return filteredMonthlyData.map((m: MonthlyPerformance, i: number) => {
             const val = type === 'sales' ? (m.sales || 0) : 
                         type === 'target' ? m.target : 
                         (m.sales > 0 ? m.sales : m.target * data.avgAchievement);
@@ -238,7 +260,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                             <div className="bg-slate-900 p-3 md:p-5 rounded-2xl md:rounded-3xl text-white shadow-xl flex flex-col justify-center">
                                 <p className="text-[7px] md:text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Projeção</p>
                                 <p className="text-sm md:text-xl font-black text-white truncate tabular-nums">
-                                    {formatBRL(totalSales + (data.monthly.filter((m: any) => m.sales === 0 && m.month > new Date().getUTCMonth() + 1).reduce((a: number, b: any) => a + (b.target * data.avgAchievement), 0)))}
+                                    {formatBRL(totalSales + (data.monthly.filter((m: MonthlyPerformance) => m.sales === 0 && m.month > new Date().getUTCMonth() + 1).reduce((a: number, b: MonthlyPerformance) => a + (b.target * data.avgAchievement), 0)))}
                                 </p>
                             </div>
                         </div>
@@ -263,16 +285,16 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                                 <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
                                     <polyline points={getPoints('target')} fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="3,2" />
                                     <polyline points={getPoints('sales')} fill="none" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                                    {filteredMonthlyData.map((m: any, i: number) => {
+                                    {filteredMonthlyData.map((m: MonthlyPerformance, i: number) => {
                                         if (m.sales === 0) return null;
-                                        const max = Math.max(...filteredMonthlyData.flatMap((d: any) => [d.sales, d.target])) * 1.2 || 1;
+                                        const max = Math.max(...filteredMonthlyData.flatMap((d: MonthlyPerformance) => [d.sales, d.target])) * 1.2 || 1;
                                         const x = (i / (filteredMonthlyData.length - 1 || 1)) * 100;
                                         const y = 100 - (m.sales / max) * 100;
                                         return <circle key={i} cx={x} cy={y} r="2" fill="#2563eb" />;
                                     })}
                                 </svg>
                                 <div className="flex justify-between mt-4 md:mt-6 px-1">
-                                    {filteredMonthlyData.map((m: any) => (
+                                    {filteredMonthlyData.map((m: MonthlyPerformance) => (
                                         <span key={m.month} className="text-[7px] md:text-[10px] font-black text-slate-300 uppercase">{monthShort[m.month - 1]}</span>
                                     ))}
                                 </div>
@@ -294,7 +316,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 font-bold text-[11px]">
-                                        {filteredMonthlyData.map((m: any, idx: number) => {
+                                        {filteredMonthlyData.map((m: MonthlyPerformance, idx: number) => {
                                             const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                                             const growth = m.prevSales > 0 ? ((m.sales / m.prevSales) - 1) * 100 : 0;
                                             return (
@@ -341,15 +363,13 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                                             </td>
                                             <td className="px-6 py-6 text-right text-amber-400 tabular-nums">{formatBRL(totalInv)}</td>
                                             <td className="px-6 py-6 text-right">
-                                                <span className="text-slate-400">{filteredMonthlyData.reduce((acc: number, curr: any) => acc + curr.positive, 0)} TOTAL</span>
+                                                <span className="text-slate-400">{filteredMonthlyData.reduce((acc: number, curr: MonthlyPerformance) => acc + curr.positive, 0)} TOTAL</span>
                                             </td>
                                         </tr>
                                     </tfoot>
                                 </table>
-                            </div>
-
-                            <div className="md:hidden divide-y divide-slate-100">
-                                {filteredMonthlyData.map((m: any, idx: number) => {
+                                                      <div className="md:hidden divide-y divide-slate-100">
+                                {filteredMonthlyData.map((m: MonthlyPerformance, idx: number) => {
                                     const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                                     return (
                                         <div key={idx} className="p-4 bg-white active:bg-slate-50">
@@ -372,7 +392,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
                                         </div>
                                     );
                                 })}
-                            </div>
+                            </div>       </div>
                         </div>
 
                         <div className="md:hidden pt-4 pb-10 text-center border-t border-slate-50">

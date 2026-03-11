@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FileSpreadsheet, Upload, CheckCircle2, AlertTriangle, ArrowRight, ShieldCheck, Loader2, Database, Users, BarChart3, X, UserPlus, RefreshCcw, CopyX, SearchCheck, LayoutList, RotateCcw, CalendarDays, ChevronDown } from 'lucide-react';
+import { FileSpreadsheet, Upload, CheckCircle2, AlertTriangle, ShieldCheck, Loader2, Database, RefreshCcw, RotateCcw, CalendarDays } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '../Button';
 import { supabase } from '../../lib/supabase';
@@ -8,12 +8,18 @@ import { createPortal } from 'react-dom';
 
 type ActiveTab = 'import' | 'reset';
 
+interface Rep {
+  id: string;
+  nome: string;
+  nivel_acesso: string;
+}
+
 export const ManagerImportScreen: React.FC = () => {
   const now = new Date();
   const [activeTab, setActiveTab] = useState<ActiveTab>('import');
   
   // Estados Importação
-  const [reps, setReps] = useState<any[]>([]);
+  const [reps, setReps] = useState<Rep[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -46,6 +52,8 @@ export const ManagerImportScreen: React.FC = () => {
       .select('id, nome, nivel_acesso')
       .not('nivel_acesso', 'ilike', 'admin')
       .not('nivel_acesso', 'ilike', 'gerente')
+      .not('nivel_acesso', 'ilike', 'director')
+      .not('nivel_acesso', 'ilike', 'diretor')
       .order('nome');
     setReps(data || []);
   };
@@ -97,11 +105,11 @@ export const ManagerImportScreen: React.FC = () => {
     }
   };
 
-  const cleanCnpj = (val: any) => String(val || '').replace(/\D/g, '');
+  const cleanCnpj = (val: string | number | null | undefined) => String(val || '').replace(/\D/g, '');
   const normalizeRepName = (name: string) => name ? name.split('(')[0].trim().toUpperCase() : "";
 
   // FINGERPRINT BLINDADO: Usa toFixed(2) e Trim para evitar duplicação por arredondamento
-  const generateRowFingerprint = (row: any) => {
+  const generateRowFingerprint = (row: Record<string, any>) => {
     const cnpj = cleanCnpj(row.cnpj);
     const date = String(row.data).trim();
     const pedido = String(row.pedido || '').trim();
@@ -112,7 +120,7 @@ export const ManagerImportScreen: React.FC = () => {
     return `${cnpj}|${date}|${pedido}|${nf}|${sku}|${vlr}|${qtd}`;
   };
 
-  const getVal = (row: any, keys: string[]) => {
+  const getVal = (row: Record<string, any>, keys: string[]) => {
     const foundKey = Object.keys(row).find(k => keys.some(key => k.toLowerCase().trim() === key.toLowerCase().trim()));
     return foundKey ? row[foundKey] : null;
   };
@@ -133,14 +141,15 @@ export const ManagerImportScreen: React.FC = () => {
     setStats({ totalRows: 0, newClientsInserted: 0, processedRows: 0, ignoredRows: 0 });
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
       const data = await file.arrayBuffer();
       const workbook = X.read(data);
-      const jsonData: any[] = X.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+      const jsonData: Record<string, any>[] = X.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
       if (jsonData.length === 0) throw new Error('A planilha está vazia.');
 
-      const repNameToIdMap = new Map();
+      const repNameToIdMap = new Map<string, string>();
       reps.forEach(r => repNameToIdMap.set(normalizeRepName(r.nome), r.id));
 
       setCurrentAction('Mapeando estrutura do arquivo...');
@@ -235,8 +244,9 @@ export const ManagerImportScreen: React.FC = () => {
 
       setStatus({ type: 'success', message: `Concluído! ${totalNewSales} novas vendas importadas. ${totalIgnored} já existiam.` });
       setFile(null);
-    } catch (err: any) {
-      setStatus({ type: 'error', message: err.message || 'Erro no processamento.' });
+    } catch (err: unknown) {
+      const error = err as Error;
+      setStatus({ type: 'error', message: error.message || 'Erro no processamento.' });
     } finally {
       setIsProcessing(false);
       setCurrentItemName('');

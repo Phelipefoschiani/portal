@@ -74,96 +74,94 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
   }, []);
 
   const startHydration = useCallback(async () => {
-    try {
-      totalDataStore.clear();
-      
-      setCurrentStep(0);
-      setStatus('Validando credenciais...');
-      setProgress(10);
-      const { data: users } = await supabase
-        .from('usuarios')
-        .select('id, nome, nivel_acesso')
-        .not('nivel_acesso', 'ilike', 'admin')
-        .not('nivel_acesso', 'ilike', 'gerente')
-        .not('nivel_acesso', 'ilike', 'director')
-        .order('nome');
-      totalDataStore.users = users || [];
-      await new Promise(r => setTimeout(r, 200));
-
-      setCurrentStep(1);
-      setStatus('Mapeando carteira...');
-      setProgress(25);
-      let clientQuery = supabase.from('clientes').select('*, usuarios(nome, id)');
-      if (userRole !== 'admin' && userRole !== 'director') clientQuery = clientQuery.eq('usuario_id', userId);
-      const { data: clients } = await clientQuery;
-      totalDataStore.clients = clients || [];
-
-      setCurrentStep(2);
-      setStatus('Baixando histórico 2024-2027...');
-      const sales = await fetchAllSalesParallel(userRole, userId);
-      totalDataStore.sales = sales;
-
-      // --- Lógica de Inatividade de Clientes ---
-      // const now = new Date(); // Removed unused
-      // const threeMonthsAgo = new Date(); // Removed unused
-      // threeMonthsAgo.setMonth(now.getMonth() - 3); // Removed unused
-
-      totalDataStore.clients = totalDataStore.clients.map(client => {
-        // Encontrar última compra deste cliente
-        const clientSales = sales.filter(s => s.cnpj === client.cnpj);
-        if (clientSales.length === 0) {
-          return { ...client, ativo: false, data_inativacao: 'Sem compras' };
-        }
-
-        const lastSale = clientSales.reduce((latest, current) => {
-          const currentDate = new Date(current.data + 'T00:00:00');
-          return currentDate > latest ? currentDate : latest;
-        }, new Date(0));
-
-        const lastPurchaseDate = lastSale.toISOString().split('T')[0];
+    const execute = async () => {
+      try {
+        totalDataStore.clear();
         
-        // Data de inativação = última compra + 3 meses
-        const inactivationDate = new Date(lastSale);
-        inactivationDate.setMonth(inactivationDate.getMonth() + 3);
+        setCurrentStep(0);
+        setStatus('Validando credenciais...');
+        setProgress(10);
+        const { data: users } = await supabase
+          .from('usuarios')
+          .select('id, nome, nivel_acesso')
+          .not('nivel_acesso', 'ilike', 'admin')
+          .not('nivel_acesso', 'ilike', 'gerente')
+          .not('nivel_acesso', 'ilike', 'director')
+          .not('nivel_acesso', 'ilike', 'diretor')
+          .order('nome');
+        totalDataStore.users = users || [];
+        await new Promise(r => setTimeout(r, 200));
+
+        setCurrentStep(1);
+        setStatus('Mapeando carteira...');
+        setProgress(25);
+        let clientQuery = supabase.from('clientes').select('*, usuarios(nome, id)');
+        if (userRole !== 'admin' && userRole !== 'director') clientQuery = clientQuery.eq('usuario_id', userId);
+        const { data: clients } = await clientQuery;
+        totalDataStore.clients = clients || [];
+
+        setCurrentStep(2);
+        setStatus('Baixando histórico 2024-2027...');
+        const sales = await fetchAllSalesParallel(userRole, userId);
+        totalDataStore.sales = sales;
+
+        totalDataStore.clients = totalDataStore.clients.map(client => {
+          const clientSales = sales.filter(s => s.cnpj === client.cnpj);
+          if (clientSales.length === 0) {
+            return { ...client, ativo: false, data_inativacao: 'Sem compras' };
+          }
+
+          const lastSale = clientSales.reduce((latest, current) => {
+            const currentDate = new Date(current.data + 'T00:00:00');
+            return currentDate > latest ? currentDate : latest;
+          }, new Date(0));
+
+          const lastPurchaseDate = lastSale.toISOString().split('T')[0];
+          
+          const inactivationDate = new Date(lastSale);
+          inactivationDate.setMonth(inactivationDate.getMonth() + 3);
+          
+          return {
+            ...client,
+            lastPurchaseDate,
+            data_inativacao: inactivationDate.toISOString().split('T')[0]
+          };
+        });
+
+        setProgress(80);
+
+        setCurrentStep(3);
+        setStatus('Consolidando metas...');
         
-        return {
-          ...client,
-          lastPurchaseDate,
-          data_inativacao: inactivationDate.toISOString().split('T')[0]
-        };
-      });
+        let targetQuery = supabase.from('metas_usuarios').select('*').in('ano', [2024, 2025, 2026, 2027]);
+        if (userRole !== 'admin' && userRole !== 'director') targetQuery = targetQuery.eq('usuario_id', userId);
+        const { data: targets } = await targetQuery;
+        totalDataStore.targets = targets || [];
 
-      setProgress(80);
+        let invQuery = supabase.from('investimentos').select('*').gte('data', `2024-01-01`).eq('status', 'approved');
+        if (userRole !== 'admin' && userRole !== 'director') invQuery = invQuery.eq('usuario_id', userId);
+        const { data: invs } = await invQuery;
+        totalDataStore.investments = invs || [];
 
-      setCurrentStep(3);
-      setStatus('Consolidando metas...');
-      
-      let targetQuery = supabase.from('metas_usuarios').select('*').in('ano', [2024, 2025, 2026, 2027]);
-      if (userRole !== 'admin' && userRole !== 'director') targetQuery = targetQuery.eq('usuario_id', userId);
-      const { data: targets } = await targetQuery;
-      totalDataStore.targets = targets || [];
+        setProgress(95);
+        await new Promise(r => setTimeout(r, 300));
 
-      let invQuery = supabase.from('investimentos').select('*').gte('data', `2024-01-01`).eq('status', 'approved');
-      if (userRole !== 'admin' && userRole !== 'director') invQuery = invQuery.eq('usuario_id', userId);
-      const { data: invs } = await invQuery;
-      totalDataStore.investments = invs || [];
+        setCurrentStep(4);
+        setStatus('Ambiente Gerencial Pronto!');
+        setProgress(100);
+        totalDataStore.isHydrated = true;
+        
+        await new Promise(r => setTimeout(r, 400));
+        onComplete();
 
-      setProgress(95);
-      await new Promise(r => setTimeout(r, 300));
+      } catch (err) {
+        console.error('Erro na hidratação:', err);
+        setStatus('Falha na rede. Reconectando...');
+        setTimeout(execute, 2000);
+      }
+    };
 
-      setCurrentStep(4);
-      setStatus('Ambiente Gerencial Pronto!');
-      setProgress(100);
-      totalDataStore.isHydrated = true;
-      
-      await new Promise(r => setTimeout(r, 400));
-      onComplete();
-
-    } catch (err) {
-      console.error('Erro na hidratação:', err);
-      setStatus('Falha na rede. Reconectando...');
-      setTimeout(startHydration, 2000);
-    }
+    await execute();
   }, [userId, userRole, onComplete, fetchAllSalesParallel]);
 
   useEffect(() => {

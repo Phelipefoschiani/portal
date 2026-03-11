@@ -62,7 +62,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       setIsLoading(false);
       onLogin(data.nome, mappedRole, data.id);
 
-    } catch (err) {
+    } catch {
       setIsLoading(false);
       setError('Falha de comunicação com o servidor.');
     }

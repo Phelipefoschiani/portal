@@ -1,23 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertOctagon, CheckCircle2, X } from 'lucide-react';
+import { AlertOctagon, CheckCircle2 } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '../lib/supabase';
 
+interface UrgentNotification {
+  id: string;
+  para_usuario_id: string;
+  mensagem: string;
+  lida: boolean;
+  prioridade: string;
+  criada_em: string;
+}
+
 export const UrgentNoticeModal: React.FC = () => {
-  const [urgentNotifications, setUrgentNotifications] = useState<any[]>([]);
+  const [urgentNotifications, setUrgentNotifications] = useState<UrgentNotification[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
 
-  useEffect(() => {
-    if (userId) {
-      fetchUrgentNotifications();
-    }
-  }, [userId]);
-
-  const fetchUrgentNotifications = async () => {
+  const fetchUrgentNotifications = useCallback(async () => {
     try {
       const { data } = await supabase
         .from('notificacoes')
@@ -30,7 +33,16 @@ export const UrgentNoticeModal: React.FC = () => {
     } catch (error) {
       console.error('Erro ao buscar notificações urgentes:', error);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) {
+      const timer = setTimeout(() => {
+        fetchUrgentNotifications();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [userId, fetchUrgentNotifications]);
 
   if (urgentNotifications.length === 0) return null;
 

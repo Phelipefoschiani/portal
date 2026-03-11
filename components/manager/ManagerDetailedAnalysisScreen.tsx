@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ChevronRight, FileSpreadsheet, Search, User, Boxes, Tag, Package, Building2, BarChart4, Layers, CheckSquare, Square, ChevronDown, Trash2, RotateCcw, CalendarDays } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ChevronRight, FileSpreadsheet, Search, BarChart4, Layers, CheckSquare, Square, ChevronDown, Trash2, RotateCcw, CalendarDays, Loader2, User, Tag, Boxes, Building2, Package } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import * as XLSX from 'xlsx';
 import { Button } from '../Button';
+import { VisualAnalysisModal } from './VisualAnalysisModal';
 
 type Dimension = 'representante' | 'canal' | 'grupo' | 'cliente' | 'produto';
 
@@ -14,6 +16,9 @@ interface GroupData {
     pedidos: number;
     parentTotal: number;
     skuSet: Set<string>; 
+    lastSaleDate: string;
+    purchaseCount: number;
+    purchaseDates: Set<string>;
     children?: Map<string, GroupData>;
 }
 
@@ -37,7 +42,7 @@ interface FilterDropdownProps {
     disabled?: boolean;
     openUp?: boolean;
     activeDropdown: string | null;
-    setActiveDropdown: (id: any) => void;
+    setActiveDropdown: (id: string | null) => void;
 }
 
 // Componente extraído para suportar estado de busca local sem perder foco
@@ -168,7 +173,11 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const getSavedState = () => {
         const saved = sessionStorage.getItem('pcn_bi_builder_state');
         if (saved) {
-            return JSON.parse(saved);
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                console.error("Error parsing saved BI state", e);
+            }
         }
         return {
             selectedYear: now.getFullYear(),
@@ -181,7 +190,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             filterProducts: [] as string[],
             displayMode: 'value' as 'value' | 'percent',
             searchTerm: '',
-            topLimit: 'all' as number | 'all'
+            topLimit: 'all' as number | 'all',
+            isAdvancedAnalysis: false,
+            topBottomFilter: 'none' as 'none' | 'top' | 'bottom',
+            topBottomLimit: 10
         };
     };
 
@@ -200,12 +212,19 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const [filterProducts, setFilterProducts] = useState<string[]>(initialState.filterProducts || []);
     const [topLimit, setTopLimit] = useState<number | 'all'>(initialState.topLimit);
     
-    const [activeDropdown, setActiveDropdown] = useState<'dims' | 'reps' | 'canais' | 'grupos' | 'clients' | 'products' | 'top' | null>(null);
+    const [isAdvancedAnalysis, setIsAdvancedAnalysis] = useState<boolean>(initialState.isAdvancedAnalysis || false);
+    const [isProcessingAdvanced, setIsProcessingAdvanced] = useState(false);
+    const [loadingProgress, setLoadingProgress] = useState(0);
+    const [topBottomFilter, setTopBottomFilter] = useState<'none' | 'top' | 'bottom'>(initialState.topBottomFilter || 'none');
+    const [topBottomLimit, setTopBottomLimit] = useState<number>(initialState.topBottomLimit || 10);
+
+    const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
     const [rowDimensions, setRowDimensions] = useState<Dimension[]>(initialState.rowDimensions);
     const [displayMode, setDisplayMode] = useState<'value' | 'percent'>(initialState.displayMode);
     const [searchTerm, setSearchTerm] = useState(initialState.searchTerm);
     const [isExporting, setIsExporting] = useState(false);
+    const [showVisualAnalysis, setShowVisualAnalysis] = useState(false);
 
     const dropdownRef = useRef<HTMLDivElement>(null);
     const monthDropdownRef = useRef<HTMLDivElement>(null);
@@ -213,6 +232,177 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const years = [2024, 2025, 2026, 2027];
+
+    const processedBI = useMemo(() => {
+        const sales = totalDataStore.sales;
+        if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0, entities: 0, clients: 0 } };
+
+        const usersMap = new Map<string, string>(totalDataStore.users.map(u => [u.id, u.nome]));
+        const clientLookup = new Map<string, string>();
+        
+        totalDataStore.clients.forEach(c => {
+            const clean = String(c.cnpj || '').replace(/\D/g, '');
+            clientLookup.set(clean, c.nome_fantasia);
+        });
+
+        // Prepara Set de CNPJs permitidos se houver filtro de clientes
+        const allowedClientCnpjs = new Set<string>();
+        if (filterClients.length > 0) {
+            totalDataStore.clients.forEach(c => {
+                if (filterClients.includes(c.id)) {
+                    allowedClientCnpjs.add(String(c.cnpj || '').replace(/\D/g, ''));
+                }
+            });
+        }
+
+        const filteredSales = sales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            const m = d.getUTCMonth() + 1;
+            const y = d.getUTCFullYear();
+            const matchTime = y === selectedYear && selectedMonths.includes(m);
+            if (!matchTime) return false;
+
+            if (isAdmin && filterReps.length > 0 && !filterReps.includes(s.usuario_id)) return false;
+            if (filterCanais.length > 0 && (!s.canal_vendas || !filterCanais.includes(s.canal_vendas))) return false;
+            if (filterGrupos.length > 0 && (!s.grupo || !filterGrupos.includes(s.grupo))) return false;
+            
+            // Filtro de Cliente aplicado aqui
+            if (filterClients.length > 0) {
+                const saleCnpj = String(s.cnpj || '').replace(/\D/g, '');
+                if (!allowedClientCnpjs.has(saleCnpj)) return false;
+            }
+
+            // Filtro de Produtos (NOVO) - Aplica sobre o TOTAL e sobre os ITENS
+            if (filterProducts.length > 0) {
+                const pKey = s.codigo_produto || s.produto;
+                if (!filterProducts.includes(pKey)) return false;
+            }
+            
+            return true;
+        });
+
+        const tree = new Map<string, GroupData>();
+        let grandTotalFaturamento = 0;
+        let grandTotalQuantidade = 0;
+        const grandTotalSkuSet = new Set<string>();
+        const grandTotalEntitySet = new Set<string>();
+        const grandTotalClientSet = new Set<string>();
+
+        filteredSales.forEach(sale => {
+            const fat = Number(sale.faturamento) || 0;
+            const qtd = Number(sale.qtde_faturado) || 0;
+            const skuId = sale.codigo_produto || sale.produto || 'N/I';
+            const saleDate = sale.data || '0000-00-00';
+            const cnpjClean = String(sale.cnpj || '').replace(/\D/g, '');
+            
+            grandTotalFaturamento += fat;
+            grandTotalQuantidade += qtd;
+            grandTotalSkuSet.add(skuId);
+            grandTotalClientSet.add(cnpjClean);
+
+            let currentLevel = tree;
+            rowDimensions.forEach((dim, idx) => {
+                let key = 'N/I';
+                if (dim === 'representante') key = usersMap.get(sale.usuario_id) || 'N/I';
+                else if (dim === 'canal') key = sale.canal_vendas || 'GERAL';
+                else if (dim === 'grupo') key = sale.grupo || 'SEM GRUPO';
+                else if (dim === 'cliente') {
+                    const name = clientLookup.get(cnpjClean) || sale.cliente_nome;
+                    key = (name || `CNPJ: ${sale.cnpj}`).trim().toUpperCase();
+                }
+                else if (dim === 'produto') key = sale.produto ? sale.produto.trim().toUpperCase() : 'ITEM SEM DESCRIÇÃO';
+
+                if (idx === 0) grandTotalEntitySet.add(key);
+
+                if (!currentLevel.has(key)) {
+                    currentLevel.set(key, {
+                        label: key,
+                        level: idx,
+                        faturamento: 0,
+                        quantidade: 0,
+                        pedidos: 0,
+                        parentTotal: 0,
+                        skuSet: new Set(),
+                        lastSaleDate: '0000-00-00',
+                        purchaseCount: 0,
+                        purchaseDates: new Set(),
+                        children: idx < rowDimensions.length - 1 ? new Map() : undefined
+                    });
+                }
+
+                const node = currentLevel.get(key)!;
+                node.faturamento += fat;
+                node.quantidade += qtd;
+                node.pedidos += 1;
+                node.skuSet.add(skuId);
+                node.purchaseCount += 1;
+                node.purchaseDates.add(saleDate);
+                if (saleDate > node.lastSaleDate) node.lastSaleDate = saleDate;
+
+                if (node.children) {
+                    currentLevel = node.children;
+                }
+            });
+        });
+
+        interface FlatItem extends GroupData {
+            hierarchyLabels: string[];
+            skusCount: number;
+            participation: number;
+        }
+
+        const flatList: FlatItem[] = [];
+        const flatten = (nodes: Map<string, GroupData>, parentLabels: string[] = []) => {
+            const currentLevelIndex = parentLabels.length;
+            const currentDimension = rowDimensions[currentLevelIndex];
+            
+            let sortedNodes = Array.from(nodes.values()).sort((a, b) => b.faturamento - a.faturamento);
+            
+            // Apply Top/Bottom filter if the current dimension is 'produto'
+            if (currentDimension === 'produto' && topBottomFilter !== 'none') {
+                if (topBottomFilter === 'top') {
+                    sortedNodes = sortedNodes.slice(0, topBottomLimit);
+                } else if (topBottomFilter === 'bottom') {
+                    sortedNodes = Array.from(nodes.values())
+                        .sort((a, b) => a.faturamento - b.faturamento)
+                        .slice(0, topBottomLimit)
+                        .sort((a, b) => b.faturamento - a.faturamento); // Re-sort DESC for visual consistency
+                }
+            }
+
+            // Calculate the total of the nodes that will actually be displayed at this level
+            const visibleTotal = sortedNodes.reduce((acc, n) => acc + n.faturamento, 0);
+
+            sortedNodes.forEach(node => {
+                const currentLabels = [...parentLabels, node.label];
+                flatList.push({
+                    ...node,
+                    hierarchyLabels: currentLabels,
+                    skusCount: node.skuSet.size,
+                    participation: visibleTotal > 0 ? (node.faturamento / visibleTotal) * 100 : 100
+                });
+                if (node.children) flatten(node.children, currentLabels);
+            });
+        };
+
+        flatten(tree);
+        
+        let filteredList = flatList;
+        if (searchTerm) {
+            filteredList = flatList.filter(item => item.label.toLowerCase().includes(searchTerm.toLowerCase()));
+        }
+
+        return {
+            items: filteredList,
+            totals: { 
+                faturamento: grandTotalFaturamento, 
+                quantidade: grandTotalQuantidade, 
+                skus: grandTotalSkuSet.size,
+                entities: grandTotalEntitySet.size,
+                clients: grandTotalClientSet.size
+            }
+        };
+    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin, topBottomFilter, topBottomLimit]);
 
     useEffect(() => {
         const stateToSave = {
@@ -226,10 +416,41 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             filterProducts,
             displayMode,
             searchTerm,
-            topLimit
+            topLimit,
+            isAdvancedAnalysis,
+            topBottomFilter,
+            topBottomLimit
         };
         sessionStorage.setItem('pcn_bi_builder_state', JSON.stringify(stateToSave));
-    }, [selectedYear, selectedMonths, rowDimensions, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, displayMode, searchTerm, topLimit]);
+    }, [selectedYear, selectedMonths, rowDimensions, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, displayMode, searchTerm, topLimit, isAdvancedAnalysis, topBottomFilter, topBottomLimit]);
+
+    useEffect(() => {
+        if (!rowDimensions.includes('produto')) {
+            setTopBottomFilter('none');
+            setIsAdvancedAnalysis(false);
+        }
+    }, [rowDimensions]);
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (isProcessingAdvanced) {
+            setLoadingProgress(0);
+            const startTime = Date.now();
+            const duration = 5000; // 5 segundos fixos
+
+            interval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min((elapsed / duration) * 100, 100);
+                setLoadingProgress(progress);
+
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    setIsProcessingAdvanced(false);
+                }
+            }, 30);
+        }
+        return () => clearInterval(interval);
+    }, [isProcessingAdvanced]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -291,140 +512,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         setList(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
     };
 
-    const processedBI = useMemo(() => {
-        const sales = totalDataStore.sales;
-        if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0 } };
-
-        const usersMap = new Map(totalDataStore.users.map(u => [u.id, u.nome]));
-        const clientLookup = new Map();
-        
-        totalDataStore.clients.forEach(c => {
-            const clean = String(c.cnpj || '').replace(/\D/g, '');
-            clientLookup.set(clean, c.nome_fantasia);
-        });
-
-        // Prepara Set de CNPJs permitidos se houver filtro de clientes
-        const allowedClientCnpjs = new Set<string>();
-        if (filterClients.length > 0) {
-            totalDataStore.clients.forEach(c => {
-                if (filterClients.includes(c.id)) {
-                    allowedClientCnpjs.add(String(c.cnpj || '').replace(/\D/g, ''));
-                }
-            });
-        }
-
-        const filteredSales = sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            const m = d.getUTCMonth() + 1;
-            const y = d.getUTCFullYear();
-            const matchTime = y === selectedYear && selectedMonths.includes(m);
-            if (!matchTime) return false;
-
-            if (isAdmin && filterReps.length > 0 && !filterReps.includes(s.usuario_id)) return false;
-            if (filterCanais.length > 0 && (!s.canal_vendas || !filterCanais.includes(s.canal_vendas))) return false;
-            if (filterGrupos.length > 0 && (!s.grupo || !filterGrupos.includes(s.grupo))) return false;
-            
-            // Filtro de Cliente aplicado aqui
-            if (filterClients.length > 0) {
-                const saleCnpj = String(s.cnpj || '').replace(/\D/g, '');
-                if (!allowedClientCnpjs.has(saleCnpj)) return false;
-            }
-
-            // Filtro de Produtos (NOVO) - Aplica sobre o TOTAL e sobre os ITENS
-            if (filterProducts.length > 0) {
-                const pKey = s.codigo_produto || s.produto;
-                if (!filterProducts.includes(pKey)) return false;
-            }
-            
-            return true;
-        });
-
-        const tree = new Map<string, GroupData>();
-        let grandTotalFaturamento = 0;
-        let grandTotalQuantidade = 0;
-        const grandTotalSkuSet = new Set<string>();
-
-        filteredSales.forEach(sale => {
-            const fat = Number(sale.faturamento) || 0;
-            const qtd = Number(sale.qtde_faturado) || 0;
-            const skuId = sale.codigo_produto || sale.produto || 'N/I';
-            
-            grandTotalFaturamento += fat;
-            grandTotalQuantidade += qtd;
-            grandTotalSkuSet.add(skuId);
-
-            let currentLevel = tree;
-            rowDimensions.forEach((dim, idx) => {
-                let key = 'N/I';
-                if (dim === 'representante') key = usersMap.get(sale.usuario_id) || 'N/I';
-                else if (dim === 'canal') key = sale.canal_vendas || 'GERAL';
-                else if (dim === 'grupo') key = sale.grupo || 'SEM GRUPO';
-                else if (dim === 'cliente') {
-                    const cnpjClean = String(sale.cnpj || '').replace(/\D/g, '');
-                    const name = clientLookup.get(cnpjClean) || sale.cliente_nome;
-                    key = (name || `CNPJ: ${sale.cnpj}`).trim().toUpperCase();
-                }
-                else if (dim === 'produto') key = sale.produto ? sale.produto.trim().toUpperCase() : 'ITEM SEM DESCRIÇÃO';
-
-                if (!currentLevel.has(key)) {
-                    currentLevel.set(key, {
-                        label: key,
-                        level: idx,
-                        faturamento: 0,
-                        quantidade: 0,
-                        pedidos: 0,
-                        parentTotal: 0,
-                        skuSet: new Set(),
-                        children: idx < rowDimensions.length - 1 ? new Map() : undefined
-                    });
-                }
-
-                const node = currentLevel.get(key)!;
-                node.faturamento += fat;
-                node.quantidade += qtd;
-                node.pedidos += 1;
-                node.skuSet.add(skuId);
-
-                if (node.children) {
-                    currentLevel = node.children;
-                }
-            });
-        });
-
-        interface FlatItem extends GroupData {
-            hierarchyLabels: string[];
-            skusCount: number;
-            participation: number;
-        }
-
-        const flatList: FlatItem[] = [];
-        const flatten = (nodes: Map<string, GroupData>, parentTotalValue: number, parentLabels: string[] = []) => {
-            const sortedNodes = Array.from(nodes.values()).sort((a, b) => b.faturamento - a.faturamento);
-            sortedNodes.forEach(node => {
-                const currentLabels = [...parentLabels, node.label];
-                flatList.push({
-                    ...node,
-                    hierarchyLabels: currentLabels,
-                    skusCount: node.skuSet.size,
-                    participation: parentTotalValue > 0 ? (node.faturamento / parentTotalValue) * 100 : 100
-                });
-                if (node.children) flatten(node.children, node.faturamento, currentLabels);
-            });
-        };
-
-        flatten(tree, grandTotalFaturamento);
-        
-        let filteredList = flatList;
-        if (searchTerm) {
-            filteredList = flatList.filter(item => item.label.toLowerCase().includes(searchTerm.toLowerCase()));
-        }
-
-        return {
-            items: filteredList,
-            totals: { faturamento: grandTotalFaturamento, quantidade: grandTotalQuantidade, skus: grandTotalSkuSet.size }
-        };
-    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin]);
-
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
     const handleExportExcel = () => {
@@ -435,7 +522,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
         setIsExporting(true);
         try {
-            const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
+            const X = XLSX as any;
             if (!X || !X.utils) {
                 throw new Error("Biblioteca XLSX não carregada corretamente.");
             }
@@ -458,6 +545,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 "FATURAMENTO (R$)",
                 "MIX SKU",
                 "VOLUME (UN)",
+                ...(isAdvancedAnalysis ? ["RECOMPRA", "ÚLTIMA VENDA"] : []),
                 "PART. NO TOTAL (%)"
             ];
 
@@ -470,6 +558,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     item.faturamento,
                     item.skusCount,
                     item.quantidade,
+                    ...(isAdvancedAnalysis ? [
+                        item.purchaseDates.size,
+                        item.lastSaleDate !== '0000-00-00' ? new Date(item.lastSaleDate + 'T00:00:00').toLocaleDateString('pt-BR') : '-'
+                    ] : []),
                     (item.participation / 100)
                 ])
             ];
@@ -483,7 +575,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 };
             }
 
-            const headerCols = ['A', 'B', 'C', 'D', 'E', 'F'];
+            const headerCols = isAdvancedAnalysis ? ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] : ['A', 'B', 'C', 'D', 'E', 'F'];
             headerCols.forEach(col => {
                 const cellRef = `${col}2`;
                 if (ws[cellRef]) {
@@ -501,40 +593,67 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
             const range = X.utils.decode_range(ws['!ref']!);
             for (let R = 2; R <= range.e.r; ++R) {
+                // Faturamento (C)
                 const cellC = ws[X.utils.encode_cell({r: R, c: 2})];
                 if (cellC) {
                     cellC.t = 'n';
                     cellC.z = '"R$" #,##0.00';
                     cellC.s = { alignment: { horizontal: "right" } };
                 }
+                // MIX SKU (D)
                 const cellD = ws[X.utils.encode_cell({r: R, c: 3})];
                 if (cellD) {
                     cellD.t = 'n';
                     cellD.z = '#,##0';
                     cellD.s = { alignment: { horizontal: "center" } };
                 }
+                // Volume (E)
                 const cellE = ws[X.utils.encode_cell({r: R, c: 4})];
                 if (cellE) {
                     cellE.t = 'n';
                     cellE.z = '#,##0';
                     cellE.s = { alignment: { horizontal: "center" } };
                 }
-                const cellF = ws[X.utils.encode_cell({r: R, c: 5})];
-                if (cellF) {
-                    cellF.t = 'n';
-                    cellF.z = '0.00%';
-                    cellF.s = { alignment: { horizontal: "right" } };
+
+                if (isAdvancedAnalysis) {
+                    // Recompra (F)
+                    const cellF = ws[X.utils.encode_cell({r: R, c: 5})];
+                    if (cellF) {
+                        cellF.t = 'n';
+                        cellF.z = '#,##0';
+                        cellF.s = { alignment: { horizontal: "center" } };
+                    }
+                    // Última Venda (G)
+                    const cellG = ws[X.utils.encode_cell({r: R, c: 6})];
+                    if (cellG) {
+                        cellG.s = { alignment: { horizontal: "center" } };
+                    }
+                    // Partic (H)
+                    const cellH = ws[X.utils.encode_cell({r: R, c: 7})];
+                    if (cellH) {
+                        cellH.t = 'n';
+                        cellH.z = '0.00%';
+                        cellH.s = { alignment: { horizontal: "right" } };
+                    }
+                } else {
+                    // Partic (F)
+                    const cellF = ws[X.utils.encode_cell({r: R, c: 5})];
+                    if (cellF) {
+                        cellF.t = 'n';
+                        cellF.z = '0.00%';
+                        cellF.s = { alignment: { horizontal: "right" } };
+                    }
                 }
             }
 
-            ws['!cols'] = [
-                { wch: 65 }, { wch: 45 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 20 }
-            ];
+            ws['!cols'] = isAdvancedAnalysis 
+                ? [ { wch: 65 }, { wch: 45 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 20 } ]
+                : [ { wch: 65 }, { wch: 45 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 20 } ];
 
             const wb = X.utils.book_new();
             X.utils.book_append_sheet(wb, ws, "BI_CENTRONORTE");
             X.writeFile(wb, `BI_CENTRONORTE_${new Date().getTime()}.xlsx`);
-        } catch (e) {
+        } catch (e: unknown) {
             console.error('Erro Exportação Excel:', e);
             alert('Falha ao processar arquivo Excel. Tente recarregar a página.');
         } finally {
@@ -554,6 +673,14 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
+                    <button 
+                        onClick={() => setShowVisualAnalysis(true)} 
+                        disabled={processedBI.items.length === 0}
+                        className="flex-1 md:flex-none h-10 px-4 md:px-6 rounded-xl text-[9px] md:text-[10px] font-black bg-blue-600 text-white hover:bg-blue-700 transition-all uppercase flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
+                    >
+                        <BarChart4 className="w-3.5 h-3.5" /> 
+                        <span className="md:inline">Análise Visual</span>
+                    </button>
                     <button onClick={resetAllFilters} className="flex-1 md:flex-none h-10 px-4 md:px-6 rounded-xl text-[9px] md:text-[10px] font-black border border-red-100 text-red-500 hover:bg-red-50 transition-all uppercase flex items-center justify-center gap-2">
                         <RotateCcw className="w-3.5 h-3.5" /> 
                         <span className="md:inline">Resetar</span>
@@ -621,32 +748,76 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 <div className="flex flex-col md:flex-row items-start gap-6 md:gap-10">
                     <div className="flex flex-col gap-3 w-full md:w-auto">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">1. Camadas da Tabela</span>
-                        <FilterDropdown 
-                            id="dims" label="Escolher Níveis" icon={Layers} 
-                            options={[
-                                ...(isAdmin ? [{ id: 'representante', label: 'Representante' }] : []),
-                                { id: 'canal', label: 'Canal de Vendas' },
-                                { id: 'grupo', label: 'Grupo Econômico' },
-                                { id: 'cliente', label: 'Cliente (Nome)' },
-                                { id: 'produto', label: 'Produto (SKU)' },
-                            ]} 
-                            selected={rowDimensions} 
-                            onToggle={(val) => setRowDimensions(prev => prev.includes(val as Dimension) ? prev.filter(v => v !== val) : [...prev, val as Dimension])} 
-                            onClear={() => setRowDimensions([])} 
-                            activeDropdown={activeDropdown}
-                            setActiveDropdown={setActiveDropdown}
-                        />
+                        <div className="flex flex-col gap-2">
+                            <FilterDropdown 
+                                id="dims" label="Escolher Níveis" icon={Layers} 
+                                options={[
+                                    ...(isAdmin ? [{ id: 'representante', label: 'Representante' }] : []),
+                                    { id: 'canal', label: 'Canal de Vendas' },
+                                    { id: 'grupo', label: 'Grupo Econômico' },
+                                    { id: 'cliente', label: 'Cliente (Nome)' },
+                                    { id: 'produto', label: 'Produto (SKU)' },
+                                ]} 
+                                selected={rowDimensions} 
+                                onToggle={(val) => setRowDimensions(prev => prev.includes(val as Dimension) ? prev.filter(v => v !== val) : [...prev, val as Dimension])} 
+                                onClear={() => setRowDimensions([])} 
+                                activeDropdown={activeDropdown}
+                                setActiveDropdown={(id) => setActiveDropdown(id)}
+                            />
+                            
+                            {rowDimensions.includes('produto') && (
+                                <div className="space-y-2 animate-fadeIn">
+                                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                                        <select 
+                                            value={topBottomFilter} 
+                                            onChange={(e) => setTopBottomFilter(e.target.value as 'none' | 'top' | 'bottom')}
+                                            className="bg-transparent border-none text-[9px] font-black uppercase text-slate-600 outline-none cursor-pointer"
+                                        >
+                                            <option value="none">Sem Ranking</option>
+                                            <option value="top">Mais Vendidos</option>
+                                            <option value="bottom">Menos Vendidos</option>
+                                        </select>
+                                        {topBottomFilter !== 'none' && (
+                                            <input 
+                                                type="number" 
+                                                value={topBottomLimit} 
+                                                onChange={(e) => setTopBottomLimit(Number(e.target.value))}
+                                                className="w-12 bg-white border border-slate-200 rounded px-1 py-0.5 text-[10px] font-black text-blue-600 outline-none"
+                                            />
+                                        )}
+                                    </div>
+
+                                    <button 
+                                        onClick={() => {
+                                            if (!isAdvancedAnalysis) {
+                                                setIsProcessingAdvanced(true);
+                                                setIsAdvancedAnalysis(true);
+                                            } else {
+                                                setIsAdvancedAnalysis(false);
+                                            }
+                                        }}
+                                        disabled={isProcessingAdvanced}
+                                        className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${isAdvancedAnalysis ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'} ${isProcessingAdvanced ? 'opacity-50 cursor-wait' : ''}`}
+                                    >
+                                        <BarChart4 className={`w-3 h-3 ${isProcessingAdvanced ? 'animate-spin' : ''}`} />
+                                        {isProcessingAdvanced ? 'Analisando...' : isAdvancedAnalysis ? 'Análise Avançada Ativa' : 'Ativar Análise Avançada'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                     
                     <div className="w-px h-16 bg-slate-100 hidden md:block"></div>
 
                     <div className="flex-1 flex flex-col gap-4 w-full">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">2. Filtros Dinâmicos (Opcional)</span>
+                        <div className="flex justify-between items-center px-1">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">2. Filtros Dinâmicos (Opcional)</span>
+                        </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-3 items-center">
-                            {isAdmin && <FilterDropdown id="reps" label="Equipe" icon={User} options={filterOptions.reps} selected={filterReps} onToggle={(val) => toggleFilter(filterReps, setFilterReps, val)} onClear={() => setFilterReps([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />}
-                            <FilterDropdown id="canais" label="Canais" icon={Tag} options={filterOptions.canais} selected={filterCanais} onToggle={(val) => toggleFilter(filterCanais, setFilterCanais, val)} onClear={() => setFilterCanais([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
-                            <FilterDropdown id="grupos" label="Grupos" icon={Boxes} options={filterOptions.grupos} selected={filterGrupos} onToggle={(val) => toggleFilter(filterGrupos, setFilterGrupos, val)} onClear={() => setFilterGrupos([])} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
+                            {isAdmin && <FilterDropdown id="reps" label="Equipe" icon={User} options={filterOptions.reps} selected={filterReps} onToggle={(val) => toggleFilter(filterReps, setFilterReps, val)} onClear={() => setFilterReps([])} activeDropdown={activeDropdown} setActiveDropdown={(id) => setActiveDropdown(id)} />}
+                            <FilterDropdown id="canais" label="Canais" icon={Tag} options={filterOptions.canais} selected={filterCanais} onToggle={(val) => toggleFilter(filterCanais, setFilterCanais, val)} onClear={() => setFilterCanais([])} activeDropdown={activeDropdown} setActiveDropdown={(id) => setActiveDropdown(id)} />
+                            <FilterDropdown id="grupos" label="Grupos" icon={Boxes} options={filterOptions.grupos} selected={filterGrupos} onToggle={(val) => toggleFilter(filterGrupos, setFilterGrupos, val)} onClear={() => setFilterGrupos([])} activeDropdown={activeDropdown} setActiveDropdown={(id) => setActiveDropdown(id)} />
                             <FilterDropdown 
                                 id="clients" 
                                 label="Clientes" 
@@ -657,7 +828,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 onToggle={(val) => toggleFilter(filterClients, setFilterClients, val)} 
                                 onClear={() => setFilterClients([])}
                                 activeDropdown={activeDropdown}
-                                setActiveDropdown={setActiveDropdown}
+                                setActiveDropdown={(id) => setActiveDropdown(id)}
                             />
                             {/* NOVO FILTRO DE PRODUTOS */}
                             <FilterDropdown 
@@ -670,7 +841,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 onClear={() => setFilterProducts([])}
                                 onSelectAll={(allIds) => setFilterProducts(allIds)}
                                 activeDropdown={activeDropdown}
-                                setActiveDropdown={setActiveDropdown}
+                                setActiveDropdown={(id) => setActiveDropdown(id)}
                             />
                         </div>
                     </div>
@@ -689,14 +860,44 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="hidden md:block overflow-x-auto flex-1">
-                    <table className="w-full text-left border-collapse min-w-[900px]">
+                <div className="flex-1 overflow-auto relative">
+                    {isProcessingAdvanced && createPortal(
+                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                            <div className="bg-white p-8 rounded-[32px] shadow-2xl flex flex-col items-center gap-6 max-w-xs w-full border border-slate-100 animate-slideUp">
+                                <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+                                    <Loader2 className="w-8 h-8 animate-spin" />
+                                </div>
+                                <div className="text-center space-y-2">
+                                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-tighter">Analisando Dados</h3>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                                        Processando métricas avançadas e histórico de recompra...
+                                    </p>
+                                    <div className="text-[10px] font-black text-blue-600">{Math.round(loadingProgress)}%</div>
+                                </div>
+                                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-blue-600 transition-all duration-75 ease-linear"
+                                        style={{ width: `${loadingProgress}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>,
+                        document.body
+                    )}
+                    <div className="hidden md:block overflow-x-auto flex-1">
+                        <table className="w-full text-left border-collapse min-w-[900px]">
                         <thead className="bg-white sticky top-0 z-10 border-b border-slate-200 shadow-sm">
                             <tr className="text-slate-400 text-[10px] font-black uppercase tracking-widest">
                                 <th className="px-8 py-5">Destrinchamento Hierárquico</th>
                                 <th className="px-6 py-5 text-right">Faturamento</th>
                                 <th className="px-6 py-5 text-center">Mix SKU</th>
                                 <th className="px-6 py-5 text-center">Volume (Un)</th>
+                                {isAdvancedAnalysis && (
+                                    <>
+                                        <th className="px-6 py-5 text-center">Recompra</th>
+                                        <th className="px-6 py-5 text-center">Última Venda</th>
+                                    </>
+                                )}
                                 <th className="px-8 py-5 text-right">Part. no Pai (%)</th>
                             </tr>
                         </thead>
@@ -735,6 +936,16 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                             <td className="px-6 py-4 text-center tabular-nums text-xs font-bold text-slate-500">
                                                 {row.quantidade.toLocaleString()}
                                             </td>
+                                            {isAdvancedAnalysis && (
+                                                <>
+                                                    <td className="px-6 py-4 text-center tabular-nums text-xs font-black text-blue-600">
+                                                        {row.purchaseDates.size.toLocaleString()}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center tabular-nums text-[10px] font-bold text-slate-500">
+                                                        {row.lastSaleDate !== '0000-00-00' ? new Date(row.lastSaleDate + 'T00:00:00').toLocaleDateString('pt-BR') : '-'}
+                                                    </td>
+                                                </>
+                                            )}
                                             <td className="px-8 py-4">
                                                 <div className="flex flex-col items-end gap-1.5">
                                                     <span className="text-[10px] font-black text-slate-400 tabular-nums">{row.participation.toFixed(1)}%</span>
@@ -748,32 +959,55 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 })
                             )}
                         </tbody>
-                    </table>
+                        </table>
+                    </div>
                 </div>
 
                 {processedBI.items.length > 0 && (
-                    <div className="p-6 md:p-8 bg-slate-900 text-white flex flex-col md:flex-row justify-between items-center gap-6 md:gap-10 px-8 md:px-12 border-t-4 border-blue-600 shadow-2xl">
-                        <div className="text-center md:text-left">
+                    <div className="p-6 md:p-8 bg-slate-900 text-white flex flex-col lg:flex-row justify-between items-center gap-6 lg:gap-10 px-8 md:px-12 border-t-4 border-blue-600 shadow-2xl">
+                        <div className="text-center lg:text-left w-full lg:w-auto">
                             <span className="text-[8px] md:text-[9px] font-black uppercase tracking-[0.4em] text-blue-400 block mb-1.5">Consolidado da Consulta</span>
-                            <p className="text-[10px] md:text-xs font-bold text-slate-400">{selectedMonths.length === 12 ? 'ANO COMPLETO' : `${selectedMonths.length} MESES`} • {selectedYear} • {filterProducts.length > 0 ? `${filterProducts.length} Produtos Filtrados` : 'Todos Produtos'}</p>
+                            <p className="text-[10px] md:text-xs font-bold text-slate-400">{selectedMonths.length === 12 ? 'ANO COMPLETO' : `${selectedMonths.length} MESES`} &bull; {selectedYear} &bull; {filterProducts.length > 0 ? `${filterProducts.length} Produtos Filtrados` : 'Todos Produtos'}</p>
                         </div>
-                        <div className="grid grid-cols-3 gap-6 md:gap-16 w-full md:w-auto">
-                            <div className="text-center md:text-right">
-                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">SKUS</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8 lg:gap-12 w-full lg:w-auto">
+                            <div className="text-center lg:text-right p-2 bg-white/5 rounded-xl lg:bg-transparent">
+                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">CLIENTES TOTAIS</p>
+                                <p className="text-sm md:text-2xl font-black tabular-nums">{processedBI.totals.clients.toLocaleString()}</p>
+                            </div>
+                            <div className="text-center lg:text-right p-2 bg-white/5 rounded-xl lg:bg-transparent">
+                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">SKUS TOTAIS</p>
                                 <p className="text-sm md:text-2xl font-black tabular-nums">{processedBI.totals.skus.toLocaleString()}</p>
                             </div>
-                            <div className="text-center md:text-right">
-                                <p className="text-sm md:text-2xl font-black tabular-nums">{processedBI.totals.quantidade.toLocaleString()}</p>
+                            <div className="text-center lg:text-right p-2 bg-white/5 rounded-xl lg:bg-transparent">
                                 <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">VOLUME</p>
+                                <p className="text-sm md:text-2xl font-black tabular-nums">{processedBI.totals.quantidade.toLocaleString()}</p>
                             </div>
-                            <div className="text-center md:text-right">
-                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1">RECEITA</p>
+                            <div className="text-center lg:text-right p-2 bg-white/5 rounded-xl lg:bg-transparent col-span-2 sm:col-span-1">
+                                <p className="text-[7px] md:text-[9px] font-black text-slate-500 uppercase mb-1 text-blue-400">RECEITA TOTAL</p>
                                 <p className="text-sm md:text-3xl font-black text-blue-400 tabular-nums">{formatBRL(processedBI.totals.faturamento)}</p>
                             </div>
                         </div>
                     </div>
                 )}
             </div>
+
+            {showVisualAnalysis && (
+                <VisualAnalysisModal 
+                    onClose={() => setShowVisualAnalysis(false)}
+                    totals={processedBI.totals}
+                    items={processedBI.items}
+                    dimensions={rowDimensions}
+                    selectedYear={selectedYear}
+                    selectedMonths={selectedMonths}
+                    filters={{
+                        reps: filterReps,
+                        canais: filterCanais,
+                        grupos: filterGrupos,
+                        clients: filterClients,
+                        products: filterProducts
+                    }}
+                />
+            )}
         </div>
     );
 };

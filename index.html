@@ -51,6 +51,13 @@
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
+      @keyframes loadingBar {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+      }
+      .animate-loadingBar {
+        animation: loadingBar 2s infinite linear;
+      }
     </style>
   <script type="importmap">
 {

@@ -1,11 +1,36 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Bell, Plus, Trash2, Eye, Paperclip, X, Loader2, Send, CheckCircle, Clock, FileText, CheckSquare, Square, Download, Search, AlertTriangle, CalendarDays, User, Filter, ListChecks, AlertOctagon, Image as ImageIcon, Inbox, Mail, ArrowRight } from 'lucide-react';
+import { Bell, Plus, Trash2, Eye, X, Loader2, Send, CheckCircle, Clock, FileText, CheckSquare, Square, Download, Search, AlertTriangle, CalendarDays, User, Filter, AlertOctagon, Image as ImageIcon, Inbox, ArrowRight } from 'lucide-react';
 import { Button } from '../Button';
 import { Input } from '../Input';
 import { supabase } from '../../lib/supabase';
 import { createPortal } from 'react-dom';
 
 type TabType = 'new' | 'history' | 'inbox';
+
+interface UserProfile {
+    id: string;
+    nome: string;
+    nivel_acesso: string;
+}
+
+interface NotificationAttachment {
+    id?: string;
+    notificacao_id?: string;
+    arquivo_nome: string;
+    arquivo_url: string;
+    tipo_mime: string;
+}
+
+interface Notification {
+    id: string;
+    de_usuario_id: string;
+    para_usuario_id: string;
+    mensagem: string;
+    prioridade: string;
+    lida: boolean;
+    criada_em: string;
+    notificacao_anexos?: NotificationAttachment[];
+}
 
 export const ManagerNotificationsScreen: React.FC = () => {
     const now = new Date();
@@ -14,7 +39,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
     const [content, setContent] = useState('');
     const [priority, setPriority] = useState('info');
     const [selectedRepIds, setSelectedRepIds] = useState<string[]>([]);
-    const [attachments, setAttachments] = useState<any[]>([]);
+    const [attachments, setAttachments] = useState<NotificationAttachment[]>([]);
     const [repSearchTerm, setRepSearchTerm] = useState('');
     
     // Filtros de Histórico
@@ -27,13 +52,13 @@ export const ManagerNotificationsScreen: React.FC = () => {
     // Seleção para deleção em massa
     const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
 
-    const [allUsers, setAllUsers] = useState<any[]>([]); 
-    const [history, setHistory] = useState<any[]>([]);
-    const [inbox, setInbox] = useState<any[]>([]); 
+    const [allUsers, setAllUsers] = useState<UserProfile[]>([]); 
+    const [history, setHistory] = useState<Notification[]>([]);
+    const [inbox, setInbox] = useState<Notification[]>([]); 
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingDetails, setIsLoadingDetails] = useState(false); // Novo estado para loading de detalhes
     const [isSending, setIsSending] = useState(false);
-    const [viewingNotification, setViewingNotification] = useState<any | null>(null);
+    const [viewingNotification, setViewingNotification] = useState<Notification | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
@@ -100,14 +125,14 @@ export const ManagerNotificationsScreen: React.FC = () => {
             
             if (error) throw error;
 
-            const normalizedData = (data || []).map((item: any) => ({
+            const normalizedData = (data || []).map((item: Notification) => ({
                 ...item,
-                para_usuario_id: item.para_usuario_id || item.Para_usuario_id || item.para_Usuario_Id,
-                de_usuario_id: item.de_usuario_id || item.De_usuario_id || item.de_Usuario_Id
+                para_usuario_id: item.para_usuario_id || (item as any).Para_usuario_id || (item as any).para_Usuario_Id,
+                de_usuario_id: item.de_usuario_id || (item as any).De_usuario_id || (item as any).de_Usuario_Id
             }));
 
             setHistory(normalizedData);
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error('Erro ao carregar histórico:', e);
         } finally {
             setIsLoading(false);
@@ -127,10 +152,10 @@ export const ManagerNotificationsScreen: React.FC = () => {
             
             if (error) throw error;
 
-            const normalizedData = (data || []).map((item: any) => ({
+            const normalizedData = (data || []).map((item: Notification) => ({
                 ...item,
-                para_usuario_id: item.para_usuario_id || item.Para_usuario_id,
-                de_usuario_id: item.de_usuario_id || item.De_usuario_id
+                para_usuario_id: item.para_usuario_id || (item as any).Para_usuario_id,
+                de_usuario_id: item.de_usuario_id || (item as any).De_usuario_id
             }));
 
             setInbox(normalizedData);
@@ -142,7 +167,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
     };
 
     // --- CARREGAMENTO SOB DEMANDA DOS DETALHES ---
-    const handleViewDetails = async (notification: any) => {
+    const handleViewDetails = async (notification: Notification) => {
         // Abre o modal imediatamente com os dados que já temos
         setViewingNotification({ ...notification, notificacao_anexos: [] }); 
         setIsLoadingDetails(true);
@@ -155,7 +180,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
                 .eq('notificacao_id', notification.id);
 
             if (!error && anexos) {
-                setViewingNotification((prev: any) => 
+                setViewingNotification((prev: Notification | null) => 
                     prev?.id === notification.id ? { ...prev, notificacao_anexos: anexos } : prev
                 );
             }
@@ -203,7 +228,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
         });
 
         const newFiles = await Promise.all(filePromises);
-        setAttachments(prev => [...prev, ...newFiles]);
+        setAttachments(prev => [...prev, ...newFiles as NotificationAttachment[]]);
         setIsLoading(false);
     };
 
@@ -256,8 +281,9 @@ export const ManagerNotificationsScreen: React.FC = () => {
             setAttachments([]);
             setSelectedRepIds([]);
             setActiveTab('history');
-        } catch (error: any) {
-            alert('Erro ao enviar comunicado: ' + error.message);
+        } catch (error: unknown) {
+            const err = error as Error;
+            alert('Erro ao enviar comunicado: ' + err.message);
         } finally {
             setIsSending(false);
         }
@@ -280,8 +306,9 @@ export const ManagerNotificationsScreen: React.FC = () => {
             setSelectedHistoryIds([]);
             setShowBulkDeleteConfirm(false);
             alert('Mensagens removidas com sucesso.');
-        } catch (e: any) {
-            alert(`Erro na remoção: ${e.message}`);
+        } catch (e: unknown) {
+            const err = e as Error;
+            alert(`Erro na remoção: ${err.message}`);
         } finally {
             setIsBulkDeleting(false);
         }
@@ -303,14 +330,15 @@ export const ManagerNotificationsScreen: React.FC = () => {
             setInbox(prev => prev.filter(h => h.id !== idToDelete));
             setSelectedHistoryIds(prev => prev.filter(i => i !== idToDelete));
             alert('Removido.');
-        } catch (e: any) {
-            alert(`Falha: ${e.message}`);
+        } catch (e: unknown) {
+            const err = e as Error;
+            alert(`Falha: ${err.message}`);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleDownload = (file: any) => {
+    const handleDownload = (file: NotificationAttachment) => {
         if (!file.arquivo_url || file.arquivo_url === '#') {
             alert('Arquivo indisponível para download.');
             return;
@@ -325,7 +353,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
 
     const filteredRepsForSelection = allUsers.filter(u => 
         u.nome.toLowerCase().includes(repSearchTerm.toLowerCase()) &&
-        !['admin', 'gerente'].includes(u.nivel_acesso.toLowerCase())
+        !['admin', 'gerente', 'director', 'diretor'].includes(u.nivel_acesso.toLowerCase())
     );
 
     const parseModalMessage = (msg: string) => {
@@ -681,11 +709,11 @@ export const ManagerNotificationsScreen: React.FC = () => {
                                             <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
                                             <p className="text-[10px] font-black uppercase">Verificando anexos...</p>
                                         </div>
-                                    ) : viewingNotification.notificacao_anexos?.length > 0 && (
+                                    ) : viewingNotification.notificacao_anexos && viewingNotification.notificacao_anexos.length > 0 && (
                                         <div className="pt-6 border-t border-slate-100">
                                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Arquivos Vinculados (Clique para baixar)</p>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                {viewingNotification.notificacao_anexos.map((anexo: any) => (
+                                                {viewingNotification.notificacao_anexos.map((anexo: NotificationAttachment) => (
                                                     <div 
                                                         key={anexo.id} 
                                                         onClick={(e) => { e.stopPropagation(); handleDownload(anexo); }}

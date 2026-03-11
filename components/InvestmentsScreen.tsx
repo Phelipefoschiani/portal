@@ -1,13 +1,30 @@
 import React, { useState, useMemo } from 'react';
-import { Wallet, PieChart, Clock, CheckCircle2, XCircle, AlertTriangle, TrendingUp, History, X, ChevronRight, DollarSign, Users, Target, CalendarDays, ArrowUpRight, BarChart3, Info } from 'lucide-react';
+import { Wallet, PieChart, AlertTriangle, History, X, ChevronRight, DollarSign, Users, Target, CalendarDays, Info } from 'lucide-react';
 import { totalDataStore } from '../lib/dataStore';
 import { createPortal } from 'react-dom';
 import { Button } from './Button';
 
+interface Investment {
+  id: string;
+  data: string;
+  usuario_id: string;
+  status: 'approved' | 'rejected' | 'pending';
+  valor_total_investimento: number | string;
+  cliente_id: string;
+  criado_em: string;
+  clientes?: {
+    nome_fantasia: string;
+  };
+  valor_caju: number;
+  valor_dinheiro: number;
+  valor_produto: number;
+  observacao: string;
+}
+
 export const InvestmentsScreen: React.FC = () => {
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
-  const [selectedInv, setSelectedInv] = useState<any | null>(null);
+  const [selectedInv, setSelectedInv] = useState<Investment | null>(null);
   const [mobileTab, setMobileTab] = useState<'extract' | 'clients'>('extract');
 
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
@@ -23,7 +40,7 @@ export const InvestmentsScreen: React.FC = () => {
     const totalBudget = annualTarget * 0.05;
 
     // 2. Investimentos do Ano (Aprovados e Geral)
-    const yearInvs = totalDataStore.investments.filter(inv => {
+    const yearInvs = (totalDataStore.investments as unknown as Investment[]).filter(inv => {
         const d = new Date(inv.data + 'T00:00:00');
         return inv.usuario_id === userId && d.getUTCFullYear() === selectedYear;
     });
@@ -35,7 +52,7 @@ export const InvestmentsScreen: React.FC = () => {
     const consumptionPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
 
     // 3. Agrupamento por Cliente
-    const clientMap = new Map<string, any>();
+    const clientMap = new Map<string, { name: string; total: number; count: number }>();
     const clientsLookup = new Map(totalDataStore.clients.map(c => [c.id, c.nome_fantasia]));
 
     approvedInvs.forEach(inv => {
@@ -155,7 +172,7 @@ export const InvestmentsScreen: React.FC = () => {
                                 <h4 className="font-black text-slate-800 uppercase text-xs truncate">{inv.clientes?.nome_fantasia}</h4>
                             </div>
                             <div className="text-right">
-                                <p className="font-black text-slate-900 text-sm">{formatCurrency(inv.valor_total_investimento)}</p>
+                                <p className="font-black text-slate-900 text-sm">{formatCurrency(Number(inv.valor_total_investimento))}</p>
                             </div>
                         </div>
                     ))
@@ -322,7 +339,7 @@ export const InvestmentsScreen: React.FC = () => {
                                 </div>
                             </div>
                             <div className="text-right">
-                                <p className="text-sm font-black text-slate-900 tabular-nums">{formatCurrency(inv.valor_total_investimento)}</p>
+                                <p className="text-sm font-black text-slate-900 tabular-nums">{formatCurrency(Number(inv.valor_total_investimento))}</p>
                                 <ChevronRight className="w-4 h-4 text-slate-200 group-hover:text-blue-500 ml-auto mt-1 transition-all" />
                             </div>
                             </div>
@@ -352,12 +369,12 @@ export const InvestmentsScreen: React.FC = () => {
                         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                             <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Status</p>
                             <p className={`font-black uppercase text-[10px] ${selectedInv.status === 'approved' ? 'text-emerald-600' : selectedInv.status === 'rejected' ? 'text-red-600' : 'text-amber-600'}`}>
-                                {selectedInv.status === 'pendente' ? 'Em Análise' : selectedInv.status === 'approved' ? 'Autorizado' : 'Recusado'}
+                                {selectedInv.status === 'pending' ? 'Em Análise' : selectedInv.status === 'approved' ? 'Autorizado' : 'Recusado'}
                             </p>
                         </div>
                         <div className="bg-slate-900 p-4 rounded-2xl text-right">
                             <p className="text-[9px] font-black text-blue-400 uppercase mb-1">Total</p>
-                            <p className="text-lg font-black text-white">{formatCurrency(selectedInv.valor_total_investimento)}</p>
+                            <p className="text-lg font-black text-white">{formatCurrency(Number(selectedInv.valor_total_investimento))}</p>
                         </div>
                     </div>
 

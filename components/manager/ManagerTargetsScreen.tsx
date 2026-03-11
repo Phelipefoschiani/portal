@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, Users, Calendar, TrendingUp, ChevronRight, Loader2, Calculator, Percent, Save, CheckCircle2, AlertCircle, BarChart3, ChevronDown, ListTodo, Database, RefreshCw, ArrowRightLeft, Wand2, Building2, Search, Zap, CheckCircle, Cloud, DollarSign, Eye, X, Info, Download, Wand, AlertTriangle, LayoutGrid, ArrowDown, User, Layers, History, Play } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Calendar, Loader2, Percent, ChevronDown, Building2, Zap, LayoutGrid, ArrowDown, User, Info, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { totalDataStore } from '../../lib/dataStore';
@@ -16,11 +16,15 @@ const MonthlyCard: React.FC<{
     onChangeValue: (valStr: string) => void;
 }> = ({ month, weight, totalTarget, onChangeWeight, onChangeValue }) => {
     const value = (weight / 100) * totalTarget;
-    const [localValue, setLocalValue] = useState('');
+    const [localValue, setLocalValue] = useState(() => 
+        new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)
+    );
+    const [prevValue, setPrevValue] = useState(value);
 
-    useEffect(() => {
+    if (value !== prevValue) {
         setLocalValue(new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value));
-    }, [value]);
+        setPrevValue(value);
+    }
 
     return (
         <div className="bg-slate-50 p-4 rounded-[24px] border border-slate-100 flex flex-col gap-2 group hover:border-blue-200 transition-all">
@@ -38,6 +42,12 @@ const MonthlyCard: React.FC<{
     );
 };
 
+interface Rep {
+    id: string;
+    nome: string;
+    nivel_acesso: string;
+}
+
 export const ManagerTargetsScreen: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabType>('team');
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -45,7 +55,7 @@ export const ManagerTargetsScreen: React.FC = () => {
     const [displayTarget, setDisplayTarget] = useState('0,00');
     
     const [regionalMonthlyWeights, setRegionalMonthlyWeights] = useState<number[]>(new Array(12).fill(0));
-    const [reps, setReps] = useState<any[]>([]);
+    const [reps, setReps] = useState<Rep[]>([]);
     const [repShares, setRepShares] = useState<Record<string, number>>({}); 
     const [monthlyRepShares, setMonthlyRepShares] = useState<Record<string, number[]>>({}); 
     const [savedReps, setSavedReps] = useState<Set<string>>(new Set());
@@ -55,14 +65,11 @@ export const ManagerTargetsScreen: React.FC = () => {
     const [selectedRepId, setSelectedRepId] = useState<string>('');
     const [isGeneratingAll, setIsGeneratingAll] = useState(false);
     const [genProgress, setGenProgress] = useState(0);
-    const [clientEngineeringData, setClientEngineeringData] = useState<any[]>([]);
+    const [clientEngineeringData, setClientEngineeringData] = useState<{ id: string; cnpj: string; nome_fantasia: string; weight: number; salesPrev: number }[]>([]);
     const [isLoadingClients, setIsLoadingClients] = useState(false);
 
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
     const availableYears = [2024, 2025, 2026, 2027];
-
-    useEffect(() => { fetchInitialData(); }, [selectedYear]);
-    useEffect(() => { if (activeTab === 'clients' && selectedRepId) fetchClientWeights(); }, [selectedRepId, activeTab, selectedYear]);
 
     useEffect(() => {
         const formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(managerTotalTarget);
@@ -75,9 +82,14 @@ export const ManagerTargetsScreen: React.FC = () => {
         setManagerTotalTarget(numericValue);
     };
 
-    const fetchInitialData = async () => {
+    const fetchInitialData = useCallback(async () => {
         try {
-            const { data: repsData } = await supabase.from('usuarios').select('id, nome, nivel_acesso').not('nivel_acesso', 'ilike', 'admin').not('nivel_acesso', 'ilike', 'gerente').order('nome');
+            const { data: repsData } = await supabase.from('usuarios').select('id, nome, nivel_acesso')
+                .not('nivel_acesso', 'ilike', 'admin')
+                .not('nivel_acesso', 'ilike', 'gerente')
+                .not('nivel_acesso', 'ilike', 'director')
+                .not('nivel_acesso', 'ilike', 'diretor')
+                .order('nome');
             const { data: targetsData } = await supabase.from('metas_usuarios').select('*').eq('ano', selectedYear);
             setReps(repsData || []);
             const totalYear = targetsData?.reduce((acc, curr) => acc + Number(curr.valor), 0) || 0;
@@ -109,9 +121,9 @@ export const ManagerTargetsScreen: React.FC = () => {
             setMonthlyRepShares(initialMonthlyShares);
             setSavedReps(syncedReps);
         } catch (e) { console.error(e); }
-    };
+    }, [selectedYear]);
 
-    const fetchClientWeights = async () => {
+    const fetchClientWeights = useCallback(async () => {
         setIsLoadingClients(true);
         try {
             const prevYear = selectedYear - 1;
@@ -137,7 +149,7 @@ export const ManagerTargetsScreen: React.FC = () => {
 
             setClientEngineeringData(engineering);
         } catch (e) { console.error(e); } finally { setIsLoadingClients(false); }
-    };
+    }, [selectedRepId, selectedYear]);
 
     const handleGenerateAll = async () => {
         if (!selectedRepId) {
@@ -205,14 +217,14 @@ export const ManagerTargetsScreen: React.FC = () => {
                 alert('Engenharia de Carteira concluída com sucesso para ' + totalClients + ' clientes!');
             }, 500);
 
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
             setIsGeneratingAll(false);
-            alert('Falha crítica na Engenharia: ' + e.message);
+            alert('Falha crítica na Engenharia: ' + (e instanceof Error ? e.message : String(e)));
         }
     };
 
-    const handleGenerateSingle = async (client: any) => {
+    const handleGenerateSingle = async (client: { id: string; weight: number; nome_fantasia: string }) => {
         try {
             const { data: repMonthlyTargets } = await supabase.from('metas_usuarios').select('mes, valor').eq('usuario_id', selectedRepId).eq('ano', selectedYear);
             if (!repMonthlyTargets || repMonthlyTargets.length === 0) {
@@ -266,6 +278,14 @@ export const ManagerTargetsScreen: React.FC = () => {
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
     const sumRegionalWeights = Number(regionalMonthlyWeights.reduce((a, b) => a + (Number(b) || 0), 0).toFixed(2));
+
+    useEffect(() => { 
+        fetchInitialData(); 
+    }, [selectedYear, fetchInitialData]);
+
+    useEffect(() => { 
+        if (activeTab === 'clients' && selectedRepId) fetchClientWeights(); 
+    }, [selectedRepId, activeTab, selectedYear, fetchClientWeights]);
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-32 text-slate-900">

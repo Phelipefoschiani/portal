@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { TrendingUp, CheckCircle2, XCircle, Loader2, X, Users, Trash2, ArrowRight, DollarSign, Building2, RefreshCw, Layers, History, MousePointer2, AlertTriangle, CheckSquare, ListTodo, ShieldCheck, UserX, RotateCcw, ChevronRight, Edit3, Save, AlertCircle, Search, MapPin, Camera, Share2, Download } from 'lucide-react';
+import { TrendingUp, CheckCircle2, Loader2, X, Trash2, AlertTriangle, RotateCcw, Edit3, Search, Camera } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { createPortal } from 'react-dom';
@@ -9,25 +9,53 @@ import html2canvas from 'html2canvas';
 
 type ViewType = 'mensais' | 'mapeamentos' | 'weekly_checkin';
 
+interface ForecastClient {
+    id: string;
+    cliente_id: string;
+    previsao_id: string;
+    valor_previsto_cliente: number;
+    clientes?: {
+        nome_fantasia: string;
+        cnpj: string;
+    };
+}
+
+interface Forecast {
+    id: string;
+    usuario_id: string;
+    previsao_total: number;
+    status: 'pending' | 'approved' | 'rejected';
+    observacao: string;
+    criado_em: string;
+    usuarios?: {
+        nome: string;
+    };
+    previsao_clientes?: ForecastClient[];
+}
+
+interface ConsolidatedForecast extends Forecast {
+    itemsMap?: Map<string, ForecastClient>;
+}
+
 export const ManagerForecastScreen: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [view, setView] = useState<ViewType>('weekly_checkin');
-    const [previsoes, setPrevisoes] = useState<any[]>([]);
+    const [previsoes, setPrevisoes] = useState<Forecast[]>([]);
     const [showMissingRepsModal, setShowMissingRepsModal] = useState(false);
     const [showResetModal, setShowResetModal] = useState(false);
     
     // Check-in Semanal
-    const [weeklyReports, setWeeklyReports] = useState<any[]>([]);
+    const [weeklyReports, setWeeklyReports] = useState<Forecast[]>([]);
     const [isActionLoading, setIsActionLoading] = useState(false);
     
     // Modal de Revisão Detalhada
-    const [reviewModalReport, setReviewModalReport] = useState<any | null>(null);
-    const [reviewItems, setReviewItems] = useState<any[]>([]);
+    const [reviewModalReport, setReviewModalReport] = useState<Forecast | null>(null);
+    const [reviewItems, setReviewItems] = useState<ForecastClient[]>([]);
     const [rejectionReason, setRejectionReason] = useState('');
-
+    
     // Modal de Detalhe do Histórico
-    const [selectedHistoryReport, setSelectedHistoryReport] = useState<any | null>(null);
+    const [selectedHistoryReport, setSelectedHistoryReport] = useState<Forecast | null>(null);
     const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
     // Ref para a área de exportação oculta
@@ -80,32 +108,33 @@ export const ManagerForecastScreen: React.FC = () => {
         if (view !== 'weekly_checkin') return [];
 
         const processed = weeklyReports.filter(r => r.status !== 'pending');
-        const groups = new Map<string, any>();
+        const groups = new Map<string, ConsolidatedForecast>();
 
         processed.forEach(report => {
             const userId = report.usuario_id;
             if (!groups.has(userId)) {
                 groups.set(userId, {
+                    id: report.id, // Using first report ID as base
                     usuario_id: userId,
                     usuarios: report.usuarios,
                     previsao_total: 0,
                     status: 'approved', // Se houver um aprovado, o consolidado assume approved
+                    observacao: report.observacao,
                     criado_em: report.criado_em, // Pega a data do mais recente
-                    itemsMap: new Map<string, any>()
+                    itemsMap: new Map<string, ForecastClient>()
                 });
             }
 
-            const group = groups.get(userId);
+            const group = groups.get(userId)!;
             group.previsao_total += Number(report.previsao_total);
             
             // Se houver algum recusado no bolo, sinaliza (opcional, mas ajuda o gerente a ver que houve recusa no período)
             if (report.status === 'rejected') group.status = 'rejected';
 
             // Mesclar itens (clientes)
-            (report.previsao_clientes || []).forEach((item: any) => {
+            (report.previsao_clientes || []).forEach((item: ForecastClient) => {
                 const cId = item.cliente_id;
-                // Explicitly treating itemsMap as a Map<string, any> to avoid 'unknown' type errors on get()
-                const currentItemsMap = group.itemsMap as Map<string, any>;
+                const currentItemsMap = group.itemsMap!;
 
                 if (!currentItemsMap.has(cId)) {
                     currentItemsMap.set(cId, {
@@ -123,7 +152,7 @@ export const ManagerForecastScreen: React.FC = () => {
 
         return Array.from(groups.values()).map(g => ({
             ...g,
-            previsao_clientes: Array.from((g.itemsMap as Map<string, any>).values()).sort((a: any, b: any) => b.valor_previsto_cliente - a.valor_previsto_cliente)
+            previsao_clientes: Array.from(g.itemsMap!.values()).sort((a: ForecastClient, b: ForecastClient) => b.valor_previsto_cliente - a.valor_previsto_cliente)
         })).sort((a, b) => b.previsao_total - a.previsao_total);
     }, [weeklyReports, view]);
 
@@ -181,7 +210,7 @@ export const ManagerForecastScreen: React.FC = () => {
         } catch (e) { console.error(e); } finally { setIsActionLoading(false); }
     };
 
-    const openReviewModal = (report: any) => {
+    const openReviewModal = (report: Forecast) => {
         setReviewModalReport(report);
         setReviewItems(report.previsao_clientes ? [...report.previsao_clientes] : []);
         setRejectionReason('');
@@ -202,7 +231,7 @@ export const ManagerForecastScreen: React.FC = () => {
                 await supabase.from('previsao_clientes').update({ valor_previsto_cliente: item.valor_previsto_cliente }).eq('id', item.id);
             }
             const newTotal = reviewItems.reduce((acc, curr) => acc + Number(curr.valor_previsto_cliente), 0);
-            await supabase.from('previsoes').update({ status: 'rejected', previsao_total: newTotal, observacao: `WEEKLY_CHECKIN: [REVISÃO GERENTE: ${rejectionReason.toUpperCase()}]` }).eq('id', reviewModalReport.id);
+            await supabase.from('previsoes').update({ status: 'rejected', previsao_total: newTotal, observacao: `WEEKLY_CHECKIN: [REVISÃO GERENTE: ${rejectionReason.toUpperCase()}]` }).eq('id', reviewModalReport?.id);
             await fetchData();
             setReviewModalReport(null);
         } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
@@ -279,10 +308,10 @@ export const ManagerForecastScreen: React.FC = () => {
             await fetchData();
             
             // Update local state to reflect removal immediately
-            setSelectedHistoryReport((prev: any) => {
+            setSelectedHistoryReport((prev: Forecast | null) => {
                 if (!prev) return null;
-                const updatedClients = prev.previsao_clientes.filter((item: any) => item.id !== itemToDelete);
-                const updatedTotal = updatedClients.reduce((acc: number, curr: any) => acc + Number(curr.valor_previsto_cliente), 0);
+                const updatedClients = (prev.previsao_clientes || []).filter((item: ForecastClient) => item.id !== itemToDelete);
+                const updatedTotal = updatedClients.reduce((acc: number, curr: ForecastClient) => acc + Number(curr.valor_previsto_cliente), 0);
                 
                 return {
                     ...prev,
@@ -535,7 +564,7 @@ export const ManagerForecastScreen: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {(selectedHistoryReport.previsao_clientes || []).map((item: any, idx: number) => (
+                                    {(selectedHistoryReport.previsao_clientes || []).map((item: ForecastClient, idx: number) => (
                                         <tr key={idx} className="group hover:bg-slate-50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <p className="font-black text-slate-800 uppercase text-[11px] truncate">{item.clientes?.nome_fantasia}</p>

@@ -1,19 +1,38 @@
 
 import React, { useState, useMemo } from 'react';
-import { Search, Users, Calendar, ChevronRight, BarChart3, Filter, Building2, Tag, CalendarClock, TrendingUp, Info, MapPin } from 'lucide-react';
+import { Search, Calendar, Tag, CalendarClock, TrendingUp, Info, MapPin, Building2, FileSpreadsheet, MoreHorizontal } from 'lucide-react';
 import { ClientDetailModal } from './ClientDetailModal';
+import { ClientLastPurchaseDetailModal } from './ClientLastPurchaseDetailModal';
+import { ClientScoreCardModal } from './ClientScoreCardModal';
+import { ClientProductsModal } from './ClientProductsModal';
+import { ClientLastPurchaseModal } from './ClientLastPurchaseModal';
+import { ClientActionMenu } from './ClientActionMenu';
 import { totalDataStore } from '../lib/dataStore';
+import * as XLSX from 'xlsx';
+
+interface Client {
+  id: string;
+  cnpj: string;
+  nome_fantasia: string;
+  city?: string;
+  canal_vendas?: string;
+  lastPurchaseDate?: string;
+  data_inativacao?: string;
+}
 
 export const ClientsScreen: React.FC = () => {
+  const now = new Date();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
+  const [selectedYear, setSelectedYear] = useState<number | 'all'>(new Date().getFullYear());
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
-  const [selectedClient, setSelectedClient] = useState<any | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // Modais e Menu
+  const [selectedClientForMenu, setSelectedClientForMenu] = useState<any | null>(null);
+  const [activeModal, setActiveModal] = useState<'none' | 'x-ray' | 'last-purchase' | 'mix' | 'replenishment' | 'score-card'>('none');
+  const [modalClient, setModalClient] = useState<any | null>(null);
 
-  const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
-  const userId = session.id;
-
-  const years = [2024, 2025, 2026, 2027];
+  const availableYears = [2024, 2025, 2026, 2027];
 
   // 1. Lista de canais únicos para o filtro (Baseado na carteira real)
   const channels = useMemo(() => {
@@ -69,13 +88,25 @@ export const ClientsScreen: React.FC = () => {
     const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
 
     // Mapear estatísticas por cliente dentro do grupo
-    const statsMap = new Map<string, { faturamento: number; lastDate: string }>();
+    const statsMap = new Map<string, { faturamento: number; lastDate: string; lastValue: number }>();
     relevantSales.forEach(s => {
       const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
-      const current = statsMap.get(cleanCnpj) || { faturamento: 0, lastDate: '0000-00-00' };
+      const current = statsMap.get(cleanCnpj) || { faturamento: 0, lastDate: '0000-00-00', lastValue: 0 };
+      
+      let newLastDate = current.lastDate;
+      let newLastValue = current.lastValue;
+      
+      if (s.data > current.lastDate) {
+          newLastDate = s.data;
+          newLastValue = Number(s.faturamento) || 0;
+      } else if (s.data === current.lastDate) {
+          newLastValue += Number(s.faturamento) || 0;
+      }
+
       statsMap.set(cleanCnpj, {
         faturamento: current.faturamento + (Number(s.faturamento) || 0),
-        lastDate: s.data > current.lastDate ? s.data : current.lastDate
+        lastDate: newLastDate,
+        lastValue: newLastValue
       });
     });
 
@@ -103,6 +134,7 @@ export const ClientsScreen: React.FC = () => {
         ...c,
         faturamentoPeriodo: fat,
         lastPurchase: stats?.lastDate || null,
+        lastPurchaseValue: stats?.lastValue || 0,
         participation: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0,
         isAtivo
       };
@@ -115,6 +147,72 @@ export const ClientsScreen: React.FC = () => {
   }, [searchTerm, selectedYear, selectedChannel]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
+
+  const checkLastPurchaseStatus = (dateStr: string | null) => {
+    if (!dateStr || dateStr === '0000-00-00') return { label: 'S/ REGISTRO', isOld: true };
+    const lastDate = new Date(dateStr + 'T00:00:00');
+    const diffTime = Math.abs(now.getTime() - lastDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return {
+      label: lastDate.toLocaleDateString('pt-BR'),
+      isOld: diffDays > 90,
+      days: diffDays
+    };
+  };
+
+  const handleExportExcel = () => {
+    if (processedData.ranking.length === 0) return;
+    setIsExporting(true);
+    try {
+      const data = processedData.ranking.map(c => ({
+        "Cliente": c.nome_fantasia,
+        "CNPJ": c.cnpj,
+        "Canal": c.canal_vendas || 'GERAL',
+        "Última Compra": c.lastPurchase ? new Date(c.lastPurchase + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A',
+        "Valor Últ. Compra": c.lastPurchaseValue,
+        "Faturamento no Ano": c.faturamentoPeriodo,
+        "Participação %": c.participation / 100
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Meus_Clientes");
+      XLSX.writeFile(wb, `Meus_Clientes_${new Date().getTime()}.xlsx`);
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao exportar Excel');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleAction = (action: any) => {
+    const client = selectedClientForMenu;
+    setSelectedClientForMenu(null);
+    setModalClient(client);
+    setActiveModal(action);
+  };
+
+  const getClientProducts = (clientCnpj: string) => {
+      const clientSales = totalDataStore.sales.filter(s => s.cnpj === clientCnpj);
+      const productMap = new Map<string, { id: string, name: string, lastPurchaseDate: string, quantity: number, totalValue: number }>();
+      clientSales.forEach(s => {
+          const prodName = s.produto || 'Produto sem nome';
+          const current = productMap.get(prodName) || { 
+              id: s.codigo_produto || prodName, 
+              name: prodName, 
+              lastPurchaseDate: '0000-00-00', 
+              quantity: 0, 
+              totalValue: 0 
+          };
+          productMap.set(prodName, {
+              ...current,
+              lastPurchaseDate: s.data > current.lastPurchaseDate ? s.data : current.lastPurchaseDate,
+              quantity: current.quantity + (Number(s.qtde_faturado) || 0),
+              totalValue: current.totalValue + (Number(s.faturamento) || 0)
+          });
+      });
+      return Array.from(productMap.values());
+  };
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 animate-fadeIn pb-20">
@@ -130,7 +228,15 @@ export const ClientsScreen: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 md:flex md:flex-wrap items-center gap-2 w-full lg:w-auto">
-          {/* Busca - Ocupa largura total no mobile */}
+          <button 
+            onClick={handleExportExcel}
+            disabled={isExporting}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg text-[9px] font-black uppercase tracking-widest h-[42px]"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Excel
+          </button>
+
           <div className="relative col-span-2 md:flex-1 md:min-w-[260px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input 
@@ -138,11 +244,10 @@ export const ClientsScreen: React.FC = () => {
               placeholder="Buscar cliente ou CNPJ..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
+              className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all h-[42px]"
             />
           </div>
 
-          {/* Filtro de Canal */}
           <div className="relative">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                <Tag className="w-3 h-3" />
@@ -150,14 +255,13 @@ export const ClientsScreen: React.FC = () => {
             <select 
               value={selectedChannel}
               onChange={(e) => setSelectedChannel(e.target.value)}
-              className="w-full pl-8 pr-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+              className="w-full pl-8 pr-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer h-[42px]"
             >
               <option value="all">TODOS OS CANAIS</option>
               {channels.map(ch => <option key={ch} value={ch}>{ch.toUpperCase()}</option>)}
             </select>
           </div>
 
-          {/* Filtro de Ano */}
           <div className="relative">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                <Calendar className="w-3 h-3" />
@@ -165,10 +269,10 @@ export const ClientsScreen: React.FC = () => {
             <select 
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              className="w-full pl-8 pr-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+              className="w-full pl-8 pr-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer h-[42px]"
             >
               <option value="all">HISTÓRICO TOTAL</option>
-              {years.map(y => <option key={y} value={y}>{y}</option>)}
+              {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
         </div>
@@ -196,83 +300,61 @@ export const ClientsScreen: React.FC = () => {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-200">
-                <th className="px-8 py-5">#</th>
-                <th className="px-6 py-5">Cliente / Entidade</th>
-                <th className="px-6 py-5">CNPJ</th>
-                <th className="px-6 py-5">Canal</th>
-                <th className="px-6 py-5">Status</th>
+                <th className="px-8 py-5">Nome</th>
                 <th className="px-6 py-5">Última Compra</th>
-                <th className="px-6 py-5 text-right">% Participação</th>
-                <th className="px-8 py-5 text-center">Ver</th>
+                <th className="px-6 py-5 text-right">Valor Últ. Compra</th>
+                <th className="px-6 py-5">Canal</th>
+                <th className="px-6 py-5 text-right">Faturamento do Ano</th>
+                <th className="px-8 py-5 text-right">Participação (%)</th>
+                <th className="px-8 py-5 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {processedData.ranking.map((client, idx) => (
-                <tr 
-                  key={client.id} 
-                  className="group hover:bg-slate-50 transition-colors cursor-pointer"
-                  onClick={() => setSelectedClient(client)}
-                >
-                  <td className="px-8 py-5">
-                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm ${idx < 3 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                        {idx + 1}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="min-w-0">
-                        <p className="font-black text-slate-800 uppercase tracking-tight text-sm truncate">{client.nome_fantasia}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{client.city || 'S/ CIDADE'}</p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5 text-slate-500 font-mono text-xs">{client.cnpj}</td>
-                  <td className="px-6 py-5">
-                    <span className="inline-flex items-center gap-1.5 text-[9px] font-black text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                      {client.canal_vendas || 'GERAL'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5">
-                    {client.isAtivo ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 text-[8px] font-black uppercase border border-emerald-100">
-                        Ativo
-                      </span>
-                    ) : (
-                      <div className="flex flex-col">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 text-red-600 text-[8px] font-black uppercase border border-red-100 w-fit">
-                          Inativo
-                        </span>
-                        {client.data_inativacao && (
-                          <span className="text-[7px] font-bold text-slate-400 mt-0.5 uppercase">Inat: {new Date(client.data_inativacao + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                        )}
+              {processedData.ranking.map((client) => {
+                const purchaseStatus = checkLastPurchaseStatus(client.lastPurchase);
+                return (
+                  <tr 
+                    key={client.id} 
+                    className="group hover:bg-slate-50 transition-colors cursor-pointer"
+                    onClick={() => setSelectedClientForMenu(client)}
+                  >
+                    <td className="px-8 py-5">
+                      <div className="min-w-0">
+                          <p className="font-black text-slate-800 group-hover:text-blue-600 transition-colors uppercase tracking-tight text-sm truncate">{client.nome_fantasia}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{client.city || 'S/ CIDADE'} • {client.cnpj}</p>
                       </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-5">
-                    {client.lastPurchase ? (
-                        <div className="flex items-center gap-2 text-slate-600 font-bold text-xs tabular-nums">
-                            <CalendarClock className="w-3.5 h-3.5 text-slate-300" />
-                            {new Date(client.lastPurchase + 'T00:00:00').toLocaleDateString('pt-BR')}
-                        </div>
-                    ) : (
-                        <span className="text-[9px] font-black text-slate-300 uppercase">Sem Registro</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-5 text-right">
-                    <div className="flex flex-col items-end">
-                        <span className={`text-sm font-black tabular-nums ${client.participation > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
-                            {client.participation.toFixed(2)}%
-                        </span>
-                        <div className="w-16 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                            <div className="h-full bg-blue-600" style={{ width: `${Math.min(client.participation * 2.5, 100)}%` }}></div>
-                        </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5 text-center">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-blue-600 group-hover:text-white transition-all mx-auto shadow-sm">
-                      <ChevronRight className="w-5 h-5" />
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black border uppercase tracking-wider ${purchaseStatus.isOld ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                        <CalendarClock className="w-3 h-3" />
+                        {purchaseStatus.label}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-right font-black text-slate-700 tabular-nums">{formatCurrency(client.lastPurchaseValue)}</td>
+                    <td className="px-6 py-5">
+                      <span className="inline-flex items-center gap-1.5 text-[9px] font-black text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg uppercase tracking-wider">
+                        {client.canal_vendas || 'GERAL'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-right font-black text-slate-900 tabular-nums">{formatCurrency(client.faturamentoPeriodo)}</td>
+                    <td className="px-8 py-5 text-right">
+                      <div className="flex flex-col items-end">
+                          <span className={`text-sm font-black tabular-nums ${client.participation > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                              {client.participation.toFixed(2)}%
+                          </span>
+                          <div className="w-16 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                              <div className="h-full bg-blue-600" style={{ width: `${Math.min(client.participation * 2.5, 100)}%` }}></div>
+                          </div>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5 text-center">
+                      <div className="w-10 h-10 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-blue-600 group-hover:text-white transition-all mx-auto shadow-sm">
+                        <MoreHorizontal className="w-5 h-5" />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -286,72 +368,102 @@ export const ClientsScreen: React.FC = () => {
             <p className="text-[10px] font-black uppercase tracking-widest">Nenhum cliente filtrado</p>
           </div>
         ) : (
-          processedData.ranking.map((client, idx) => (
-            <div 
-              key={client.id} 
-              onClick={() => setSelectedClient(client)}
-              className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm active:scale-[0.98] transition-all relative overflow-hidden"
-            >
-              {/* Rank Badge */}
-              <div className={`absolute top-0 left-0 px-2.5 py-1 rounded-br-xl text-[8px] font-black text-white ${idx < 3 ? 'bg-blue-600' : 'bg-slate-300'}`}>
-                #{idx + 1}
-              </div>
-
-              <div className="flex justify-between items-start mb-4 pt-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1">
+          processedData.ranking.map((client) => {
+            const purchaseStatus = checkLastPurchaseStatus(client.lastPurchase);
+            return (
+              <div 
+                key={client.id} 
+                onClick={() => setSelectedClientForMenu(client)}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm active:scale-[0.98] transition-all relative overflow-hidden"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div className="min-w-0 flex-1">
                     <h3 className="font-black text-slate-800 uppercase text-xs tracking-tight truncate leading-tight">{client.nome_fantasia}</h3>
-                    {client.isAtivo ? (
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 text-[7px] font-black uppercase border border-emerald-100">Ativo</span>
-                    ) : (
-                      <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[7px] font-black uppercase border border-red-100">Inativo</span>
-                    )}
+                    <div className="flex items-center gap-1 mt-1">
+                      <MapPin className="w-2.5 h-2.5 text-slate-300" />
+                      <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{client.city || 'CIDADE N/I'} • {client.cnpj}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <MapPin className="w-2.5 h-2.5 text-slate-300" />
-                    <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{client.city || 'CIDADE N/I'}</span>
+                  <div className="text-right ml-4 shrink-0">
+                    <p className="text-xs font-black text-blue-600 tabular-nums">{client.participation.toFixed(2)}%</p>
                   </div>
-                  {!client.isAtivo && client.data_inativacao && (
-                    <p className="text-[7px] font-black text-red-400 uppercase mt-1">Inativado em: {new Date(client.data_inativacao + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-                  )}
                 </div>
-                <div className="text-right ml-4 shrink-0">
-                  <p className="text-xs font-black text-blue-600 tabular-nums">{client.participation.toFixed(2)}%</p>
-                  <p className="text-[7px] text-slate-400 font-black uppercase tracking-widest">% de Ref</p>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Faturamento</p>
-                  <p className="text-[11px] font-black text-slate-700">{formatCurrency(client.faturamentoPeriodo)}</p>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Faturamento Ano</p>
+                    <p className="text-[11px] font-black text-slate-700">{formatCurrency(client.faturamentoPeriodo)}</p>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Última Compra</p>
+                    <p className="text-[11px] font-black text-slate-700">
+                      {purchaseStatus.label}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Última Compra</p>
-                  <p className="text-[11px] font-black text-slate-700">
-                    {client.lastPurchase ? new Date(client.lastPurchase + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/I'}
-                  </p>
-                </div>
-              </div>
 
-              <div className="pt-3 border-t border-slate-50 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                   <Tag className="w-3 h-3 text-blue-500" />
-                   <span className="text-[8px] font-black text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded-md">{client.canal_vendas || 'GERAL'}</span>
-                </div>
-                <div className="flex items-center gap-1 text-[8px] font-black text-blue-600 uppercase">
-                   Detalhar <ChevronRight className="w-3 h-3" />
+                <div className="pt-3 border-t border-slate-50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                     <Tag className="w-3 h-3 text-blue-500" />
+                     <span className="text-[8px] font-black text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded-md">{client.canal_vendas || 'GERAL'}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[8px] font-black text-blue-600 uppercase">
+                     Ações <MoreHorizontal className="w-3 h-3" />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
-      {selectedClient && (
+      {/* Modals & Menu */}
+      {selectedClientForMenu && (
+        <ClientActionMenu 
+            client={selectedClientForMenu} 
+            onClose={() => setSelectedClientForMenu(null)} 
+            onAction={handleAction}
+        />
+      )}
+
+      {activeModal === 'x-ray' && modalClient && (
         <ClientDetailModal 
-          client={selectedClient} 
-          onClose={() => setSelectedClient(null)} 
+            client={modalClient} 
+            initialYear={typeof selectedYear === 'number' ? selectedYear : new Date().getFullYear()}
+            onClose={() => setActiveModal('none')} 
+            onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
+        />
+      )}
+
+      {activeModal === 'last-purchase' && modalClient && (
+        <ClientLastPurchaseDetailModal 
+            client={modalClient} 
+            onClose={() => setActiveModal('none')} 
+            onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
+        />
+      )}
+
+      {activeModal === 'score-card' && modalClient && (
+        <ClientScoreCardModal 
+            client={modalClient} 
+            onClose={() => setActiveModal('none')} 
+            onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
+        />
+      )}
+
+      {activeModal === 'mix' && modalClient && (
+        <ClientProductsModal 
+            client={{ ...modalClient, name: modalClient.nome_fantasia, products: getClientProducts(modalClient.cnpj) }} 
+            onClose={() => setActiveModal('none')} 
+            onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
+        />
+      )}
+
+      {activeModal === 'replenishment' && modalClient && (
+        <ClientLastPurchaseModal 
+            client={{ ...modalClient, name: modalClient.nome_fantasia, products: getClientProducts(modalClient.cnpj) }} 
+            onClose={() => setActiveModal('none')} 
+            onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
         />
       )}
     </div>

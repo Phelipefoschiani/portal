@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Menu, Table2, Trophy, PackageSearch } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Table2, Trophy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { createPortal } from 'react-dom';
 import { Button } from './Button';
@@ -21,6 +21,7 @@ interface MenuItem {
   icon: LucideIcon;
   badge?: number;
   hasAlert?: boolean;
+  isHighlighted?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -83,7 +84,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const repMenuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'rep-analysis', label: 'Análise de Metas', icon: BarChart3 },
-    { id: 'rep-product-analysis', label: 'Análise de Produtos', icon: PackageSearch },
     { id: 'rep-bi-builder', label: 'Construtor de BI', icon: Table2 },
     { id: 'clients', label: 'Meus Clientes', icon: Users },
     { id: 'campaigns', label: 'Campanhas', icon: Megaphone },
@@ -92,32 +92,59 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'notifications', label: 'Notificações', icon: Bell, badge: unreadCount },
   ];
 
-  const adminMenuItems: MenuItem[] = [
+  const adminMainItems: MenuItem[] = [
     { id: 'admin-dashboard', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'admin-analysis', label: 'Análise Performance', icon: BarChart3 },
     { id: 'admin-detailed-analysis', label: 'Construtor de BI', icon: Table2 },
-    { id: 'admin-product-analysis', label: 'Análise de Produtos', icon: PackageSearch },
-    { id: 'admin-import', label: 'Importar Faturamento', icon: FileUp },
-    { id: 'admin-targets', label: 'Definição de Metas', icon: Target },
     { id: 'admin-clients', label: 'Carteira Total', icon: Users },
     { id: 'admin-campaigns', label: 'Análise Campanhas', icon: ShieldCheck, hasAlert: investmentAlert },
     { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, hasAlert: forecastAlert },
+    { id: 'admin-scorecard', label: 'Score Card RCA', icon: Trophy },
+  ];
+
+  const adminConfigItems: MenuItem[] = [
     { id: 'admin-notifications', label: 'Gestão Notificações', icon: Bell },
+    { id: 'admin-targets', label: 'Definição de Metas', icon: Target },
     { id: 'admin-users', label: 'Gestão Acessos', icon: Lock },
-    { id: 'admin-scorecard', label: 'Score Card', icon: Trophy },
+    { id: 'admin-import', label: 'Importar Faturamento', icon: FileUp, isHighlighted: true },
   ];
 
   const directorMenuItems: MenuItem[] = [
     { id: 'director-dashboard', label: 'Visão Geral', icon: LayoutDashboard },
   ];
 
-  const menuItems = userRole === 'admin' ? adminMenuItems : userRole === 'director' ? directorMenuItems : repMenuItems;
-
   const handleMenuClick = (id: string) => {
     onChangeView(id);
     if (window.innerWidth < 1024) {
       onToggle(false);
     }
+  };
+
+  const renderMenuItem = (item: MenuItem) => {
+    const Icon = item.icon;
+    const isActive = currentView === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => handleMenuClick(item.id)}
+        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group relative ${
+          isActive 
+            ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' 
+            : item.isHighlighted
+              ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 hover:bg-blue-600/20'
+              : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <Icon className={`w-5 h-5 ${isActive ? 'text-white' : item.isHighlighted ? 'text-blue-400' : 'text-slate-400 group-hover:text-white'}`} />
+          <span className={`font-medium text-sm ${item.isHighlighted && !isActive ? 'font-bold' : ''}`}>{item.label}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {item.hasAlert && <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>}
+          {item.badge !== undefined && item.badge > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-50 text-[10px] font-bold text-white">{item.badge}</span>}
+        </div>
+      </button>
+    );
   };
 
   return (
@@ -145,26 +172,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentView === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleMenuClick(item.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group relative ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'}`} />
-                  <span className="font-medium text-sm">{item.label}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {item.hasAlert && <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>}
-                  {item.badge !== undefined && item.badge > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-50 text-[10px] font-bold text-white">{item.badge}</span>}
-                </div>
-              </button>
-            );
-          })}
+          {userRole === 'admin' ? (
+            <>
+              {adminMainItems.map(renderMenuItem)}
+              <div className="my-6 border-t border-slate-800/50 pt-6">
+                <p className="px-4 mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Administração</p>
+                {adminConfigItems.map(renderMenuItem)}
+              </div>
+            </>
+          ) : userRole === 'director' ? (
+            directorMenuItems.map(renderMenuItem)
+          ) : (
+            repMenuItems.map(renderMenuItem)
+          )}
         </nav>
         <div className="p-4 border-t border-slate-800">
           <div 
@@ -236,7 +256,7 @@ const ChangePasswordModal: React.FC<{ onClose: () => void, userId: string }> = (
 
             setSuccess(true);
             setTimeout(() => onClose(), 2000);
-        } catch (e: any) {
+        } catch {
             setError('Erro ao atualizar senha.');
         } finally {
             setIsLoading(false);

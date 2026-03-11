@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Calendar, AlertCircle, Loader2, CalendarClock } from 'lucide-react';
+import { X, AlertCircle, Loader2, CalendarClock } from 'lucide-react';
 import { totalDataStore } from '../lib/dataStore';
 
 interface NonPositivizedModalProps {
@@ -14,7 +14,7 @@ export const NonPositivizedModal: React.FC<NonPositivizedModalProps> = ({ onClos
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
 
-  const cleanCnpj = (val: any) => {
+  const cleanCnpj = (val: string | null | undefined) => {
     const numeric = String(val || '').replace(/\D/g, '');
     if (numeric.length > 11) return numeric.padStart(14, '0'); // CNPJ
     return numeric.padStart(11, '0'); // CPF

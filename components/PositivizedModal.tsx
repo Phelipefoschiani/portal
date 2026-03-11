@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CheckCircle2, Loader2, TrendingUp, DollarSign, Building2 } from 'lucide-react';
+import { X, CheckCircle2, Loader2, DollarSign, Building2 } from 'lucide-react';
 import { totalDataStore } from '../lib/dataStore';
 
 interface PositivizedModalProps {
@@ -12,9 +12,9 @@ interface PositivizedModalProps {
 
 export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, selectedMonths, selectedYear }) => {
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
-  const userId = session.id;
+  // const userId = session.id; // Removed unused variable
 
-  const cleanCnpj = (val: any) => {
+  const cleanCnpj = (val: string | null | undefined) => {
     const numeric = String(val || '').replace(/\D/g, '');
     if (numeric.length > 11) return numeric.padStart(14, '0');
     return numeric.padStart(11, '0');
@@ -26,12 +26,12 @@ export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, sel
     const sales = totalDataStore.sales;
     const portfolioClients = totalDataStore.clients;
 
-    const clientNameMap = new Map();
+    const clientNameMap = new Map<string, string>();
     portfolioClients.forEach(c => {
       clientNameMap.set(cleanCnpj(c.cnpj), c.nome_fantasia);
     });
 
-    const summary = new Map();
+    const summary = new Map<string, { total: number; name: string; originalCnpj: string }>();
     sales.forEach(s => {
       const d = new Date(s.data + 'T00:00:00');
       const m = d.getUTCMonth() + 1;
@@ -56,7 +56,7 @@ export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, sel
     });
 
     return Array.from(summary.values()).sort((a, b) => b.total - a.total);
-  }, [selectedMonths, selectedYear, userId]);
+  }, [selectedMonths, selectedYear]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 

@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, Calendar, DollarSign, UserX } from 'lucide-react';
+import { X, Calendar, UserX } from 'lucide-react';
 import { Client } from '../lib/mockData';
 
 interface InactiveClientsModalProps {

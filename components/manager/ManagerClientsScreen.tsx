@@ -1,9 +1,30 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, Filter, Users, Building2, User, Percent, Loader2, TrendingUp, RefreshCw, Database, Tag, Info, CalendarClock, Calendar, FileSpreadsheet, CheckSquare, Square, ChevronDown, CalendarDays } from 'lucide-react';
+import { Search, Users, Building2, User, Loader2, TrendingUp, Tag, Info, CalendarClock, Calendar, FileSpreadsheet, CheckSquare, Square, ChevronDown, CalendarDays, MoreHorizontal, Filter } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ClientDetailModal } from '../ClientDetailModal';
+import { ClientLastPurchaseDetailModal } from '../ClientLastPurchaseDetailModal';
+import { ClientScoreCardModal } from '../ClientScoreCardModal';
+import { ClientProductsModal } from '../ClientProductsModal';
+import { ClientLastPurchaseModal } from '../ClientLastPurchaseModal';
+import { ClientActionMenu } from '../ClientActionMenu';
 import { totalDataStore } from '../../lib/dataStore';
 import * as XLSX from 'xlsx';
+
+interface Client {
+    id: string;
+    nome_fantasia: string;
+    cnpj: string;
+    usuario_id: string;
+    canal_vendas?: string;
+    lastPurchaseDate?: string;
+    city?: string;
+    totalPurchase: number;
+    lastPurchase: string | null;
+    lastPurchaseValue: number;
+    repName: string;
+    participation: number;
+    isAtivo: boolean;
+}
 
 export const ManagerClientsScreen: React.FC = () => {
     const now = new Date();
@@ -20,7 +41,11 @@ export const ManagerClientsScreen: React.FC = () => {
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedClient, setSelectedClient] = useState<any | null>(null);
+    
+    // Modais e Menu
+    const [selectedClientForMenu, setSelectedClientForMenu] = useState<Client | null>(null);
+    const [activeModal, setActiveModal] = useState<'none' | 'x-ray' | 'last-purchase' | 'mix' | 'replenishment' | 'score-card'>('none');
+    const [modalClient, setModalClient] = useState<Client | null>(null);
 
     const availableYears = [2024, 2025, 2026, 2027];
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -102,13 +127,25 @@ export const ManagerClientsScreen: React.FC = () => {
         const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
 
         // Mapear faturamento individual e última data de compra
-        const statsMap = new Map<string, { faturamento: number; lastDate: string }>();
+        const statsMap = new Map<string, { faturamento: number; lastDate: string; lastValue: number }>();
         relevantSales.forEach(s => {
             const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
-            const current = statsMap.get(cleanCnpj) || { faturamento: 0, lastDate: '0000-00-00' };
+            const current = statsMap.get(cleanCnpj) || { faturamento: 0, lastDate: '0000-00-00', lastValue: 0 };
+            
+            let newLastDate = current.lastDate;
+            let newLastValue = current.lastValue;
+            
+            if (s.data > current.lastDate) {
+                newLastDate = s.data;
+                newLastValue = Number(s.faturamento) || 0;
+            } else if (s.data === current.lastDate) {
+                newLastValue += Number(s.faturamento) || 0;
+            }
+
             statsMap.set(cleanCnpj, {
                 faturamento: current.faturamento + (Number(s.faturamento) || 0),
-                lastDate: s.data > current.lastDate ? s.data : current.lastDate
+                lastDate: newLastDate,
+                lastValue: newLastValue
             });
         });
 
@@ -117,6 +154,7 @@ export const ManagerClientsScreen: React.FC = () => {
             const stats = statsMap.get(String(c.cnpj || '').replace(/\D/g, ''));
             const fat = stats?.faturamento || 0;
             const lastDate = stats?.lastDate || null;
+            const lastValue = stats?.lastValue || 0;
             
             // Status dinâmico:
             // Se ano selecionado, Ativo se comprou no período filtrado.
@@ -137,6 +175,7 @@ export const ManagerClientsScreen: React.FC = () => {
                 ...c,
                 totalPurchase: fat,
                 lastPurchase: lastDate,
+                lastPurchaseValue: lastValue,
                 repName: usersMap.get(c.usuario_id) || 'Sem Rep.',
                 participation: totalGroupFaturamento > 0 ? (fat / totalGroupFaturamento) * 100 : 0,
                 isAtivo
@@ -173,6 +212,7 @@ export const ManagerClientsScreen: React.FC = () => {
 
         setIsExporting(true);
         try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
             if (!X || !X.utils) {
                 throw new Error("Biblioteca XLSX não carregada corretamente.");
@@ -183,6 +223,8 @@ export const ManagerClientsScreen: React.FC = () => {
                 "REPRESENTANTE": client.repName,
                 "CLIENTE": client.nome_fantasia,
                 "CANAL": client.canal_vendas || 'GERAL',
+                "ÚLTIMA COMPRA": client.lastPurchase ? new Date(client.lastPurchase + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A',
+                "VALOR ÚLT. COMPRA": client.lastPurchaseValue,
                 "FATURAMENTO": client.totalPurchase,
                 "PARTICIPAÇÃO %": (client.participation / 100)
             }));
@@ -204,10 +246,10 @@ export const ManagerClientsScreen: React.FC = () => {
 
             // Formatação de números
             for (let R = 1; R <= range.e.r; ++R) {
-                const cellFat = ws[X.utils.encode_cell({r: R, c: 4})];
+                const cellFat = ws[X.utils.encode_cell({r: R, c: 6})];
                 if (cellFat) { cellFat.t = 'n'; cellFat.z = '"R$" #,##0.00'; }
                 
-                const cellPart = ws[X.utils.encode_cell({r: R, c: 5})];
+                const cellPart = ws[X.utils.encode_cell({r: R, c: 7})];
                 if (cellPart) { cellPart.t = 'n'; cellPart.z = '0.00%'; }
             }
 
@@ -236,6 +278,34 @@ export const ManagerClientsScreen: React.FC = () => {
         if (selectedMonths.length === 0) return "NENHUM MÊS";
         if (selectedMonths.length === 1) return monthNames[selectedMonths[0] - 1].toUpperCase();
         return `${selectedMonths.length} MESES`;
+    };
+
+    const handleAction = (action: 'none' | 'x-ray' | 'last-purchase' | 'mix' | 'replenishment' | 'score-card') => {
+        const client = selectedClientForMenu;
+        setSelectedClientForMenu(null);
+        setModalClient(client);
+        setActiveModal(action);
+    };
+
+    const getClientProducts = (clientCnpj: string) => {
+        const clientSales = totalDataStore.sales.filter(s => s.cnpj === clientCnpj);
+        const productMap = new Map<string, { id: string, name: string, lastPurchaseDate: string, quantity: number, totalValue: number }>();
+        clientSales.forEach(s => {
+            const current = productMap.get(s.produto_nome) || { 
+                id: s.produto_id || s.produto_nome, 
+                name: s.produto_nome, 
+                lastPurchaseDate: '0000-00-00', 
+                quantity: 0, 
+                totalValue: 0 
+            };
+            productMap.set(s.produto_nome, {
+                ...current,
+                lastPurchaseDate: s.data > current.lastPurchaseDate ? s.data : current.lastPurchaseDate,
+                quantity: current.quantity + (Number(s.quantidade) || 0),
+                totalValue: current.totalValue + (Number(s.faturamento) || 0)
+            });
+        });
+        return Array.from(productMap.values());
     };
 
     return (
@@ -286,7 +356,7 @@ export const ManagerClientsScreen: React.FC = () => {
                         </select>
                     </div>
 
-                    {/* Filtro de Meses (Novo) */}
+                    {/* Filtro de Meses */}
                     <div className="relative flex-1 lg:flex-none" ref={dropdownRef}>
                         <button 
                             onClick={() => {
@@ -380,42 +450,25 @@ export const ManagerClientsScreen: React.FC = () => {
                     <table className="w-full text-left text-sm">
                          <thead className="bg-slate-50 border-b border-slate-200">
                             <tr className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
-                                <th className="px-8 py-5">Cliente / Local</th>
-                                <th className="px-6 py-5">Status</th>
+                                <th className="px-8 py-5">Nome</th>
                                 <th className="px-6 py-5">Última Compra</th>
-                                <th className="px-6 py-5">Representante</th>
+                                <th className="px-6 py-5 text-right">Valor Últ. Compra</th>
                                 <th className="px-6 py-5">Canal</th>
                                 <th className="px-6 py-5 text-right">Faturamento No Ano</th>
                                 <th className="px-8 py-5 text-right">Participação (%)</th>
-                                <th className="px-8 py-5 text-center">Ver</th>
+                                <th className="px-8 py-5 text-center">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {processedData.ranking.map((client, idx) => {
+                            {processedData.ranking.map((client) => {
                                 const purchaseStatus = checkLastPurchaseStatus(client.lastPurchase);
                                 return (
-                                    <tr key={client.id} className="hover:bg-slate-50 cursor-pointer group transition-all" onClick={() => setSelectedClient(client)}>
+                                    <tr key={client.id} className="hover:bg-slate-50 cursor-pointer group transition-all" onClick={() => setSelectedClientForMenu(client)}>
                                         <td className="px-8 py-5">
                                             <div>
                                                 <p className="font-black text-slate-800 group-hover:text-blue-600 transition-colors uppercase tracking-tight text-xs">{client.nome_fantasia}</p>
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5 tracking-wider">{client.city || 'S/ CIDADE'} • {client.cnpj}</p>
+                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5 tracking-wider">{client.city || 'S/ CIDADE'} • {client.cnpj} • {client.repName}</p>
                                             </div>
-                                        </td>
-                                        <td className="px-6 py-5">
-                                            {client.isAtivo ? (
-                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 text-[8px] font-black uppercase border border-emerald-100">
-                                                    Ativo
-                                                </span>
-                                            ) : (
-                                                <div className="flex flex-col">
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 text-red-600 text-[8px] font-black uppercase border border-red-100 w-fit">
-                                                        Inativo
-                                                    </span>
-                                                    {client.data_inativacao && (
-                                                        <span className="text-[7px] font-bold text-slate-400 mt-0.5 uppercase">Inat: {new Date(client.data_inativacao + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                                                    )}
-                                                </div>
-                                            )}
                                         </td>
                                         <td className="px-6 py-5">
                                             <div className="flex items-center gap-2">
@@ -425,9 +478,7 @@ export const ManagerClientsScreen: React.FC = () => {
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-5">
-                                            <span className="font-bold text-slate-600 text-[10px] uppercase bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">{client.repName}</span>
-                                        </td>
+                                        <td className="px-6 py-5 text-right font-black text-slate-700 tabular-nums">{formatCurrency(client.lastPurchaseValue)}</td>
                                         <td className="px-6 py-5">
                                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{client.canal_vendas || 'GERAL'}</span>
                                         </td>
@@ -444,7 +495,7 @@ export const ManagerClientsScreen: React.FC = () => {
                                         </td>
                                         <td className="px-8 py-5 text-center">
                                             <button className="p-2.5 bg-slate-50 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
-                                                <TrendingUp className="w-4 h-4" />
+                                                <MoreHorizontal className="w-4 h-4" />
                                             </button>
                                         </td>
                                     </tr>
@@ -466,12 +517,95 @@ export const ManagerClientsScreen: React.FC = () => {
                 </div>
             </div>
 
-            {selectedClient && (
+            {/* Mobile View */}
+            <div className="md:hidden space-y-4 px-2">
+                {processedData.ranking.map((client) => {
+                    const purchaseStatus = checkLastPurchaseStatus(client.lastPurchase);
+                    return (
+                        <div 
+                            key={client.id} 
+                            onClick={() => setSelectedClientForMenu(client)}
+                            className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm space-y-4"
+                        >
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h4 className="font-black text-slate-800 uppercase text-sm leading-tight">{client.nome_fantasia}</h4>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{client.city} • {client.cnpj}</p>
+                                </div>
+                                <div className="p-2 bg-slate-50 rounded-xl">
+                                    <MoreHorizontal className="w-4 h-4 text-slate-400" />
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-4 pt-2">
+                                <div>
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Última Compra</p>
+                                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-black border uppercase ${purchaseStatus.isOld ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                        {purchaseStatus.label}
+                                    </span>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturamento Ano</p>
+                                    <p className="text-sm font-black text-slate-900">{formatCurrency(client.totalPurchase)}</p>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-50 flex justify-between items-center">
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-slate-100 px-2 py-1 rounded-lg">{client.canal_vendas || 'GERAL'}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black text-blue-600">{client.participation.toFixed(1)}%</span>
+                                    <div className="w-12 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className="h-full bg-blue-500" style={{ width: `${client.participation}%` }}></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Modals & Menu */}
+            {selectedClientForMenu && (
+                <ClientActionMenu 
+                    client={selectedClientForMenu} 
+                    onClose={() => setSelectedClientForMenu(null)} 
+                    onAction={handleAction}
+                />
+            )}
+
+            {activeModal === 'x-ray' && modalClient && (
                 <ClientDetailModal 
-                    client={selectedClient} 
-                    // Passa o ano selecionado se for numérico, senão usa o atual
+                    client={modalClient} 
                     initialYear={typeof selectedYear === 'number' ? selectedYear : new Date().getFullYear()}
-                    onClose={() => setSelectedClient(null)} 
+                    onClose={() => setActiveModal('none')} 
+                />
+            )}
+
+            {activeModal === 'last-purchase' && modalClient && (
+                <ClientLastPurchaseDetailModal 
+                    client={modalClient} 
+                    onClose={() => setActiveModal('none')} 
+                />
+            )}
+
+            {activeModal === 'score-card' && modalClient && (
+                <ClientScoreCardModal 
+                    client={modalClient} 
+                    onClose={() => setActiveModal('none')} 
+                />
+            )}
+
+            {activeModal === 'mix' && modalClient && (
+                <ClientProductsModal 
+                    client={modalClient} 
+                    onClose={() => setActiveModal('none')} 
+                />
+            )}
+
+            {activeModal === 'replenishment' && modalClient && (
+                <ClientLastPurchaseModal 
+                    client={modalClient} 
+                    onClose={() => setActiveModal('none')} 
                 />
             )}
         </div>

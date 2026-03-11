@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Target, TrendingUp, Lock, ChevronRight, Loader2, DollarSign, Building2, BarChart3, Info, AlertTriangle, MousePointer2, Plus, History, Clock, RefreshCw, Trash2, Send, AlertCircle, X, CheckCircle2, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ChevronRight, Loader2, BarChart3, AlertTriangle, MousePointer2, Plus, History, RefreshCw, Trash2, Send, AlertCircle, CheckCircle2, Calendar } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
@@ -13,25 +13,51 @@ interface DraftItem {
   value: number;
 }
 
+interface TargetRecord {
+  id: string;
+  usuario_id: string;
+  ano: number;
+  mes: number;
+  valor: number;
+}
+
+interface WeeklyForecast {
+  id: string;
+  data: string;
+  previsao_total: number;
+  status: 'pending' | 'approved' | 'rejected';
+  observacao: string;
+  criado_em: string;
+  previsao_clientes: {
+    id: string;
+    cliente_id: string;
+    valor_previsto_cliente: number;
+    clientes: {
+      nome_fantasia: string;
+      cnpj: string;
+    } | null;
+  }[];
+}
+
 export const ForecastScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('seasonality');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedYear] = useState(new Date().getFullYear());
 
-  const [originalTargets, setOriginalTargets] = useState<any[]>([]);
+  const [originalTargets, setOriginalTargets] = useState<TargetRecord[]>([]);
   const [adjustedTargets, setAdjustedTargets] = useState<Record<number, number>>({});
   const [confirmedMonths, setConfirmedMonths] = useState<Set<number>>(new Set());
   const [isCotaConfirmed, setIsCotaConfirmed] = useState(false);
 
   // Estados Check-in Semanal
-  const [weeklyForecasts, setWeeklyForecasts] = useState<any[]>([]);
+  const [weeklyForecasts, setWeeklyForecasts] = useState<WeeklyForecast[]>([]);
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [selectedClientForWeekly, setSelectedClientForWeekly] = useState('');
   const [weeklyValueStr, setWeeklyValueStr] = useState('');
 
   // Estado para o Novo Modal de Confirmação
-  const [reportToCorrect, setReportToCorrect] = useState<any | null>(null);
+  const [reportToCorrect, setReportToCorrect] = useState<WeeklyForecast | null>(null);
 
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
@@ -39,14 +65,7 @@ export const ForecastScreen: React.FC = () => {
 
   const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
-  useEffect(() => {
-    if (userId) {
-        fetchData();
-        fetchWeeklyData();
-    }
-  }, [userId, selectedYear]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data: targets } = await supabase
@@ -78,9 +97,9 @@ export const ForecastScreen: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [userId, selectedYear]);
 
-  const fetchWeeklyData = async () => {
+  const fetchWeeklyData = useCallback(async () => {
     try {
       const { data } = await supabase
         .from('previsoes')
@@ -102,11 +121,26 @@ export const ForecastScreen: React.FC = () => {
         .ilike('observacao', 'WEEKLY_CHECKIN%')
         .order('criado_em', { ascending: false });
       
-      setWeeklyForecasts(data || []);
+      const formattedData = (data || []).map((item: any) => ({
+        ...item,
+        previsao_clientes: (item.previsao_clientes || []).map((pc: any) => ({
+          ...pc,
+          clientes: Array.isArray(pc.clientes) ? pc.clientes[0] : pc.clientes
+        }))
+      }));
+      
+      setWeeklyForecasts(formattedData);
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) {
+        fetchData();
+        fetchWeeklyData();
+    }
+  }, [userId, fetchData, fetchWeeklyData]);
 
   const handleValueMask = (val: string) => {
     const clean = val.replace(/\D/g, '');
@@ -145,7 +179,7 @@ export const ForecastScreen: React.FC = () => {
     setIsSaving(true);
     
     try {
-        const itemsToEdit: DraftItem[] = (reportToCorrect.previsao_clientes || []).map((item: any) => ({
+        const itemsToEdit: DraftItem[] = (reportToCorrect.previsao_clientes || []).map((item) => ({
             clientId: item.cliente_id,
             clientName: item.clientes?.nome_fantasia || 'Cliente não identificado',
             value: Number(item.valor_previsto_cliente || 0)
@@ -172,8 +206,9 @@ export const ForecastScreen: React.FC = () => {
         
         alert('O relatório anterior foi removido. Ajuste os valores e envie novamente.');
 
-    } catch (err: any) {
-        alert('Erro técnico: ' + err.message);
+    } catch (err) {
+        const error = err as Error;
+        alert('Erro técnico: ' + error.message);
     } finally {
         setIsSaving(false);
     }
@@ -216,8 +251,9 @@ export const ForecastScreen: React.FC = () => {
       setDraftItems([]);
       await fetchWeeklyData();
       alert('Previsão enviada com sucesso!');
-    } catch (e: any) {
-      alert('Erro ao enviar: ' + e.message);
+    } catch (e) {
+      const error = e as Error;
+      alert('Erro ao enviar: ' + error.message);
     } finally {
       setIsSaving(false);
     }
@@ -240,7 +276,10 @@ export const ForecastScreen: React.FC = () => {
       
       setIsCotaConfirmed(true);
       alert('Ciência confirmada com sucesso!');
-    } catch (e: any) { alert(e.message); } finally { setIsSaving(false); }
+    } catch (e) {
+      const error = e as Error;
+      alert(error.message);
+    } finally { setIsSaving(false); }
   };
 
   const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
@@ -382,7 +421,7 @@ export const ForecastScreen: React.FC = () => {
                                 )}
 
                                 <div className="space-y-1 pt-4 border-t border-slate-50">
-                                    {report.previsao_clientes.slice(0, 3).map((item: any) => (
+                                    {report.previsao_clientes.slice(0, 3).map((item) => (
                                         <div key={item.id} className="flex justify-between text-[10px] font-bold text-slate-500 uppercase">
                                             <span className="truncate pr-4">{item.clientes?.nome_fantasia}</span>
                                             <span className="shrink-0 tabular-nums">{formatBRL(item.valor_previsto_cliente)}</span>

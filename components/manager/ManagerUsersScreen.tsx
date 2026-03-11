@@ -21,6 +21,8 @@ export const ManagerUsersScreen: React.FC = () => {
                 .select('id, nome, senha_hash, nivel_acesso, ativo, ultimo_acesso')
                 .not('nivel_acesso', 'ilike', 'admin')
                 .not('nivel_acesso', 'ilike', 'gerente')
+                .not('nivel_acesso', 'ilike', 'director')
+                .not('nivel_acesso', 'ilike', 'diretor')
                 .order('nome');
 
             if (error) throw error;

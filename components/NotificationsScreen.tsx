@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Bell, Clock, AlertOctagon, Info, MailOpen, ChevronDown, CheckCircle2, RefreshCw, Loader2, Paperclip, Download, FileText, Image as ImageIcon, Filter, Calendar, Send, User, History } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Bell, AlertOctagon, Info, MailOpen, ChevronDown, CheckCircle2, Loader2, Paperclip, Download, FileText, Image as ImageIcon, Calendar, Send, User, History } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -11,12 +11,34 @@ interface NotificationsScreenProps {
 type FilterType = 'all' | 'info' | 'important' | 'urgent' | 'attachments';
 type TabType = 'inbox' | 'compose';
 
+interface NotificationAnexo {
+  id: string;
+  arquivo_nome: string;
+  arquivo_url?: string;
+  tipo_mime?: string;
+}
+
+interface Notification {
+  id: string;
+  de_usuario_id: string;
+  para_usuario_id: string;
+  mensagem: string;
+  prioridade: 'info' | 'medium' | 'urgent';
+  lida: boolean;
+  criada_em: string;
+  notificacao_anexos: NotificationAnexo[];
+  metadata?: {
+    type?: string;
+    relatedId?: string;
+  };
+}
+
 export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixForecast }) => {
   const [activeTab, setActiveTab] = useState<TabType>('inbox');
   
   // States Inbox
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [sentMessages, setSentMessages] = useState<any[]>([]); 
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [sentMessages, setSentMessages] = useState<Notification[]>([]); 
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingSent, setIsLoadingSent] = useState(false);
   const [loadingAttachments, setLoadingAttachments] = useState<Record<string, boolean>>({});
@@ -31,14 +53,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
 
-  useEffect(() => {
-    if (userId) {
-        if (activeTab === 'inbox') fetchNotifications();
-        if (activeTab === 'compose') fetchSentMessages();
-    }
-  }, [userId, activeTab]);
-
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     setIsLoading(true);
     try {
       // Otimização: Busca apenas IDs e nomes dos anexos para o filtro funcionar, sem a URL pesada
@@ -55,7 +70,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
           ...item,
           para_usuario_id: item.para_usuario_id || item.Para_usuario_id || item.para_Usuario_Id,
           de_usuario_id: item.de_usuario_id || item.De_usuario_id || item.de_Usuario_Id
-      }));
+      })) as Notification[];
 
       setNotifications(normalizedData);
     } catch (e) {
@@ -63,9 +78,9 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [userId]);
 
-  const fetchSentMessages = async () => {
+  const fetchSentMessages = useCallback(async () => {
       setIsLoadingSent(true);
       try {
           const { data, error } = await supabase
@@ -80,7 +95,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
               ...item,
               para_usuario_id: item.para_usuario_id || item.Para_usuario_id || item.para_Usuario_Id,
               de_usuario_id: item.de_usuario_id || item.De_usuario_id || item.de_Usuario_Id
-          }));
+          })) as Notification[];
 
           setSentMessages(normalizedData);
       } catch (e) {
@@ -88,7 +103,14 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
       } finally {
           setIsLoadingSent(false);
       }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) {
+        if (activeTab === 'inbox') fetchNotifications();
+        if (activeTab === 'compose') fetchSentMessages();
+    }
+  }, [userId, activeTab, fetchNotifications, fetchSentMessages]);
 
   // Função para buscar anexos completos sob demanda
   const fetchAttachmentDetails = async (notificationId: string) => {
@@ -103,8 +125,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
       
       if (error) throw error;
 
-      const updateList = (list: any[]) => 
-        list.map(n => n.id === notificationId ? { ...n, notificacao_anexos: data } : n);
+      const updateList = (list: Notification[]) => 
+        list.map(n => n.id === notificationId ? { ...n, notificacao_anexos: data as NotificationAnexo[] } : n);
 
       if (activeTab === 'inbox') setNotifications(updateList);
       else setSentMessages(updateList);
@@ -124,7 +146,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
       const currentList = activeTab === 'inbox' ? notifications : sentMessages;
       const notification = currentList.find(n => n.id === id);
       // Se tem anexos mas ainda não tem a URL (indicado pela falta de arquivo_url no primeiro item)
-      if (notification?.notificacao_anexos?.length > 0 && !notification.notificacao_anexos[0].arquivo_url) {
+      if (notification?.notificacao_anexos && notification.notificacao_anexos.length > 0 && !notification.notificacao_anexos[0].arquivo_url) {
         fetchAttachmentDetails(id);
       }
     }
@@ -173,7 +195,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
           setMessageBody('');
           fetchSentMessages(); 
 
-      } catch (error: any) {
+      } catch (err) {
+          const error = err as Error;
           console.error('Erro envio:', error);
           alert('Erro ao enviar: ' + (error.message || 'Falha de comunicação.'));
       } finally {
@@ -201,7 +224,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
     }
   };
 
-  const handleDownload = (file: any) => {
+  const handleDownload = (file: NotificationAnexo) => {
     if (!file.arquivo_url || file.arquivo_url === '#') {
       alert('Arquivo ainda sendo processado ou indisponível.');
       return;
@@ -409,7 +432,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                                                         </div>
                                                     ) : (
                                                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                                                            {notif.notificacao_anexos.map((file: any) => (
+                                                            {notif.notificacao_anexos.map((file) => (
                                                                 <button 
                                                                     key={file.id} 
                                                                     onClick={() => handleDownload(file)}
@@ -674,7 +697,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                                             </div>
                                         ) : (
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {notif.notificacao_anexos.map((file: any) => (
+                                                {notif.notificacao_anexos.map((file) => (
                                                     <div 
                                                     key={file.id} 
                                                     onClick={() => handleDownload(file)}

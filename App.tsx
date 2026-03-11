@@ -30,19 +30,34 @@ import { ManagerAnalysisScreen } from './components/manager/ManagerAnalysisScree
 import { ManagerDetailedAnalysisScreen } from './components/manager/ManagerDetailedAnalysisScreen';
 import { ManagerUsersScreen } from './components/manager/ManagerUsersScreen';
 import { ManagerScoreCardScreen } from './components/manager/ManagerScoreCardScreen';
-import { ManagerProductAnalysisScreen } from './components/manager/ManagerProductAnalysisScreen';
 
 import { DirectorDashboard } from './components/director/DirectorDashboard';
 
 // Force rebuild
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!sessionStorage.getItem('pcn_session'));
   const [isHydrated, setIsHydrated] = useState(false);
-  const [currentView, setCurrentView] = useState('dashboard');
+  const [currentView, setCurrentView] = useState(() => {
+    const saved = sessionStorage.getItem('pcn_session');
+    if (saved) {
+      const { role } = JSON.parse(saved);
+      return role === 'admin' ? 'admin-dashboard' : role === 'director' ? 'director-dashboard' : 'dashboard';
+    }
+    return 'dashboard';
+  });
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [userName, setUserName] = useState('Visitante'); 
-  const [userRole, setUserRole] = useState<'admin' | 'rep' | 'director'>('rep');
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState(() => {
+    const saved = sessionStorage.getItem('pcn_session');
+    return saved ? JSON.parse(saved).name : 'Visitante';
+  }); 
+  const [userRole, setUserRole] = useState<'admin' | 'rep' | 'director'>(() => {
+    const saved = sessionStorage.getItem('pcn_session');
+    return saved ? JSON.parse(saved).role : 'rep';
+  });
+  const [userId, setUserId] = useState<string | null>(() => {
+    const saved = sessionStorage.getItem('pcn_session');
+    return saved ? JSON.parse(saved).id : null;
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showImportantNotice, setShowImportantNotice] = useState(false);
 
@@ -66,22 +81,13 @@ const App: React.FC = () => {
   useEffect(() => {
     let noticeTimer: number | undefined;
     
-    const savedSession = sessionStorage.getItem('pcn_session');
-    if (savedSession) {
-      const { name, role, id } = JSON.parse(savedSession);
-      setUserName(name);
-      setUserRole(role);
-      setUserId(id);
-      setIsAuthenticated(true);
-      setIsHydrated(false); 
-      setCurrentView(role === 'admin' ? 'admin-dashboard' : role === 'director' ? 'director-dashboard' : 'dashboard');
-      
-      if (role === 'rep') {
-          noticeTimer = window.setTimeout(() => checkImportantNotices(id), 5 * 60 * 1000);
-      }
+    if (isAuthenticated && userRole === 'rep' && userId) {
+        noticeTimer = window.setTimeout(() => checkImportantNotices(userId), 5 * 60 * 1000);
     }
     
-    setIsCheckingAuth(false);
+    const authTimer = setTimeout(() => {
+        setIsCheckingAuth(false);
+    }, 0);
 
     const handleNav = (e: CustomEvent) => {
         if (e.detail) setCurrentView(e.detail);
@@ -91,8 +97,9 @@ const App: React.FC = () => {
     return () => {
         window.removeEventListener('pcn_navigate', handleNav as EventListener);
         if (noticeTimer) window.clearTimeout(noticeTimer);
+        clearTimeout(authTimer);
     };
-  }, []);
+  }, [isAuthenticated, userRole, userId]);
 
   const handleLogin = (name: string, role: 'admin' | 'rep' | 'director', id: string) => {
     setUserName(name);
@@ -191,7 +198,6 @@ const App: React.FC = () => {
                <>
                 {currentView === 'dashboard' && <Dashboard />}
                 {currentView === 'rep-analysis' && <RepAnalysisScreen />}
-                {currentView === 'rep-product-analysis' && <ManagerProductAnalysisScreen />}
                 {currentView === 'rep-bi-builder' && <ManagerDetailedAnalysisScreen />}
                 {currentView === 'clients' && <ClientsScreen />}
                 {currentView === 'campaigns' && <CampaignsScreen onNavigateToInvestments={() => setCurrentView('investments')} />}
@@ -211,7 +217,6 @@ const App: React.FC = () => {
                 {currentView === 'admin-notifications' && <ManagerNotificationsScreen />}
                 {currentView === 'admin-users' && <ManagerUsersScreen />}
                 {currentView === 'admin-scorecard' && <ManagerScoreCardScreen />}
-                {currentView === 'admin-product-analysis' && <ManagerProductAnalysisScreen />}
                 {currentView === 'admin-clients' && <ManagerClientsScreen />}
                 {currentView === 'admin-targets' && <ManagerTargetsScreen />}
                </>

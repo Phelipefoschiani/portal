@@ -1,18 +1,38 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ShieldCheck, CheckCircle2, XCircle, Loader2, Quote, X, History, TrendingUp, Calendar, Info, MessageCircleQuestion, Filter, DollarSign, Wallet, ArrowUpRight, BarChart3, ChevronDown, PieChart, Target, AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { ShieldCheck, CheckCircle2, XCircle, Loader2, Quote, X, TrendingUp, Target, AlertTriangle, Trash2, PieChart } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { createPortal } from 'react-dom';
 import { totalDataStore } from '../../lib/dataStore';
 
+interface Investment {
+    id: string;
+    data: string;
+    valor_total_investimento: number;
+    valor_caju: number;
+    valor_dinheiro: number;
+    valor_produto: number;
+    status: 'pendente' | 'approved' | 'rejected';
+    observacao: string;
+    usuario_id: string;
+    usuarios?: {
+        id: string;
+        nome: string;
+    };
+    clientes?: {
+        id: string;
+        nome_fantasia: string;
+    };
+}
+
 export const ManagerCampaignsScreen: React.FC = () => {
     const now = new Date();
     const [viewMode, setViewMode] = useState<'pending' | 'history'>('pending');
     const [subTab, setSubTab] = useState<'approved' | 'rejected'>('approved');
-    const [investments, setInvestments] = useState<any[]>([]);
+    const [investments, setInvestments] = useState<Investment[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isActionLoading, setIsActionLoading] = useState(false);
-    const [selectedDetail, setSelectedDetail] = useState<any | null>(null);
+    const [selectedDetail, setSelectedDetail] = useState<Investment | null>(null);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     
     const [filterYear, setFilterYear] = useState<number>(now.getFullYear());
@@ -23,11 +43,7 @@ export const ManagerCampaignsScreen: React.FC = () => {
 
     const monthsNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
-    useEffect(() => {
-        fetchInvestments();
-    }, [viewMode, subTab, filterYear, filterMonth]);
-
-    const fetchInvestments = async () => {
+    const fetchInvestments = useCallback(async () => {
         setIsLoading(true);
         try {
             let query = supabase
@@ -54,7 +70,11 @@ export const ManagerCampaignsScreen: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [viewMode, subTab, filterYear, filterMonth]);
+
+    useEffect(() => {
+        fetchInvestments();
+    }, [fetchInvestments]);
 
     const teamStats = useMemo(() => {
         if (viewMode !== 'history') return [];
@@ -105,9 +125,10 @@ export const ManagerCampaignsScreen: React.FC = () => {
             setRejectionReason('');
             
             alert(status === 'approved' ? 'Investimento aprovado com sucesso!' : 'Investimento recusado.');
-        } catch (error: any) {
-            console.error('Erro na atualização:', error);
-            alert('Erro ao processar: ' + (error.message || 'Falha na conexão com o banco de dados.'));
+        } catch (error) {
+            const err = error as Error;
+            console.error('Erro na atualização:', err);
+            alert('Erro ao processar: ' + (err.message || 'Falha na conexão com o banco de dados.'));
         } finally {
             setIsActionLoading(false);
         }
@@ -130,8 +151,9 @@ export const ManagerCampaignsScreen: React.FC = () => {
             setInvestments(prev => prev.filter(i => i.id !== selectedDetail.id));
             setSelectedDetail(null);
             setShowDeleteModal(false);
-        } catch (error: any) {
-            alert('Erro ao excluir: ' + error.message);
+        } catch (error) {
+            const err = error as Error;
+            alert('Erro ao excluir: ' + err.message);
         } finally {
             setIsActionLoading(false);
         }

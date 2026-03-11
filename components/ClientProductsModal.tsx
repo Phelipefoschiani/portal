@@ -1,128 +1,289 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Package, FileSpreadsheet } from 'lucide-react';
+import { X, Package, FileSpreadsheet, Filter, Calendar, Search, TrendingUp, DollarSign, Hash } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { totalDataStore } from '../lib/dataStore';
 
 interface Product {
   id: string;
   name: string;
   quantity: number;
   totalValue: number;
+  lastPurchaseDate: string;
+  category: string;
 }
 
 interface ClientProductsModalProps {
   client: {
     id: string;
-    name: string;
-    products: Product[];
+    cnpj: string;
+    nome_fantasia: string;
   };
   onClose: () => void;
+  onBack?: () => void;
 }
 
-export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client, onClose }) => {
-  const sortedProducts = useMemo(() => {
-    return [...client.products].sort((a, b) => b.totalValue - a.totalValue);
-  }, [client.products]);
+export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client, onClose, onBack }) => {
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const totalFaturado = useMemo(() => {
-    return sortedProducts.reduce((acc, curr) => acc + curr.totalValue, 0);
-  }, [sortedProducts]);
+  const years = useMemo(() => {
+    const yearsSet = new Set<string>();
+    totalDataStore.sales.forEach(s => {
+      if (s.data) yearsSet.add(s.data.substring(0, 4));
+    });
+    return Array.from(yearsSet).sort((a, b) => b.localeCompare(a));
+  }, []);
+
+  const categories = useMemo(() => {
+    const catSet = new Set<string>();
+    totalDataStore.sales.forEach(s => {
+      if (s.grupo) catSet.add(s.grupo.trim().toUpperCase());
+    });
+    return Array.from(catSet).sort();
+  }, []);
+
+  const filteredProducts = useMemo(() => {
+    const clientSales = totalDataStore.sales.filter(s => s.cnpj === client.cnpj);
+    
+    const productMap = new Map<string, Product>();
+    
+    clientSales.forEach(s => {
+      const year = s.data.substring(0, 4);
+      const month = s.data.substring(5, 7);
+      const category = (s.grupo || 'GERAL').trim().toUpperCase();
+      
+      if (selectedYear !== 'all' && year !== selectedYear) return;
+      if (selectedMonth !== 'all' && month !== selectedMonth) return;
+      if (selectedCategory !== 'all' && category !== selectedCategory) return;
+      
+      const prodName = s.produto || 'Produto sem nome';
+      if (searchTerm && !prodName.toLowerCase().includes(searchTerm.toLowerCase()) && !s.codigo_produto?.toLowerCase().includes(searchTerm.toLowerCase())) return;
+
+      const current = productMap.get(prodName) || { 
+        id: s.codigo_produto || prodName, 
+        name: prodName, 
+        quantity: 0, 
+        totalValue: 0, 
+        lastPurchaseDate: '0000-00-00',
+        category
+      };
+      
+      productMap.set(prodName, {
+        ...current,
+        quantity: current.quantity + (Number(s.qtde_faturado) || 0),
+        totalValue: current.totalValue + (Number(s.faturamento) || 0),
+        lastPurchaseDate: s.data > current.lastPurchaseDate ? s.data : current.lastPurchaseDate
+      });
+    });
+    
+    return Array.from(productMap.values()).sort((a, b) => b.totalValue - a.totalValue);
+  }, [client.cnpj, selectedYear, selectedMonth, selectedCategory, searchTerm]);
+
+  const stats = useMemo(() => {
+    const totalValue = filteredProducts.reduce((acc, p) => acc + p.totalValue, 0);
+    const totalUnits = filteredProducts.reduce((acc, p) => acc + p.quantity, 0);
+    const totalSkus = filteredProducts.length;
+    return { totalValue, totalUnits, totalSkus };
+  }, [filteredProducts]);
 
   const handleDownloadExcel = () => {
-    if (sortedProducts.length === 0) return;
+    if (filteredProducts.length === 0) return;
     
-    const excelData = sortedProducts.map(p => ({ "Produto": p.name, "QTD": p.quantity, "Valor Total": p.totalValue }));
+    const excelData = filteredProducts.map(p => ({ 
+      "SKU": p.id,
+      "Produto": p.name, 
+      "Categoria": p.category,
+      "QTD": p.quantity, 
+      "Valor Total": p.totalValue,
+      "Última Compra": p.lastPurchaseDate !== '0000-00-00' ? new Date(p.lastPurchaseDate + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A'
+    }));
     const ws = XLSX.utils.json_to_sheet(excelData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Mix");
-    XLSX.writeFile(wb, `mix_${client.name.replace(/\s/g, '_')}.xlsx`);
+    XLSX.writeFile(wb, `mix_${client.nome_fantasia.replace(/\s/g, '_')}.xlsx`);
   };
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
   return createPortal(
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white w-full max-w-4xl rounded-[28px] md:rounded-[32px] shadow-2xl flex flex-col max-h-[94vh] md:max-h-[90vh] overflow-hidden border border-white/20">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 md:p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+      <div className="bg-white w-full max-w-6xl rounded-[40px] shadow-2xl flex flex-col max-h-[94vh] overflow-hidden border border-white/20">
         
-        <div className="p-5 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-          <div className="flex items-center gap-3 md:gap-4">
-            <div className="p-2.5 md:p-3 bg-purple-100 text-purple-600 rounded-xl md:rounded-2xl shadow-sm shrink-0">
-              <Package className="w-5 h-5 md:w-6 md:h-6" />
+        {/* Header */}
+        <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-purple-600 text-white rounded-2xl shadow-lg">
+              <Package className="w-6 h-6" />
             </div>
-            <div className="min-w-0">
-              <h3 className="text-lg md:text-xl font-black text-slate-800 tracking-tight uppercase leading-tight truncate">Mix Ativo</h3>
-              <p className="text-[8px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest truncate">{client.name}</p>
+            <div>
+              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Mix Ativo</h3>
+              <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest mt-1.5">{client.nome_fantasia}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 md:p-2 hover:bg-slate-200 rounded-full text-slate-400">
-            <X className="w-5 h-5 md:w-6 md:h-6" />
-          </button>
-        </div>
-
-        <div className="p-3 md:p-4 bg-white border-b border-slate-100 flex justify-between items-center px-4 md:px-8 shrink-0">
-            <div className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest">
-               {sortedProducts.length} itens encontrados
-            </div>
-            <div className="flex gap-2">
-                <button onClick={handleDownloadExcel} className="h-9 md:h-11 px-3 md:px-8 rounded-xl text-[8px] md:text-[10px] font-black border border-emerald-200 text-emerald-600 hover:bg-emerald-50 uppercase flex items-center gap-2">
-                    <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-full">
+              {onBack && (
+                <button 
+                  onClick={onBack} 
+                  className="px-4 py-2 hover:bg-white hover:shadow-sm rounded-full text-[10px] font-black text-slate-600 uppercase transition-all"
+                >
+                  Voltar
                 </button>
+              )}
+              <button onClick={onClose} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-colors">
+                <X className="w-6 h-6" />
+              </button>
             </div>
+          </div>
         </div>
 
-        <div className="overflow-y-auto p-3 md:p-6 bg-slate-50 flex-1 custom-scrollbar">
-            {/* Desktop View */}
-            <div className="hidden md:block bg-white rounded-[24px] shadow-sm border border-slate-200 overflow-hidden">
-                <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-100 border-b border-slate-200 text-[9px] font-black uppercase text-slate-400 tracking-widest">
-                        <tr>
-                            <th className="py-4 px-6">Produto</th>
-                            <th className="py-4 px-6 text-center">Qtd.</th>
-                            <th className="py-4 px-6 text-right">Valor Total</th>
-                            <th className="py-4 px-8 text-right">Partic.</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {sortedProducts.map((p, idx) => {
-                            const part = totalFaturado > 0 ? (p.totalValue / totalFaturado) * 100 : 0;
-                            return (
-                                <tr key={idx} className="hover:bg-slate-50 transition-colors group">
-                                    <td className="py-4 px-6 font-black text-slate-800 text-xs uppercase">{p.name}</td>
-                                    <td className="py-4 px-6 text-center font-bold text-slate-600">{p.quantity}</td>
-                                    <td className="py-4 px-6 text-right font-black text-slate-900 text-xs tabular-nums">{formatCurrency(p.totalValue)}</td>
-                                    <td className="py-4 px-8 text-right"><span className="text-[10px] font-black text-purple-600">{part.toFixed(1)}%</span></td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+        {/* Filters & Stats */}
+        <div className="p-6 bg-white border-b border-slate-100 space-y-6 shrink-0">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-900 rounded-3xl p-5 text-white shadow-lg border-b-4 border-purple-600">
+              <div className="flex items-center gap-3 mb-2">
+                <Hash className="w-4 h-4 text-purple-400" />
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total SKUs</p>
+              </div>
+              <h4 className="text-2xl font-black">{stats.totalSkus}</h4>
+            </div>
+            <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <DollarSign className="w-4 h-4 text-emerald-500" />
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Faturamento Total</p>
+              </div>
+              <h4 className="text-2xl font-black text-slate-900">{formatCurrency(stats.totalValue)}</h4>
+            </div>
+            <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <TrendingUp className="w-4 h-4 text-blue-500" />
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Quantidade</p>
+              </div>
+              <h4 className="text-2xl font-black text-slate-900">{stats.totalUnits} <span className="text-xs font-bold text-slate-400">UN</span></h4>
+            </div>
+          </div>
+
+          {/* Filter Row */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input 
+                type="text"
+                placeholder="BUSCAR POR SKU OU NOME..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
+              <Calendar className="w-4 h-4 text-slate-400 ml-2" />
+              <select 
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="bg-transparent text-[10px] font-black uppercase tracking-widest outline-none pr-2"
+              >
+                <option value="all">ANO: TODOS</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <div className="w-px h-4 bg-slate-200 mx-1"></div>
+              <select 
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent text-[10px] font-black uppercase tracking-widest outline-none pr-2"
+              >
+                <option value="all">MÊS: TODOS</option>
+                <option value="01">JANEIRO</option>
+                <option value="02">FEVEREIRO</option>
+                <option value="03">MARÇO</option>
+                <option value="04">ABRIL</option>
+                <option value="05">MAIO</option>
+                <option value="06">JUNHO</option>
+                <option value="07">JULHO</option>
+                <option value="08">AGOSTO</option>
+                <option value="09">SETEMBRO</option>
+                <option value="10">OUTUBRO</option>
+                <option value="11">NOVEMBRO</option>
+                <option value="12">DEZEMBRO</option>
+              </select>
             </div>
 
-            {/* Mobile View (Cards) */}
-            <div className="md:hidden space-y-2">
-                {sortedProducts.map((p, idx) => {
-                    const part = totalFaturado > 0 ? (p.totalValue / totalFaturado) * 100 : 0;
-                    return (
-                        <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-2">
-                            <div className="flex justify-between items-start gap-4">
-                                <span className="text-[9px] font-black text-slate-800 uppercase leading-tight line-clamp-2">{p.name}</span>
-                                <span className="text-[9px] font-black text-purple-600 tabular-nums shrink-0">{part.toFixed(1)}%</span>
-                            </div>
-                            <div className="flex justify-between items-end border-t border-slate-50 pt-2">
-                                <div>
-                                    <p className="text-[7px] font-black text-slate-400 uppercase">Faturamento</p>
-                                    <p className="text-[11px] font-black text-slate-900">{formatCurrency(p.totalValue)}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[7px] font-black text-slate-400 uppercase">Volume</p>
-                                    <p className="text-[11px] font-bold text-slate-600">{p.quantity} Un</p>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
+            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
+              <Filter className="w-4 h-4 text-slate-400 ml-2" />
+              <select 
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="bg-transparent text-[10px] font-black uppercase tracking-widest outline-none pr-2"
+              >
+                <option value="all">CATEGORIA: TODAS</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
+
+            <button 
+              onClick={handleDownloadExcel}
+              className="px-6 py-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
+            >
+              <FileSpreadsheet className="w-4 h-4" /> EXCEL
+            </button>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 overflow-y-auto bg-slate-50 custom-scrollbar">
+          <div className="p-6">
+            <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest sticky top-0 z-10">
+                  <tr className="border-b border-slate-200">
+                    <th className="px-8 py-5">SKU</th>
+                    <th className="px-6 py-5">Produto</th>
+                    <th className="px-6 py-5 text-center">Qtd</th>
+                    <th className="px-6 py-5 text-right">Valor Total</th>
+                    <th className="px-6 py-5 text-center">Part. %</th>
+                    <th className="px-8 py-5 text-right">Última Compra</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredProducts.map((p, idx) => {
+                    const participation = stats.totalValue > 0 ? (p.totalValue / stats.totalValue) * 100 : 0;
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="px-8 py-5 text-[10px] font-bold text-slate-400 font-mono">{p.id}</td>
+                        <td className="px-6 py-5">
+                          <p className="font-black text-slate-700 uppercase text-[11px] tracking-tight group-hover:text-purple-600 transition-colors">{p.name}</p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">{p.category}</p>
+                        </td>
+                        <td className="px-6 py-5 text-center font-black text-slate-900 tabular-nums">{p.quantity}</td>
+                        <td className="px-6 py-5 text-right font-black text-slate-900 tabular-nums">{formatCurrency(p.totalValue)}</td>
+                        <td className="px-6 py-5 text-center">
+                          <span className="text-[10px] font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg">{participation.toFixed(1)}%</span>
+                        </td>
+                        <td className="px-8 py-5 text-right text-[10px] font-bold text-slate-500">
+                          {p.lastPurchaseDate !== '0000-00-00' ? new Date(p.lastPurchaseDate + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-8 py-20 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <Package className="w-12 h-12 text-slate-200" />
+                          <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Nenhum produto encontrado com os filtros aplicados</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>,

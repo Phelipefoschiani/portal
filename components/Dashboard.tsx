@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Users, AlertCircle, Calendar, DollarSign, RefreshCw, CheckCircle2, Award, ChevronDown, CheckSquare, Square, RotateCcw, Filter, CalendarDays, ArrowUpRight, ArrowDownRight, LayoutDashboard } from 'lucide-react';
+import { Target, TrendingUp, Users, AlertCircle, Calendar, DollarSign, CheckCircle2, Award, ChevronDown, CheckSquare, Square, Filter, CalendarDays, ArrowUpRight, ArrowDownRight, LayoutDashboard } from 'lucide-react';
 import { NonPositivizedModal } from './NonPositivizedModal';
 import { PositivizedModal } from './PositivizedModal';
 import { RepPerformanceModal } from './manager/RepPerformanceModal';
-import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
 
 export const Dashboard: React.FC = () => {
@@ -22,6 +21,7 @@ export const Dashboard: React.FC = () => {
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
   const userName = session.name;
+  const userRole = session.role;
 
   const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
   const monthShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -411,7 +411,7 @@ export const Dashboard: React.FC = () => {
       {showPositivizedModal && <PositivizedModal onClose={() => setShowPositivizedModal(false)} selectedMonths={selectedMonths} selectedYear={selectedYear} />}
       {showPerformanceModal && (
         <RepPerformanceModal 
-          rep={{ id: userId, nome: userName }} 
+          rep={{ id: userId, nome: userName, role: userRole }} 
           year={selectedYear} 
           onClose={() => setShowPerformanceModal(false)} 
         />

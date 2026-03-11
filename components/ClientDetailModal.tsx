@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, Calendar, Package, History, Loader2, TrendingUp, Hash, Building2, MapPin } from 'lucide-react';
-import { Button } from './Button';
+import { X, Download, Loader2, TrendingUp, Hash, Building2, MapPin, Calendar } from 'lucide-react';
 import { ClientProductsModal } from './ClientProductsModal';
 import { ClientLastPurchaseModal } from './ClientLastPurchaseModal';
 import { supabase } from '../lib/supabase';
@@ -31,13 +30,28 @@ interface ProductItem {
   lastPurchaseDate: string;
 }
 
+interface SaleRecord {
+  cnpj: string;
+  data: string;
+  faturamento: number | string;
+  codigo_produto?: string;
+  produto: string;
+  qtde_faturado: number | string;
+}
+
+interface TargetRecord {
+  mes: number;
+  valor: number;
+}
+
 interface ClientDetailModalProps {
   client: Client; 
   initialYear?: number;
   onClose: () => void;
+  onBack?: () => void;
 }
 
-export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, initialYear, onClose }) => {
+export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, initialYear, onClose, onBack }) => {
   const [year, setYear] = useState(initialYear && typeof initialYear === 'number' ? initialYear : new Date().getFullYear());
   const [showProducts, setShowProducts] = useState(false);
   const [showLastPurchase, setShowLastPurchase] = useState(false);
@@ -55,11 +69,11 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
     setIsLoading(true);
     const cleanedCnpj = cleanCnpj(client.cnpj);
     
-    let salesData: any[] = [];
-    let targetsData: any[] = [];
+    let salesData: SaleRecord[] = [];
+    let targetsData: TargetRecord[] = [];
 
     try {
-      const localSales = totalDataStore.sales.filter(s => String(s.cnpj || '').replace(/\D/g, '') === cleanedCnpj);
+      const localSales = totalDataStore.sales.filter(s => String(s.cnpj || '').replace(/\D/g, '') === cleanedCnpj) as unknown as SaleRecord[];
       
       if (localSales.length > 0) {
           salesData = localSales.filter(s => {
@@ -85,7 +99,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
         .eq('cliente_id', client.id)
         .eq('ano', year);
       
-      targetsData = targets || [];
+      targetsData = (targets || []) as TargetRecord[];
 
       const monthlyHistory = Array.from({ length: 12 }, (_, i) => {
         const monthNum = i + 1;
@@ -219,15 +233,25 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
                 </span>
               </div>
             </div>
-            <button onClick={onClose} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-full transition-all text-slate-400">
-              <X className="w-5 h-5 md:w-6 md:h-6" />
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-full">
+                {onBack && (
+                  <button 
+                    onClick={onBack} 
+                    className="px-4 py-2 hover:bg-white hover:shadow-sm rounded-full text-[10px] font-black text-slate-600 uppercase transition-all"
+                  >
+                    Voltar
+                  </button>
+                )}
+                <button onClick={onClose} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-full transition-all text-slate-400">
+                  <X className="w-5 h-5 md:w-6 md:h-6" />
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Botões Ação */}
           <div className="px-4 md:px-8 py-3 md:py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-end items-center gap-2 md:gap-3 shrink-0">
-             <button onClick={() => setShowLastPurchase(true)} className="flex-1 md:flex-none h-10 px-4 md:px-6 text-[8px] md:text-[10px] font-black uppercase tracking-widest border border-amber-200 bg-white text-amber-600 hover:bg-amber-50 rounded-xl flex items-center justify-center gap-2" disabled={isLoading}><History className="w-3.5 h-3.5" /> Reposição</button>
-             <button onClick={() => setShowProducts(true)} className="flex-1 md:flex-none h-10 px-4 md:px-6 text-[8px] md:text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white shadow-md rounded-xl flex items-center justify-center gap-2" disabled={isLoading}><Package className="w-3.5 h-3.5" /> Mix Ativo</button>
              <button onClick={handleDownloadImage} disabled={isLoading || isDownloading} className="hidden md:flex h-10 px-6 text-[10px] font-black uppercase tracking-widest border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl items-center gap-2">
                 {isDownloading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Download className="w-4 h-4" />} Salvar
              </button>
@@ -439,14 +463,14 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
 
         {showProducts && (
           <ClientProductsModal 
-            client={{ ...client, name: client.nome_fantasia, products: productsData }} 
+            client={{ ...client, products: productsData } as any} 
             onClose={() => setShowProducts(false)} 
           />
         )}
 
         {showLastPurchase && (
           <ClientLastPurchaseModal
-            client={{ ...client, name: client.nome_fantasia, products: productsData }}
+            client={{ ...client, products: productsData } as any}
             onClose={() => setShowLastPurchase(false)}
           />
         )}
