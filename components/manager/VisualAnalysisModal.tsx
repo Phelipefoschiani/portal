@@ -318,7 +318,7 @@ export const VisualAnalysisModal: React.FC<VisualAnalysisModalProps> = ({
                                             dataKey="value" 
                                             stroke="#2563eb" 
                                             strokeWidth={4} 
-                                            dot={(props: { cx: number, cy: number, payload: { isSelected: boolean, month: number } }) => {
+                                            dot={(props: any) => {
                                                 const { cx, cy, payload } = props;
                                                 if (payload.isSelected) {
                                                     return <circle key={`dot-${payload.month}`} cx={cx} cy={cy} r={6} fill="#2563eb" stroke="#fff" strokeWidth={3} />;
@@ -361,7 +361,7 @@ export const VisualAnalysisModal: React.FC<VisualAnalysisModalProps> = ({
                                                 ))}
                                             </Pie>
                                         <Tooltip 
-                                            formatter={(v: number) => formatCurrency(v)}
+                                            formatter={(v: any) => formatCurrency(Number(v))}
                                             contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
                                         />
                                             <Legend 
@@ -439,7 +439,7 @@ export const VisualAnalysisModal: React.FC<VisualAnalysisModalProps> = ({
                                                 <LabelList 
                                                     dataKey="percent" 
                                                     position="top" 
-                                                    formatter={(v: number) => `${v.toFixed(1)}%`}
+                                                    formatter={(v: any) => `${Number(v).toFixed(1)}%`}
                                                     style={{ fontSize: '9px', fontWeight: '900', fill: '#64748b' }}
                                                 />
                                             </Bar>
