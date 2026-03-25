@@ -30,15 +30,6 @@ interface ProductItem {
   lastPurchaseDate: string;
 }
 
-interface SaleRecord {
-  cnpj: string;
-  data: string;
-  faturamento: number | string;
-  codigo_produto?: string;
-  produto: string;
-  qtde_faturado: number | string;
-}
-
 interface TargetRecord {
   mes: number;
   valor: number;
@@ -69,29 +60,12 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
     setIsLoading(true);
     const cleanedCnpj = cleanCnpj(client.cnpj);
     
-    let salesData: SaleRecord[] = [];
     let targetsData: TargetRecord[] = [];
 
     try {
-      const localSales = totalDataStore.sales.filter(s => String(s.cnpj || '').replace(/\D/g, '') === cleanedCnpj) as unknown as SaleRecord[];
+      const localSales = totalDataStore.vendasProdutosMes.filter(s => String(s.cnpj || '').replace(/\D/g, '') === cleanedCnpj);
       
-      if (localSales.length > 0) {
-          salesData = localSales.filter(s => {
-              const d = new Date(s.data + 'T00:00:00');
-              return d.getUTCFullYear() === year;
-          });
-      } else {
-          const startDate = `${year}-01-01`;
-          const endDate = `${year}-12-31`;
-          const { data, error } = await supabase
-            .from('dados_vendas')
-            .select('*')
-            .eq('cnpj', cleanedCnpj) 
-            .gte('data', startDate)
-            .lte('data', endDate);
-          if (error) throw error;
-          salesData = data || [];
-      }
+      const salesData = localSales.filter(s => s.ano === year);
 
       const { data: targets } = await supabase
         .from('metas_clientes')
@@ -103,13 +77,10 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
 
       const monthlyHistory = Array.from({ length: 12 }, (_, i) => {
         const monthNum = i + 1;
-        const monthSales = salesData.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return d.getUTCMonth() + 1 === monthNum;
-        });
+        const monthSales = salesData.filter(s => s.mes === monthNum);
         
         const monthTarget = targetsData.find(t => t.mes === monthNum)?.valor || 0;
-        const totalFaturado = monthSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+        const totalFaturado = monthSales.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
         
         return {
           month: monthNum,
@@ -123,18 +94,19 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
       const productMap = new Map<string, ProductItem>();
       salesData.forEach(s => {
         const key = s.codigo_produto || s.produto;
+        const saleDate = `${s.ano}-${String(s.mes).padStart(2, '0')}-01`;
         const current = productMap.get(key) || { 
           id: key, 
           name: s.produto, 
           totalValue: 0, 
           quantity: 0, 
-          lastPurchaseDate: s.data 
+          lastPurchaseDate: saleDate 
         };
         productMap.set(key, {
           ...current,
-          totalValue: current.totalValue + (Number(s.faturamento) || 0),
-          quantity: current.quantity + (Number(s.qtde_faturado) || 0),
-          lastPurchaseDate: new Date(s.data) > new Date(current.lastPurchaseDate) ? s.data : current.lastPurchaseDate
+          totalValue: current.totalValue + (Number(s.faturamento_total) || 0),
+          quantity: current.quantity + (Number(s.qtde_total) || 0),
+          lastPurchaseDate: saleDate > current.lastPurchaseDate ? saleDate : current.lastPurchaseDate
         });
       });
 
@@ -463,14 +435,14 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({ client, in
 
         {showProducts && (
           <ClientProductsModal 
-            client={{ ...client, products: productsData } as any} 
+            client={{ ...client, products: productsData } as { id: string; cnpj: string; nome_fantasia: string; products: ProductItem[] }} 
             onClose={() => setShowProducts(false)} 
           />
         )}
 
         {showLastPurchase && (
           <ClientLastPurchaseModal
-            client={{ ...client, products: productsData } as any}
+            client={{ ...client, products: productsData } as { id: string; cnpj: string; nome_fantasia: string; products: ProductItem[] }}
             onClose={() => setShowLastPurchase(false)}
           />
         )}

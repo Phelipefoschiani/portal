@@ -32,28 +32,28 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
 
   const years = useMemo(() => {
     const yearsSet = new Set<string>();
-    totalDataStore.sales.forEach(s => {
-      if (s.data) yearsSet.add(s.data.substring(0, 4));
+    totalDataStore.vendasProdutosMes.forEach(s => {
+      if (s.ano) yearsSet.add(String(s.ano));
     });
     return Array.from(yearsSet).sort((a, b) => b.localeCompare(a));
   }, []);
 
   const categories = useMemo(() => {
     const catSet = new Set<string>();
-    totalDataStore.sales.forEach(s => {
+    totalDataStore.vendasProdutosMes.forEach(s => {
       if (s.grupo) catSet.add(s.grupo.trim().toUpperCase());
     });
     return Array.from(catSet).sort();
   }, []);
 
   const filteredProducts = useMemo(() => {
-    const clientSales = totalDataStore.sales.filter(s => s.cnpj === client.cnpj);
+    const clientSales = totalDataStore.vendasProdutosMes.filter(s => s.cnpj === client.cnpj);
     
     const productMap = new Map<string, Product>();
     
     clientSales.forEach(s => {
-      const year = s.data.substring(0, 4);
-      const month = s.data.substring(5, 7);
+      const year = String(s.ano);
+      const month = String(s.mes).padStart(2, '0');
       const category = (s.grupo || 'GERAL').trim().toUpperCase();
       
       if (selectedYear !== 'all' && year !== selectedYear) return;
@@ -72,11 +72,13 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
         category
       };
       
+      const saleDate = `${year}-${month}-01`;
+
       productMap.set(prodName, {
         ...current,
-        quantity: current.quantity + (Number(s.qtde_faturado) || 0),
-        totalValue: current.totalValue + (Number(s.faturamento) || 0),
-        lastPurchaseDate: s.data > current.lastPurchaseDate ? s.data : current.lastPurchaseDate
+        quantity: current.quantity + (Number(s.qtde_total) || 0),
+        totalValue: current.totalValue + (Number(s.faturamento_total) || 0),
+        lastPurchaseDate: saleDate > current.lastPurchaseDate ? saleDate : current.lastPurchaseDate
       });
     });
     

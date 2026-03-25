@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, ArrowUpRight, ArrowDownRight, Loader2, Award, LineChart } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { Button } from '../Button';
 import html2canvas from 'html2canvas';
 
 interface RepData {
     id: string;
     nome: string;
-    role: string;
+    role?: string;
 }
 
 interface MonthlyPerformance {
@@ -41,13 +40,11 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const monthShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-    useEffect(() => { fetchRepData(); }, [year, rep.id]);
-
     const cleanCnpj = (val: string) => String(val || '').replace(/\D/g, '');
 
     const fetchAllSales = async (userId: string, start: string, end: string) => {
         let allData: { faturamento: number | string; data: string; cnpj: string }[] = [];
-        let pageSize = 1000;
+        const pageSize = 1000;
         let from = 0;
         let hasMore = true;
 
@@ -72,7 +69,7 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
         return allData;
     };
 
-    const fetchRepData = async () => {
+    const fetchRepData = useCallback(async () => {
         setIsLoading(true);
         try {
             const sales = await fetchAllSales(rep.id, `${year}-01-01`, `${year}-12-31`);
@@ -121,8 +118,16 @@ export const RepPerformanceModal: React.FC<RepPerformanceModalProps> = ({ rep, y
             const avgAchievement = monthsDone.length > 0 ? monthsDone.reduce((a: number, b: MonthlyPerformance) => a + (b.target > 0 ? b.sales / b.target : 0), 0) / monthsDone.length : 0;
             
             setData({ monthly, avgAchievement });
-        } catch (e) { console.error(e); } finally { setIsLoading(false); }
-    };
+        } catch (e: unknown) { 
+            console.error(e); 
+        } finally { 
+            setIsLoading(false); 
+        }
+    }, [rep.id, year]);
+
+    useEffect(() => { 
+        fetchRepData(); 
+    }, [fetchRepData]);
 
     const filteredMonthlyData = useMemo(() => {
         if (!data) return [];

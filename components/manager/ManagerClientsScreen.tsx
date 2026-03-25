@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, Users, Building2, User, Loader2, TrendingUp, Tag, Info, CalendarClock, Calendar, FileSpreadsheet, CheckSquare, Square, ChevronDown, CalendarDays, MoreHorizontal, Filter } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Search, Building2, User, Loader2, TrendingUp, Tag, Info, CalendarClock, Calendar, FileSpreadsheet, CheckSquare, Square, ChevronDown, CalendarDays, MoreHorizontal, Filter } from 'lucide-react';
 import { ClientDetailModal } from '../ClientDetailModal';
 import { ClientLastPurchaseDetailModal } from '../ClientLastPurchaseDetailModal';
 import { ClientScoreCardModal } from '../ClientScoreCardModal';
@@ -28,7 +27,6 @@ interface Client {
 
 export const ManagerClientsScreen: React.FC = () => {
     const now = new Date();
-    const [isLoading, setIsLoading] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [selectedRep, setSelectedRep] = useState('all');
     const [selectedChannel, setSelectedChannel] = useState('all');
@@ -82,7 +80,8 @@ export const ManagerClientsScreen: React.FC = () => {
 
     // 2. Motor de Processamento com Base Dinâmica
     const processedData = useMemo(() => {
-        const sales = totalDataStore.sales;
+        const vendasClientesMes = totalDataStore.vendasClientesMes;
+        const clientesUltimaCompra = totalDataStore.clientesUltimaCompra;
         const clients = totalDataStore.clients;
         const usersMap = new Map(totalDataStore.users.map(u => [u.id, u.nome]));
 
@@ -115,37 +114,40 @@ export const ManagerClientsScreen: React.FC = () => {
         const filteredCnpjs = new Set(filteredClientsBase.map(c => String(c.cnpj || '').replace(/\D/g, '')));
 
         // Filtro B: Vendas APENAS dos clientes filtrados acima e no ANO/MÊS selecionado
-        const relevantSales = sales.filter(s => {
+        const relevantSales = vendasClientesMes.filter(s => {
             const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
             const matchClient = filteredCnpjs.has(cleanCnpj);
-            const saleDate = new Date(s.data + 'T00:00:00');
-            const matchYear = selectedYear === 'all' ? true : saleDate.getUTCFullYear() === selectedYear;
-            const matchMonth = selectedMonths.includes(saleDate.getUTCMonth() + 1);
+            const matchYear = selectedYear === 'all' ? true : s.ano === selectedYear;
+            const matchMonth = selectedMonths.includes(s.mes);
             return matchClient && matchYear && matchMonth;
         });
 
-        const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
+        const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento_total) || 0), 0);
 
         // Mapear faturamento individual e última data de compra
         const statsMap = new Map<string, { faturamento: number; lastDate: string; lastValue: number }>();
+        
+        // Preencher lastDate e lastValue a partir de clientesUltimaCompra
+        clientesUltimaCompra.forEach(c => {
+            if (c.cnpj) {
+                const cleanCnpj = String(c.cnpj).replace(/\D/g, '');
+                if (filteredCnpjs.has(cleanCnpj)) {
+                    statsMap.set(cleanCnpj, {
+                        faturamento: 0,
+                        lastDate: c.ultima_compra || '0000-00-00',
+                        lastValue: Number(c.valor_ultima_compra) || 0
+                    });
+                }
+            }
+        });
+
         relevantSales.forEach(s => {
             const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
             const current = statsMap.get(cleanCnpj) || { faturamento: 0, lastDate: '0000-00-00', lastValue: 0 };
             
-            let newLastDate = current.lastDate;
-            let newLastValue = current.lastValue;
-            
-            if (s.data > current.lastDate) {
-                newLastDate = s.data;
-                newLastValue = Number(s.faturamento) || 0;
-            } else if (s.data === current.lastDate) {
-                newLastValue += Number(s.faturamento) || 0;
-            }
-
             statsMap.set(cleanCnpj, {
-                faturamento: current.faturamento + (Number(s.faturamento) || 0),
-                lastDate: newLastDate,
-                lastValue: newLastValue
+                ...current,
+                faturamento: current.faturamento + (Number(s.faturamento_total) || 0),
             });
         });
 
@@ -285,27 +287,6 @@ export const ManagerClientsScreen: React.FC = () => {
         setSelectedClientForMenu(null);
         setModalClient(client);
         setActiveModal(action);
-    };
-
-    const getClientProducts = (clientCnpj: string) => {
-        const clientSales = totalDataStore.sales.filter(s => s.cnpj === clientCnpj);
-        const productMap = new Map<string, { id: string, name: string, lastPurchaseDate: string, quantity: number, totalValue: number }>();
-        clientSales.forEach(s => {
-            const current = productMap.get(s.produto_nome) || { 
-                id: s.produto_id || s.produto_nome, 
-                name: s.produto_nome, 
-                lastPurchaseDate: '0000-00-00', 
-                quantity: 0, 
-                totalValue: 0 
-            };
-            productMap.set(s.produto_nome, {
-                ...current,
-                lastPurchaseDate: s.data > current.lastPurchaseDate ? s.data : current.lastPurchaseDate,
-                quantity: current.quantity + (Number(s.quantidade) || 0),
-                totalValue: current.totalValue + (Number(s.faturamento) || 0)
-            });
-        });
-        return Array.from(productMap.values());
     };
 
     return (

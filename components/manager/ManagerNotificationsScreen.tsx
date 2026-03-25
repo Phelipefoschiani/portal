@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Bell, Plus, Trash2, Eye, X, Loader2, Send, CheckCircle, Clock, FileText, CheckSquare, Square, Download, Search, AlertTriangle, CalendarDays, User, Filter, AlertOctagon, Image as ImageIcon, Inbox, ArrowRight } from 'lucide-react';
 import { Button } from '../Button';
 import { Input } from '../Input';
@@ -33,7 +33,6 @@ interface Notification {
 }
 
 export const ManagerNotificationsScreen: React.FC = () => {
-    const now = new Date();
     const [activeTab, setActiveTab] = useState<TabType>('new');
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
@@ -71,20 +70,6 @@ export const ManagerNotificationsScreen: React.FC = () => {
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const days = Array.from({ length: 31 }, (_, i) => String(i + 1));
 
-    useEffect(() => {
-        fetchAllUsers();
-    }, []);
-
-    useEffect(() => {
-        if (activeTab === 'history') {
-            fetchHistory();
-            setSelectedHistoryIds([]);
-        } else if (activeTab === 'inbox') {
-            fetchInbox();
-            setSelectedHistoryIds([]);
-        }
-    }, [activeTab, historyFilterYear, historyFilterMonth, historyFilterDay]);
-
     const fetchAllUsers = async () => {
         const { data } = await supabase
             .from('usuarios')
@@ -93,7 +78,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
         setAllUsers(data || []);
     };
 
-    const fetchHistory = async () => {
+    const fetchHistory = useCallback(async () => {
         setIsLoading(true);
         try {
             // OTIMIZAÇÃO: Select apenas na tabela principal, SEM JOIN pesado com anexos
@@ -127,8 +112,8 @@ export const ManagerNotificationsScreen: React.FC = () => {
 
             const normalizedData = (data || []).map((item: Notification) => ({
                 ...item,
-                para_usuario_id: item.para_usuario_id || (item as any).Para_usuario_id || (item as any).para_Usuario_Id,
-                de_usuario_id: item.de_usuario_id || (item as any).De_usuario_id || (item as any).de_Usuario_Id
+                para_usuario_id: item.para_usuario_id || (item as unknown as Record<string, string>).Para_usuario_id || (item as unknown as Record<string, string>).para_Usuario_Id,
+                de_usuario_id: item.de_usuario_id || (item as unknown as Record<string, string>).De_usuario_id || (item as unknown as Record<string, string>).de_Usuario_Id
             }));
 
             setHistory(normalizedData);
@@ -137,9 +122,9 @@ export const ManagerNotificationsScreen: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [historyFilterYear, historyFilterMonth, historyFilterDay]);
 
-    const fetchInbox = async () => {
+    const fetchInbox = useCallback(async () => {
         if (!managerId) return;
         setIsLoading(true);
         try {
@@ -154,17 +139,31 @@ export const ManagerNotificationsScreen: React.FC = () => {
 
             const normalizedData = (data || []).map((item: Notification) => ({
                 ...item,
-                para_usuario_id: item.para_usuario_id || (item as any).Para_usuario_id,
-                de_usuario_id: item.de_usuario_id || (item as any).De_usuario_id
+                para_usuario_id: item.para_usuario_id || (item as unknown as Record<string, string>).Para_usuario_id,
+                de_usuario_id: item.de_usuario_id || (item as unknown as Record<string, string>).De_usuario_id
             }));
 
             setInbox(normalizedData);
-        } catch (e) {
+        } catch (e: unknown) {
             console.error('Erro ao carregar inbox:', e);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [managerId]);
+
+    useEffect(() => {
+        fetchAllUsers();
+    }, []);
+
+    useEffect(() => {
+        if (activeTab === 'history') {
+            fetchHistory();
+            setSelectedHistoryIds([]);
+        } else if (activeTab === 'inbox') {
+            fetchInbox();
+            setSelectedHistoryIds([]);
+        }
+    }, [activeTab, fetchHistory, fetchInbox]);
 
     // --- CARREGAMENTO SOB DEMANDA DOS DETALHES ---
     const handleViewDetails = async (notification: Notification) => {

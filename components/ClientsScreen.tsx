@@ -28,9 +28,9 @@ export const ClientsScreen: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   
   // Modais e Menu
-  const [selectedClientForMenu, setSelectedClientForMenu] = useState<any | null>(null);
+  const [selectedClientForMenu, setSelectedClientForMenu] = useState<Client | null>(null);
   const [activeModal, setActiveModal] = useState<'none' | 'x-ray' | 'last-purchase' | 'mix' | 'replenishment' | 'score-card'>('none');
-  const [modalClient, setModalClient] = useState<any | null>(null);
+  const [modalClient, setModalClient] = useState<Client | null>(null);
 
   const availableYears = [2024, 2025, 2026, 2027];
 
@@ -46,7 +46,7 @@ export const ClientsScreen: React.FC = () => {
   // 2. Motor de Inteligência: Processa Ranking, Participação Dinâmica e Última Compra
   const processedData = useMemo(() => {
     const clients = totalDataStore.clients;
-    const sales = totalDataStore.sales;
+    const sales = totalDataStore.vendasClientesMes;
 
     // Filtrar clientes por busca e canal (Primeira camada de filtro)
     const filteredClientsBase = clients.filter(c => {
@@ -79,34 +79,32 @@ export const ClientsScreen: React.FC = () => {
     const relevantSales = sales.filter(s => {
       const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
       const matchClient = filteredClientCnpjs.has(cleanCnpj);
-      const saleDate = new Date(s.data + 'T00:00:00');
-      const matchYear = selectedYear === 'all' ? true : saleDate.getUTCFullYear() === selectedYear;
+      const matchYear = selectedYear === 'all' ? true : s.ano === selectedYear;
       return matchClient && matchYear;
     });
 
     // Calcular Base 100% do Grupo Filtrado
-    const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
+    const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento_total) || 0), 0);
 
     // Mapear estatísticas por cliente dentro do grupo
     const statsMap = new Map<string, { faturamento: number; lastDate: string; lastValue: number }>();
+    
+    // Para a data da última compra e valor da última compra, usaremos a view clientesUltimaCompra
+    const ultimaCompraMap = new Map<string, { data: string, valor: number }>();
+    totalDataStore.clientesUltimaCompra.forEach(c => {
+        ultimaCompraMap.set(String(c.cnpj).replace(/\D/g, ''), { data: c.ultima_compra, valor: Number(c.valor_ultima_compra) || 0 });
+    });
+
     relevantSales.forEach(s => {
       const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
       const current = statsMap.get(cleanCnpj) || { faturamento: 0, lastDate: '0000-00-00', lastValue: 0 };
       
-      let newLastDate = current.lastDate;
-      let newLastValue = current.lastValue;
+      const ultimaCompraInfo = ultimaCompraMap.get(cleanCnpj);
       
-      if (s.data > current.lastDate) {
-          newLastDate = s.data;
-          newLastValue = Number(s.faturamento) || 0;
-      } else if (s.data === current.lastDate) {
-          newLastValue += Number(s.faturamento) || 0;
-      }
-
       statsMap.set(cleanCnpj, {
-        faturamento: current.faturamento + (Number(s.faturamento) || 0),
-        lastDate: newLastDate,
-        lastValue: newLastValue
+        faturamento: current.faturamento + (Number(s.faturamento_total) || 0),
+        lastDate: ultimaCompraInfo ? ultimaCompraInfo.data : '0000-00-00',
+        lastValue: ultimaCompraInfo ? ultimaCompraInfo.valor : 0
       });
     });
 
@@ -185,34 +183,13 @@ export const ClientsScreen: React.FC = () => {
     }
   };
 
-  const handleAction = (action: any) => {
+  const handleAction = (action: 'last-purchase' | 'x-ray' | 'mix' | 'replenishment' | 'score-card') => {
     const client = selectedClientForMenu;
     setSelectedClientForMenu(null);
     setModalClient(client);
     setActiveModal(action);
   };
 
-  const getClientProducts = (clientCnpj: string) => {
-      const clientSales = totalDataStore.sales.filter(s => s.cnpj === clientCnpj);
-      const productMap = new Map<string, { id: string, name: string, lastPurchaseDate: string, quantity: number, totalValue: number }>();
-      clientSales.forEach(s => {
-          const prodName = s.produto || 'Produto sem nome';
-          const current = productMap.get(prodName) || { 
-              id: s.codigo_produto || prodName, 
-              name: prodName, 
-              lastPurchaseDate: '0000-00-00', 
-              quantity: 0, 
-              totalValue: 0 
-          };
-          productMap.set(prodName, {
-              ...current,
-              lastPurchaseDate: s.data > current.lastPurchaseDate ? s.data : current.lastPurchaseDate,
-              quantity: current.quantity + (Number(s.qtde_faturado) || 0),
-              totalValue: current.totalValue + (Number(s.faturamento) || 0)
-          });
-      });
-      return Array.from(productMap.values());
-  };
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 animate-fadeIn pb-20">
@@ -453,7 +430,7 @@ export const ClientsScreen: React.FC = () => {
 
       {activeModal === 'mix' && modalClient && (
         <ClientProductsModal 
-            client={{ ...modalClient, name: modalClient.nome_fantasia, products: getClientProducts(modalClient.cnpj) }} 
+            client={modalClient} 
             onClose={() => setActiveModal('none')} 
             onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
         />
@@ -461,7 +438,7 @@ export const ClientsScreen: React.FC = () => {
 
       {activeModal === 'replenishment' && modalClient && (
         <ClientLastPurchaseModal 
-            client={{ ...modalClient, name: modalClient.nome_fantasia, products: getClientProducts(modalClient.cnpj) }} 
+            client={modalClient} 
             onClose={() => setActiveModal('none')} 
             onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
         />

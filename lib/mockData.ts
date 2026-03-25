@@ -93,7 +93,7 @@ export const representatives: Representative[] = [];
 export const clients: Client[] = [];
 export const mockInvestments: Investment[] = [];
 export const mockForecasts: ForecastEntry[] = [];
-export let mockNotifications: Notification[] = [];
+export const mockNotifications: Notification[] = [];
 
 export const repSettings = {
     annualTarget: 0, 
@@ -144,13 +144,13 @@ export const markNotificationAsRead = (id: string) => {
 };
 
 // Solicita revisão de notificação
-export const requestRevision = (id: string, requester: string) => {
+export const requestRevision = (id: string) => {
     const n = mockNotifications.find(i => i.id === id);
     if (n) n.revisionRequested = true;
 };
 
 // Cria nova notificação
-export const createNotification = (data: any) => {
+export const createNotification = (data: { content: string; title: string; priority: NotificationPriority; attachments?: Attachment[] }) => {
     const n: Notification = {
         id: Date.now().toString(),
         mensagem: data.content,

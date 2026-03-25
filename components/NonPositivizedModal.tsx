@@ -23,21 +23,19 @@ export const NonPositivizedModal: React.FC<NonPositivizedModalProps> = ({ onClos
   const pendingClients = useMemo(() => {
     if (!totalDataStore.isHydrated) return [];
 
-    const allSales = totalDataStore.sales;
+    const allSales = totalDataStore.vendasClientesMes;
     const myClients = totalDataStore.clients;
 
     const lastPurchaseMap = new Map<string, string>();
-    allSales.forEach(s => {
+    totalDataStore.clientesUltimaCompra.forEach(s => {
         const cleanedS = cleanCnpj(s.cnpj);
-        const current = lastPurchaseMap.get(cleanedS) || '0000-00-00';
-        if (s.data > current) lastPurchaseMap.set(cleanedS, s.data);
+        lastPurchaseMap.set(cleanedS, s.ultima_compra);
     });
 
     const salesInPeriodCnpjs = new Set<string>();
     allSales.forEach(s => {
-      const d = new Date(s.data + 'T00:00:00');
-      const m = d.getUTCMonth() + 1;
-      const y = d.getUTCFullYear();
+      const m = s.mes;
+      const y = s.ano;
       
       if (y === selectedYear && selectedMonths.includes(m)) {
           salesInPeriodCnpjs.add(cleanCnpj(s.cnpj));

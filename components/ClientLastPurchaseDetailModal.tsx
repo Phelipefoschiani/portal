@@ -15,7 +15,10 @@ interface Product {
 }
 
 interface ClientLastPurchaseDetailModalProps {
-    client: any;
+    client: {
+        cnpj: string;
+        nome_fantasia: string;
+    };
     onClose: () => void;
     onBack?: () => void;
 }
@@ -24,20 +27,28 @@ export const ClientLastPurchaseDetailModal: React.FC<ClientLastPurchaseDetailMod
     const [isExporting, setIsExporting] = useState(false);
 
     const lastPurchaseData = useMemo(() => {
-        const clientSales = totalDataStore.sales.filter(s => s.cnpj === client.cnpj && Number(s.faturamento) > 0);
-        if (clientSales.length === 0) return null;
+        const clientUltimaCompra = totalDataStore.clientesUltimaCompra.find(c => c.cnpj === client.cnpj);
+        if (!clientUltimaCompra) return null;
 
-        // Encontrar a data da última compra
-        const lastDate = clientSales.reduce((latest, current) => {
-            return current.data > latest ? current.data : latest;
-        }, '0000-00-00');
+        const lastDateStr = clientUltimaCompra.ultima_compra;
+        if (!lastDateStr) return null;
 
-        // Pegar todos os itens dessa data
-        const lastItems = clientSales.filter(s => s.data === lastDate);
+        const lastDateObj = new Date(lastDateStr + 'T00:00:00');
+        const lastYear = lastDateObj.getUTCFullYear();
+        const lastMonth = lastDateObj.getUTCMonth() + 1;
 
-        const products: Product[] = lastItems.map(item => {
-            const qty = Number(item.qtde_faturado) || 0;
-            const total = Number(item.faturamento) || 0;
+        const clientSalesMonth = totalDataStore.vendasProdutosMes.filter(s => 
+            s.cnpj === client.cnpj && 
+            s.ano === lastYear && 
+            s.mes === lastMonth && 
+            Number(s.faturamento_total) > 0
+        );
+
+        if (clientSalesMonth.length === 0) return null;
+
+        const products: Product[] = clientSalesMonth.map(item => {
+            const qty = Number(item.qtde_total) || 0;
+            const total = Number(item.faturamento_total) || 0;
             return {
                 sku: item.codigo_produto || 'N/I',
                 name: item.produto || 'Produto sem nome',
@@ -91,7 +102,7 @@ export const ClientLastPurchaseDetailModal: React.FC<ClientLastPurchaseDetailMod
         })).sort((a, b) => b.value - a.value);
 
         return {
-            date: lastDate,
+            date: lastDateStr,
             products: sortedProducts,
             totalValue,
             totalSkus,

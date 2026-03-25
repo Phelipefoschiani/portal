@@ -40,7 +40,8 @@ export const Dashboard: React.FC = () => {
   }, []);
 
   const data = useMemo(() => {
-    const sales = totalDataStore.sales;
+    const vendasConsolidadas = totalDataStore.vendasConsolidadas;
+    const vendasClientesMes = totalDataStore.vendasClientesMes;
     const targets = totalDataStore.targets;
     const clients = totalDataStore.clients;
 
@@ -48,12 +49,9 @@ export const Dashboard: React.FC = () => {
       .filter(t => t.usuario_id === userId && selectedMonths.includes(t.mes) && t.ano === selectedYear)
       .reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
 
-    const filteredSales = sales.filter(s => {
-      const d = new Date(s.data + 'T00:00:00');
-      const m = d.getUTCMonth() + 1;
-      const y = d.getUTCFullYear();
-      return s.usuario_id === userId && selectedMonths.includes(m) && y === selectedYear;
-    });
+    const filteredVendas = vendasConsolidadas.filter(v => 
+      v.usuario_id === userId && selectedMonths.includes(v.mes) && v.ano === selectedYear
+    );
 
     const portfolio = clients.filter(c => {
       if (c.usuario_id !== userId) return false;
@@ -75,17 +73,18 @@ export const Dashboard: React.FC = () => {
       return false;
     });
 
-    const totalFaturado = filteredSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
-    const salesCnpjs = new Set(filteredSales.map(s => cleanCnpj(s.cnpj)));
+    const totalFaturado = filteredVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
+    
+    const vendasClientes = vendasClientesMes.filter(v => 
+      v.usuario_id === userId && selectedMonths.includes(v.mes) && v.ano === selectedYear
+    );
+    const salesCnpjs = new Set(vendasClientes.map(v => cleanCnpj(v.cnpj)));
     const positivadosCount = portfolio.filter(c => salesCnpjs.has(cleanCnpj(c.cnpj))).length;
 
-    const prevYearSales = sales.filter(s => {
-        const d = new Date(s.data + 'T00:00:00');
-        const m = d.getUTCMonth() + 1;
-        const y = d.getUTCFullYear();
-        return s.usuario_id === userId && selectedMonths.includes(m) && y === (selectedYear - 1);
-    });
-    const totalPrevFaturado = prevYearSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+    const prevYearVendas = vendasConsolidadas.filter(v => 
+      v.usuario_id === userId && selectedMonths.includes(v.mes) && v.ano === (selectedYear - 1)
+    );
+    const totalPrevFaturado = prevYearVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
     const growthPercent = totalPrevFaturado > 0 ? ((totalFaturado / totalPrevFaturado) - 1) * 100 : 0;
 
     return {

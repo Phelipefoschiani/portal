@@ -121,9 +121,9 @@ export const ForecastScreen: React.FC = () => {
         .ilike('observacao', 'WEEKLY_CHECKIN%')
         .order('criado_em', { ascending: false });
       
-      const formattedData = (data || []).map((item: any) => ({
+      const formattedData: WeeklyForecast[] = (data as unknown as WeeklyForecast[] || []).map((item) => ({
         ...item,
-        previsao_clientes: (item.previsao_clientes || []).map((pc: any) => ({
+        previsao_clientes: (item.previsao_clientes || []).map((pc) => ({
           ...pc,
           clientes: Array.isArray(pc.clientes) ? pc.clientes[0] : pc.clientes
         }))
@@ -288,7 +288,7 @@ export const ForecastScreen: React.FC = () => {
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-fadeIn pb-32">
       <div className="flex justify-center mb-6 md:mb-8">
         <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1 overflow-x-auto no-scrollbar w-full md:w-auto">
-          <button onClick={() => setActiveTab('seasonality')} className={`flex-1 md:flex-none px-4 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'seasonality' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>1. Previsão Anual</button>
+          <button onClick={() => setActiveTab('seasonality')} className={`flex-1 md:flex-none px-4 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'seasonality' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>1. Confirmação de Meta Anual</button>
           <button onClick={() => setActiveTab('weekly')} className={`flex-1 md:flex-none px-4 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === 'weekly' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>
             <MousePointer2 className="w-3.5 h-3.5" /> 2. Check-in Semanal
           </button>
@@ -442,7 +442,7 @@ export const ForecastScreen: React.FC = () => {
            <div className="bg-slate-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-6 md:gap-8 border-b-4 border-blue-600">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><BarChart3 className="w-40 h-40" /></div>
                 <div className="text-center md:text-left">
-                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-2">Previsão Anual {selectedYear}</p>
+                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-2">Confirmação de Meta Anual {selectedYear}</p>
                     <h3 className="text-3xl md:text-4xl font-black">{formatBRL((Object.values(adjustedTargets) as number[]).reduce((a: number, b: number) => a + b, 0))}</h3>
                 </div>
                 <div className="bg-white/5 p-4 md:p-6 rounded-3xl border border-white/5 backdrop-blur-sm w-full md:max-w-xs text-center md:text-right">

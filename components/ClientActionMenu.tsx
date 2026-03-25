@@ -4,7 +4,11 @@ import { createPortal } from 'react-dom';
 import { X, ShoppingCart, Activity, Package, RefreshCw, FileText, ChevronRight } from 'lucide-react';
 
 interface ClientActionMenuProps {
-    client: any;
+    client: {
+        id: string;
+        cnpj: string;
+        nome_fantasia: string;
+    };
     onClose: () => void;
     onAction: (action: 'last-purchase' | 'x-ray' | 'mix' | 'replenishment' | 'score-card') => void;
 }

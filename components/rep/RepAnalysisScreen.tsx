@@ -1,9 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, Loader2, Award, BarChart3, RefreshCw, Download, FileText, CheckCircle2, X, Users, DollarSign, ChevronRight, Tag, CheckSquare, Square, ChevronDown, Filter, AlertCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { Target, TrendingUp, ArrowUpRight, ArrowDownRight, Loader2, Award, BarChart3, X, Users, DollarSign, ChevronRight, Tag, CheckSquare, Square, ChevronDown, AlertCircle } from 'lucide-react';
 import { Button } from '../Button';
-import html2canvas from 'html2canvas';
 import { createPortal } from 'react-dom';
 import { totalDataStore } from '../../lib/dataStore';
 
@@ -21,13 +19,16 @@ const MonthlyChannelBreakdown: React.FC<{
             clientNameLookup.set(clean, c.nome_fantasia);
         });
 
-        const sales = totalDataStore.sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return s.usuario_id === userId && d.getUTCMonth() === monthIdx && d.getUTCFullYear() === year;
+        const sales = totalDataStore.vendasConsolidadas.filter(s => {
+            return s.usuario_id === userId && s.mes === (monthIdx + 1) && s.ano === year;
         });
 
-        const monthTotal = sales.reduce((a, b) => a + Number(b.faturamento), 0);
-        const channelMap = new Map<string, any>();
+        const monthTotal = sales.reduce((a, b) => a + Number(b.faturamento_total), 0);
+        const channelMap = new Map<string, {
+            label: string;
+            total: number;
+            clients: Map<string, { name: string; total: number }>;
+        }>();
 
         sales.forEach(s => {
             const cName = s.canal_vendas || 'GERAL / OUTROS';
@@ -35,16 +36,21 @@ const MonthlyChannelBreakdown: React.FC<{
                 channelMap.set(cName, { label: cName, total: 0, clients: new Map() });
             }
             const channel = channelMap.get(cName);
-            channel.total += Number(s.faturamento);
+            if (channel) {
+                channel.total += Number(s.faturamento_total);
 
-            const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
-            if (!channel.clients.has(cnpjClean)) {
-                channel.clients.set(cnpjClean, { 
-                    name: (s.cliente_nome || clientNameLookup.get(cnpjClean) || `CNPJ: ${s.cnpj}`).trim().toUpperCase(), 
-                    total: 0 
-                });
+                const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
+                if (!channel.clients.has(cnpjClean)) {
+                    channel.clients.set(cnpjClean, { 
+                        name: (s.cliente_nome || clientNameLookup.get(cnpjClean) || `CNPJ: ${s.cnpj}`).trim().toUpperCase(), 
+                        total: 0 
+                    });
+                }
+                const client = channel.clients.get(cnpjClean);
+                if (client) {
+                    client.total += Number(s.faturamento_total);
+                }
             }
-            channel.clients.get(cnpjClean).total += Number(s.faturamento);
         });
 
         return Array.from(channelMap.values())
@@ -53,8 +59,8 @@ const MonthlyChannelBreakdown: React.FC<{
                 ...ch,
                 shareInMonth: monthTotal > 0 ? (ch.total / monthTotal) * 100 : 0,
                 clients: Array.from(ch.clients.values())
-                    .sort((a: any, b: any) => b.total - a.total)
-                    .map((c: any) => ({
+                    .sort((a, b) => b.total - a.total)
+                    .map(c => ({
                         ...c,
                         shareInChannel: ch.total > 0 ? (c.total / ch.total) * 100 : 0
                     }))
@@ -94,7 +100,7 @@ const MonthlyChannelBreakdown: React.FC<{
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {channel.clients.map((client: any, clIdx: number) => (
+                                {channel.clients.map((client, clIdx) => (
                                     <tr key={clIdx} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-4 md:px-6 py-3 text-[10px] md:text-[11px] font-bold text-slate-700 uppercase truncate max-w-[150px] md:max-w-[300px]">{client.name}</td>
                                         <td className="px-4 md:px-6 py-3 text-right font-black text-slate-900 text-[10px] md:text-[11px] tabular-nums">{formatBRL(client.total)}</td>
@@ -112,20 +118,23 @@ const MonthlyChannelBreakdown: React.FC<{
     );
 };
 
+interface MonthlyStat {
+    month: number;
+    sales: number;
+    target: number;
+    prevSales: number;
+    positive: number;
+}
+
 export const RepAnalysisScreen: React.FC = () => {
     const now = new Date();
-    const [isLoading, setIsLoading] = useState(false);
-    const [isExporting, setIsExporting] = useState(false);
-    
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const [stats, setStats] = useState<any>(null);
     const [selectedMonthIdx, setSelectedMonthIdx] = useState<number | null>(null);
-    const exportRef = useRef<HTMLDivElement>(null);
 
     const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
     const userId = session.id;
@@ -143,47 +152,35 @@ export const RepAnalysisScreen: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    useEffect(() => {
-        processPerformanceData();
-    }, [selectedYear, selectedMonths, userId]);
+    const stats: { monthly: MonthlyStat[] } = useMemo(() => {
+        const sales = totalDataStore.vendasConsolidadas;
+        const targets = totalDataStore.targets;
 
-    const processPerformanceData = () => {
-        setIsLoading(true);
-        try {
-            const sales = totalDataStore.sales;
-            const targets = totalDataStore.targets;
-
-            const monthly = Array.from({ length: 12 }, (_, i) => {
-                const month = i + 1;
-                
-                const mSalesList = sales.filter(s => {
-                    const d = new Date(s.data + 'T00:00:00');
-                    return s.usuario_id === userId && d.getUTCFullYear() === selectedYear && (d.getUTCMonth() + 1) === month;
-                });
-
-                const mSales = mSalesList.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
-                
-                const mPrevSales = sales.filter(s => {
-                    const d = new Date(s.data + 'T00:00:00');
-                    return s.usuario_id === userId && d.getUTCFullYear() === (selectedYear - 1) && (d.getUTCMonth() + 1) === month;
-                }).reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
-                
-                const mTarget = targets.find(t => 
-                    t.usuario_id === userId && t.ano === selectedYear && t.mes === month
-                )?.valor || 0;
-
-                const mPositive = new Set(mSalesList.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
-
-                return { month, sales: mSales, target: mTarget, prevSales: mPrevSales, positive: mPositive };
+        const monthly = Array.from({ length: 12 }, (_, i) => {
+            const month = i + 1;
+            
+            const mSalesList = sales.filter(s => {
+                return s.usuario_id === userId && s.ano === selectedYear && s.mes === month;
             });
 
-            setStats({ monthly });
-        } catch (e) {
-            console.error('Erro ao processar performance:', e);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+            const mSales = mSalesList.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
+            
+            const mPrevSales = sales.filter(s => {
+                return s.usuario_id === userId && s.ano === (selectedYear - 1) && s.mes === month;
+            }).reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
+            
+            const targetObj = targets.find(t => 
+                t.usuario_id === userId && t.ano === selectedYear && t.mes === month
+            );
+            const mTarget = targetObj ? Number(targetObj.valor) : 0;
+
+            const mPositive = new Set(mSalesList.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
+
+            return { month, sales: mSales, target: mTarget, prevSales: mPrevSales, positive: mPositive };
+        });
+
+        return { monthly };
+    }, [selectedYear, userId]);
 
     const handleApplyFilter = () => {
         setSelectedMonths([...tempSelectedMonths]);
@@ -201,9 +198,9 @@ export const RepAnalysisScreen: React.FC = () => {
 
     const kpis = useMemo(() => {
         if (!stats) return { meta: 0, faturado: 0, reach: 0 };
-        const filtered = stats.monthly.filter((m: any) => selectedMonths.includes(m.month));
-        const meta = filtered.reduce((a: number, b: any) => a + b.target, 0);
-        const faturado = filtered.reduce((a: number, b: any) => a + b.sales, 0);
+        const filtered = stats.monthly.filter(m => selectedMonths.includes(m.month));
+        const meta = filtered.reduce((a, b) => a + b.target, 0);
+        const faturado = filtered.reduce((a, b) => a + b.sales, 0);
         return {
             meta,
             faturado,
@@ -329,8 +326,9 @@ export const RepAnalysisScreen: React.FC = () => {
                 </div>
 
                 <div className="h-[200px] md:h-[350px] w-full flex items-end justify-between gap-1.5 md:gap-6 px-1 md:pt-10 border-b border-slate-100">
-                    {stats.monthly.map((item: any, idx: number) => {
-                        const maxInChart = Math.max(...stats.monthly.flatMap((d: any) => [d.sales, d.target])) * 1.2 || 1;
+                    {stats.monthly.map((item: MonthlyStat, idx: number) => {
+                        const maxVal = Math.max(...stats.monthly.flatMap((d: MonthlyStat) => [d.sales, d.target]));
+                        const maxInChart = maxVal > 0 ? maxVal * 1.2 : 1;
                         const salesHeight = (item.sales / maxInChart) * 100;
                         const targetHeight = (item.target / maxInChart) * 100;
                         const achievement = item.target > 0 ? (item.sales / item.target) * 100 : 0;
@@ -378,7 +376,7 @@ export const RepAnalysisScreen: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                        {stats.monthly.filter((m: any) => selectedMonths.includes(m.month)).map((m: any, idx: number) => {
+                        {stats.monthly.filter((m: MonthlyStat) => selectedMonths.includes(m.month)).map((m: MonthlyStat, idx: number) => {
                             const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                             const growth = m.prevSales > 0 ? ((m.sales / m.prevSales) - 1) * 100 : 0;
                             return (
@@ -422,7 +420,7 @@ export const RepAnalysisScreen: React.FC = () => {
 
             {/* Visualização de Dados Mensais (Mobile) - Layout em Cards Empilhados */}
             <div className="md:hidden space-y-3 px-2">
-                {stats.monthly.filter((m: any) => selectedMonths.includes(m.month)).map((m: any, idx: number) => {
+                {stats.monthly.filter((m: MonthlyStat) => selectedMonths.includes(m.month)).map((m: MonthlyStat, idx: number) => {
                     const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                     return (
                         <div 
@@ -479,34 +477,38 @@ export const RepAnalysisScreen: React.FC = () => {
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-white">
-                            {/* Resumo no Modal - Grid 2x2 no mobile */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                                <div className="bg-slate-50 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 flex flex-col justify-center">
-                                    <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Real</p>
-                                    <p className="text-xs md:text-xl font-black text-blue-600 tabular-nums">{formatBRL(stats.monthly[selectedMonthIdx].sales)}</p>
-                                </div>
-                                <div className="bg-slate-50 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 flex flex-col justify-center">
-                                    <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta</p>
-                                    <p className="text-xs md:text-xl font-black text-slate-900 tabular-nums">{formatBRL(stats.monthly[selectedMonthIdx].target)}</p>
-                                </div>
-                                <div className="bg-slate-50 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 flex flex-col justify-center">
-                                    <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Atingimento</p>
-                                    <p className={`text-xs md:text-xl font-black tabular-nums ${stats.monthly[selectedMonthIdx].sales >= stats.monthly[selectedMonthIdx].target ? 'text-emerald-600' : 'text-red-600'}`}>
-                                        {(stats.monthly[selectedMonthIdx].target > 0 ? (stats.monthly[selectedMonthIdx].sales / stats.monthly[selectedMonthIdx].target) * 100 : 0).toFixed(1)}%
-                                    </p>
-                                </div>
-                                <div className="bg-slate-900 p-4 md:p-5 rounded-2xl md:rounded-3xl text-white shadow-lg flex flex-col justify-center">
-                                    <p className="text-[7px] md:text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Positivação</p>
-                                    <p className="text-xs md:text-xl font-black text-white">{stats.monthly[selectedMonthIdx].positive} Clts</p>
-                                </div>
-                            </div>
+                            {selectedMonthIdx !== null && (
+                                <>
+                                    {/* Resumo no Modal - Grid 2x2 no mobile */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                                        <div className="bg-slate-50 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 flex flex-col justify-center">
+                                            <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Real</p>
+                                            <p className="text-xs md:text-xl font-black text-blue-600 tabular-nums">{formatBRL(stats.monthly[selectedMonthIdx].sales)}</p>
+                                        </div>
+                                        <div className="bg-slate-50 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 flex flex-col justify-center">
+                                            <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta</p>
+                                            <p className="text-xs md:text-xl font-black text-slate-900 tabular-nums">{formatBRL(stats.monthly[selectedMonthIdx].target)}</p>
+                                        </div>
+                                        <div className="bg-slate-50 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 flex flex-col justify-center">
+                                            <p className="text-[7px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Atingimento</p>
+                                            <p className={`text-xs md:text-xl font-black tabular-nums ${stats.monthly[selectedMonthIdx].sales >= stats.monthly[selectedMonthIdx].target ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                {(stats.monthly[selectedMonthIdx].target > 0 ? (stats.monthly[selectedMonthIdx].sales / stats.monthly[selectedMonthIdx].target) * 100 : 0).toFixed(1)}%
+                                            </p>
+                                        </div>
+                                        <div className="bg-slate-900 p-4 md:p-5 rounded-2xl md:rounded-3xl text-white shadow-lg flex flex-col justify-center">
+                                            <p className="text-[7px] md:text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Positivação</p>
+                                            <p className="text-xs md:text-xl font-black text-white">{stats.monthly[selectedMonthIdx].positive} Clts</p>
+                                        </div>
+                                    </div>
 
-                            <MonthlyChannelBreakdown 
-                                monthIdx={selectedMonthIdx} 
-                                year={selectedYear} 
-                                userId={userId} 
-                                formatBRL={formatBRL} 
-                            />
+                                    <MonthlyChannelBreakdown 
+                                        monthIdx={selectedMonthIdx} 
+                                        year={selectedYear} 
+                                        userId={userId} 
+                                        formatBRL={formatBRL} 
+                                    />
+                                </>
+                            )}
                         </div>
 
                         <div className="p-4 md:p-6 bg-slate-50 border-t border-slate-100 flex justify-end">

@@ -66,10 +66,10 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
       
       if (error) throw error;
       
-      const normalizedData = (data || []).map((item: any) => ({
+      const normalizedData = (data as unknown as Notification[] || []).map((item) => ({
           ...item,
-          para_usuario_id: item.para_usuario_id || item.Para_usuario_id || item.para_Usuario_Id,
-          de_usuario_id: item.de_usuario_id || item.De_usuario_id || item.de_Usuario_Id
+          para_usuario_id: item.para_usuario_id || (item as unknown as Record<string, string>).Para_usuario_id || (item as unknown as Record<string, string>).para_Usuario_Id,
+          de_usuario_id: item.de_usuario_id || (item as unknown as Record<string, string>).De_usuario_id || (item as unknown as Record<string, string>).de_Usuario_Id
       })) as Notification[];
 
       setNotifications(normalizedData);
@@ -91,10 +91,10 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
           
           if (error) throw error;
 
-          const normalizedData = (data || []).map((item: any) => ({
+          const normalizedData = (data as unknown as Notification[] || []).map((item) => ({
               ...item,
-              para_usuario_id: item.para_usuario_id || item.Para_usuario_id || item.para_Usuario_Id,
-              de_usuario_id: item.de_usuario_id || item.De_usuario_id || item.de_Usuario_Id
+              para_usuario_id: item.para_usuario_id || (item as unknown as Record<string, string>).Para_usuario_id || (item as unknown as Record<string, string>).para_Usuario_Id,
+              de_usuario_id: item.de_usuario_id || (item as unknown as Record<string, string>).De_usuario_id || (item as unknown as Record<string, string>).de_Usuario_Id
           })) as Notification[];
 
           setSentMessages(normalizedData);
@@ -360,7 +360,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                     {['all', 'info', 'important', 'urgent', 'attachments'].map(f => (
                         <button 
                             key={f}
-                            onClick={() => setActiveFilter(f as any)} 
+                            onClick={() => setActiveFilter(f as FilterType)} 
                             className={`flex-none px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap ${
                                 activeFilter === f 
                                 ? (f === 'urgent' ? 'bg-red-600 text-white' : f === 'important' ? 'bg-amber-50 text-white' : f === 'attachments' ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white') 
@@ -629,7 +629,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
                     const { title, content } = parseMessage(notif.mensagem);
                     const isExpanded = expandedId === notif.id;
                     const hasAnexo = notif.notificacao_anexos?.length > 0;
-                    const isUrgent = notif.prioridade === 'urgent';
                     const isDetailLoading = loadingAttachments[notif.id];
 
                     return (

@@ -91,31 +91,13 @@ export interface SpecificProductAnalysis {
 export const getActiveClientsForYear = (year: number): Set<string> => {
     const activeClients = new Set<string>();
     const previousYear = year - 1;
-    const lastPurchaseMap = new Map<string, string>();
     
-    totalDataStore.sales.forEach(s => {
-        const d = new Date(s.data + 'T00:00:00');
-        if (d.getUTCFullYear() === previousYear) {
-            const cnpj = String(s.cnpj || '').replace(/\D/g, '');
-            const currentLast = lastPurchaseMap.get(cnpj) || '0000-00-00';
-            if (s.data > currentLast) lastPurchaseMap.set(cnpj, s.data);
-        }
-    });
-
-    const cutOffDate = `${previousYear}-10-01`;
-
-    totalDataStore.clients.forEach(c => {
-        const cnpj = String(c.cnpj || '').replace(/\D/g, '');
-        const lastPurchase = lastPurchaseMap.get(cnpj);
-        
-        if (!lastPurchase) {
-            const hasSalesCurrentYear = totalDataStore.sales.some(s => {
-                const d = new Date(s.data + 'T00:00:00');
-                return d.getUTCFullYear() === year && String(s.cnpj || '').replace(/\D/g, '') === cnpj;
-            });
-            if (hasSalesCurrentYear) activeClients.add(cnpj);
-        } else {
-            if (lastPurchase >= cutOffDate) activeClients.add(cnpj);
+    totalDataStore.vendasConsolidadas.forEach(s => {
+        const cnpj = String(s.cnpj || '').replace(/\D/g, '');
+        if (s.ano === year) {
+            activeClients.add(cnpj);
+        } else if (s.ano === previousYear && s.mes >= 10) {
+            activeClients.add(cnpj);
         }
     });
 

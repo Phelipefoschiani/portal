@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { FileSpreadsheet, Upload, CheckCircle2, AlertTriangle, ShieldCheck, Loader2, Database, RefreshCcw, RotateCcw, CalendarDays } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { FileSpreadsheet, Upload, CheckCircle2, AlertTriangle, ShieldCheck, Loader2, RefreshCcw, RotateCcw, CalendarDays } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '../Button';
 import { supabase } from '../../lib/supabase';
@@ -38,14 +38,6 @@ export const ManagerImportScreen: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-  useEffect(() => {
-    fetchReps();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'reset') calculateBillingSummary();
-  }, [activeTab, resetYear, resetMonth]);
-
   const fetchReps = async () => {
     const { data } = await supabase
       .from('usuarios')
@@ -58,19 +50,26 @@ export const ManagerImportScreen: React.FC = () => {
     setReps(data || []);
   };
 
-  const calculateBillingSummary = () => {
+  const calculateBillingSummary = useCallback(() => {
     setIsLoadingSummary(true);
     const summary: Record<string, number> = {};
-    const filteredSales = totalDataStore.sales.filter(s => {
-        const d = new Date(s.data + 'T00:00:00');
-        return (d.getUTCMonth() + 1) === resetMonth && d.getUTCFullYear() === resetYear;
+    const filteredSales = totalDataStore.vendasConsolidadas.filter(s => {
+        return s.mes === resetMonth && s.ano === resetYear;
     });
     filteredSales.forEach(s => {
-        summary[s.usuario_id] = (summary[s.usuario_id] || 0) + Number(s.faturamento || 0);
+        summary[s.usuario_id] = (summary[s.usuario_id] || 0) + Number(s.faturamento_total || 0);
     });
     setBillingSummary(summary);
     setIsLoadingSummary(false);
-  };
+  }, [resetMonth, resetYear]);
+
+  useEffect(() => {
+    fetchReps();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'reset') calculateBillingSummary();
+  }, [activeTab, calculateBillingSummary]);
 
   const executeReset = async () => {
     if (!confirmResetId) return;
@@ -90,16 +89,15 @@ export const ManagerImportScreen: React.FC = () => {
 
         if (error) throw error;
 
-        totalDataStore.sales = totalDataStore.sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return !(s.usuario_id === confirmResetId && (d.getUTCMonth() + 1) === resetMonth && d.getUTCFullYear() === resetYear);
-        });
-
         setConfirmResetId(null);
+        
+        // Force reload to update views
+        window.location.reload();
+        
         calculateBillingSummary();
         alert('Dados removidos com sucesso!');
-    } catch (e: any) {
-        alert('Erro ao resetar: ' + e.message);
+    } catch (e: unknown) {
+        alert('Erro ao resetar: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
         setIsProcessing(false);
     }
@@ -109,9 +107,9 @@ export const ManagerImportScreen: React.FC = () => {
   const normalizeRepName = (name: string) => name ? name.split('(')[0].trim().toUpperCase() : "";
 
   // FINGERPRINT BLINDADO: Usa toFixed(2) e Trim para evitar duplicação por arredondamento
-  const generateRowFingerprint = (row: Record<string, any>) => {
-    const cnpj = cleanCnpj(row.cnpj);
-    const date = String(row.data).trim();
+  const generateRowFingerprint = (row: Record<string, unknown>) => {
+    const cnpj = cleanCnpj(String(row.cnpj || ''));
+    const date = String(row.data || '').trim();
     const pedido = String(row.pedido || '').trim();
     const nf = String(row.nota_fiscal || '').trim();
     const sku = String(row.codigo_produto || '').trim();
@@ -120,7 +118,7 @@ export const ManagerImportScreen: React.FC = () => {
     return `${cnpj}|${date}|${pedido}|${nf}|${sku}|${vlr}|${qtd}`;
   };
 
-  const getVal = (row: Record<string, any>, keys: string[]) => {
+  const getVal = (row: Record<string, unknown>, keys: string[]) => {
     const foundKey = Object.keys(row).find(k => keys.some(key => k.toLowerCase().trim() === key.toLowerCase().trim()));
     return foundKey ? row[foundKey] : null;
   };
@@ -145,7 +143,7 @@ export const ManagerImportScreen: React.FC = () => {
       const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
       const data = await file.arrayBuffer();
       const workbook = X.read(data);
-      const jsonData: Record<string, any>[] = X.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+      const jsonData: Record<string, unknown>[] = X.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
       if (jsonData.length === 0) throw new Error('A planilha está vazia.');
 
@@ -153,21 +151,21 @@ export const ManagerImportScreen: React.FC = () => {
       reps.forEach(r => repNameToIdMap.set(normalizeRepName(r.nome), r.id));
 
       setCurrentAction('Mapeando estrutura do arquivo...');
-      const dataByRep = new Map<string, any[]>();
+      const dataByRep = new Map<string, Record<string, unknown>[]>();
 
       jsonData.forEach(row => {
         const rawRepName = String(getVal(row, ['Representante', 'Vendedor', 'RCA']) || '');
         const repId = repNameToIdMap.get(normalizeRepName(rawRepName));
 
         if (repId) {
-          let rawDate = getVal(row, ['Data', 'Emissão', 'Data Faturamento']);
-          let formattedDate = typeof rawDate === 'number' 
+          const rawDate = getVal(row, ['Data', 'Emissão', 'Data Faturamento']);
+          const formattedDate = typeof rawDate === 'number' 
             ? new Date(Math.round((rawDate - 25569) * 86400 * 1000)).toISOString().split('T')[0]
-            : new Date(rawDate).toISOString().split('T')[0];
+            : new Date(rawDate as string | number | Date).toISOString().split('T')[0];
 
           const normalizedRow = {
             usuario_id: repId,
-            cnpj: cleanCnpj(getVal(row, ['CNPJ', 'C.N.P.J', 'CGC'])),
+            cnpj: cleanCnpj(getVal(row, ['CNPJ', 'C.N.P.J', 'CGC']) as string | number),
             cliente_nome: String(getVal(row, ['Cliente', 'Razão Social', 'Nome Fantasia']) || '').trim(),
             data: formattedDate,
             pedido: String(getVal(row, ['Pedido', 'Nr. Pedido']) || '').trim(),
@@ -225,25 +223,37 @@ export const ManagerImportScreen: React.FC = () => {
           if (existingFingerprints.has(fingerprint)) { totalIgnored++; return false; }
           return true;
         }).map(row => ({
-          data: row.data, pedido: row.pedido, nota_fiscal: row.nota_fiscal, usuario_id: row.usuario_id,
-          cnpj: row.cnpj, cliente_nome: row.cliente_nome, canal_vendas: row.canal_vendas !== 'null' ? row.canal_vendas : null,
-          grupo: row.grupo !== 'null' ? row.grupo : null, codigo_produto: row.codigo_produto,
-          produto: row.produto, faturamento: row.faturamento, qtde_faturado: row.qtde_faturado
+          data: row.data as string, 
+          pedido: row.pedido as string, 
+          nota_fiscal: row.nota_fiscal as string, 
+          usuario_id: row.usuario_id as string,
+          cnpj: row.cnpj as string, 
+          cliente_nome: row.cliente_nome as string, 
+          canal_vendas: row.canal_vendas !== 'null' ? row.canal_vendas as string : null,
+          grupo: row.grupo !== 'null' ? row.grupo as string : null, 
+          codigo_produto: row.codigo_produto as string,
+          produto: row.produto as string, 
+          faturamento: row.faturamento as number, 
+          qtde_faturado: row.qtde_faturado as number
         }));
 
         if (toInsert.length > 0) {
           const { error } = await supabase.from('dados_vendas').insert(toInsert);
           if (error) throw error;
           totalNewSales += toInsert.length;
-          totalDataStore.sales = [...totalDataStore.sales, ...toInsert];
         }
 
         setStats(prev => ({ ...prev, processedRows: totalNewSales, ignoredRows: totalIgnored, newClientsInserted: totalNewClients }));
         setProgress(Math.round(((i + 1) / repIdsToProcess.length) * 100));
       }
 
-      setStatus({ type: 'success', message: `Concluído! ${totalNewSales} novas vendas importadas. ${totalIgnored} já existiam.` });
+      setStatus({ type: 'success', message: `Concluído! ${totalNewSales} novas vendas importadas. ${totalIgnored} já existiam. A página será recarregada para atualizar os dados.` });
       setFile(null);
+      
+      // Force reload to update views
+      setTimeout(() => {
+          window.location.reload();
+      }, 3000);
     } catch (err: unknown) {
       const error = err as Error;
       setStatus({ type: 'error', message: error.message || 'Erro no processamento.' });

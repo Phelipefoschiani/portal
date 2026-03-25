@@ -34,26 +34,27 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
 
   const years = useMemo(() => {
     const yearsSet = new Set<string>();
-    totalDataStore.sales.forEach(s => {
-      if (s.data) yearsSet.add(s.data.substring(0, 4));
+    totalDataStore.vendasProdutosMes.forEach(s => {
+      if (s.ano) yearsSet.add(String(s.ano));
     });
     return Array.from(yearsSet).sort((a, b) => b.localeCompare(a));
   }, []);
 
   const categories = useMemo(() => {
     const catSet = new Set<string>();
-    totalDataStore.sales.forEach(s => {
+    totalDataStore.vendasProdutosMes.forEach(s => {
       if (s.grupo) catSet.add(s.grupo.trim().toUpperCase());
     });
     return Array.from(catSet).sort();
   }, []);
 
   const allClientProducts = useMemo(() => {
-    const clientSales = totalDataStore.sales.filter(s => s.cnpj === client.cnpj);
+    const clientSales = totalDataStore.vendasProdutosMes.filter(s => s.cnpj === client.cnpj);
     const productMap = new Map<string, Product>();
     
     clientSales.forEach(s => {
       const prodName = s.produto || 'Produto sem nome';
+      const saleDate = `${s.ano}-${String(s.mes).padStart(2, '0')}-01`;
       const current = productMap.get(prodName) || { 
         id: s.codigo_produto || prodName, 
         name: prodName, 
@@ -65,9 +66,9 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
       
       productMap.set(prodName, {
         ...current,
-        lastPurchaseDate: s.data > current.lastPurchaseDate ? s.data : current.lastPurchaseDate,
-        quantity: s.data === current.lastPurchaseDate ? current.quantity + (Number(s.qtde_faturado) || 0) : (s.data > current.lastPurchaseDate ? (Number(s.qtde_faturado) || 0) : current.quantity),
-        totalValue: s.data === current.lastPurchaseDate ? current.totalValue + (Number(s.faturamento) || 0) : (s.data > current.lastPurchaseDate ? (Number(s.faturamento) || 0) : current.totalValue)
+        lastPurchaseDate: saleDate > current.lastPurchaseDate ? saleDate : current.lastPurchaseDate,
+        quantity: saleDate === current.lastPurchaseDate ? current.quantity + (Number(s.qtde_total) || 0) : (saleDate > current.lastPurchaseDate ? (Number(s.qtde_total) || 0) : current.quantity),
+        totalValue: saleDate === current.lastPurchaseDate ? current.totalValue + (Number(s.faturamento_total) || 0) : (saleDate > current.lastPurchaseDate ? (Number(s.faturamento_total) || 0) : current.totalValue)
       });
     });
     

@@ -14,7 +14,7 @@ type KpiDetailType = 'meta' | 'faturado' | 'positivacao' | 'verba' | null;
 interface TeamDetail {
     id: string;
     nome: string;
-    role: string;
+    role?: string;
     meta: number;
     annualMeta: number;
     faturado: number;
@@ -32,9 +32,8 @@ const RepVerbaDetailModal: React.FC<{
 }> = ({ rep, selectedYear, onClose, formatBRL }) => {
     const clientData = useMemo(() => {
         // Busca faturamento anual do cliente para este representante
-        const sales = totalDataStore.sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return s.usuario_id === rep.id && d.getUTCFullYear() === selectedYear;
+        const sales = totalDataStore.vendasClientesMes.filter(s => {
+            return s.usuario_id === rep.id && s.ano === selectedYear;
         });
 
         // Busca investimentos aprovados anuais
@@ -45,13 +44,14 @@ const RepVerbaDetailModal: React.FC<{
 
         const clientMap = new Map<string, { name: string; purchased: number; invested: number }>();
         const clientLookup = new Map(totalDataStore.clients.map(c => [c.id, c.nome_fantasia]));
+        const clientLookupByCnpj = new Map(totalDataStore.clients.map(c => [c.cnpj.replace(/\D/g, ''), c.id]));
 
         // Acumular faturamento por cliente
         sales.forEach(s => {
-            const cId = s.cliente_id;
-            if (!cId) return;
-            const current = clientMap.get(cId) || { name: clientLookup.get(cId) || s.cliente_nome || 'CLIENTE N/I', purchased: 0, invested: 0 };
-            current.purchased += Number(s.faturamento);
+            const cleanCnpj = s.cnpj ? s.cnpj.replace(/\D/g, '') : '';
+            const cId = clientLookupByCnpj.get(cleanCnpj) || cleanCnpj; // fallback to cnpj if id not found
+            const current = clientMap.get(cId) || { name: s.cliente_nome || 'CLIENTE N/I', purchased: 0, invested: 0 };
+            current.purchased += Number(s.faturamento_total);
             clientMap.set(cId, current);
         });
 
@@ -296,7 +296,8 @@ export const ManagerDashboard: React.FC = () => {
 
     const processConsolidatedData = useCallback(() => {
         const reps = totalDataStore.users;
-        const sales = totalDataStore.sales;
+        const vendasConsolidadas = totalDataStore.vendasConsolidadas;
+        const vendasClientesMes = totalDataStore.vendasClientesMes;
         const targets = totalDataStore.targets;
         const invs = totalDataStore.investments;
         const portfolio = totalDataStore.clients;
@@ -305,14 +306,11 @@ export const ManagerDashboard: React.FC = () => {
             const repMeta = targets.filter(t => t.usuario_id === rep.id && selectedMonths.includes(t.mes) && Number(t.ano) === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             const annualMeta = targets.filter(t => t.usuario_id === rep.id && Number(t.ano) === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             
-            const repSalesList = sales.filter(s => {
-                const d = new Date(s.data + 'T00:00:00');
-                const m = d.getUTCMonth() + 1;
-                const y = d.getUTCFullYear();
-                return s.usuario_id === rep.id && selectedMonths.includes(m) && y === selectedYear;
-            });
+            const repSalesList = vendasConsolidadas.filter(v => 
+                v.usuario_id === rep.id && selectedMonths.includes(v.mes) && v.ano === selectedYear
+            );
 
-            const repSales = repSalesList.reduce((a, b) => a + Number(b.faturamento), 0);
+            const repSales = repSalesList.reduce((a, b) => a + Number(b.faturamento_total), 0);
             
             const verbaAnnualUsed = invs.filter(inv => {
                 const d = new Date(inv.data + 'T00:00:00');
@@ -339,7 +337,10 @@ export const ManagerDashboard: React.FC = () => {
                 
                 return false;
             });
-            const salesCnpjs = new Set(repSalesList.map(s => String(s.cnpj || '').replace(/\D/g, '')));
+            const repVendasClientes = vendasClientesMes.filter(v => 
+                v.usuario_id === rep.id && selectedMonths.includes(v.mes) && v.ano === selectedYear
+            );
+            const salesCnpjs = new Set(repVendasClientes.map(v => String(v.cnpj || '').replace(/\D/g, '')));
             const repPosit = repClients.filter(c => salesCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;
 
             return { id: rep.id, nome: rep.nome, role: rep.role, meta: repMeta, annualMeta, faturado: repSales, verbaAnnualUsed, positivacao: repPosit, totalClientes: repClients.length };
@@ -404,7 +405,7 @@ export const ManagerDashboard: React.FC = () => {
         const rows = reps.map(rep => {
             const monthlyTargets = Array.from({ length: 12 }, (_, i) => {
                 const month = i + 1;
-                return allTargets.find(t => t.usuario_id === rep.id && t.mes === month)?.valor || 0;
+                return Number(allTargets.find(t => t.usuario_id === rep.id && t.mes === month)?.valor || 0);
             });
             const totalRep = monthlyTargets.reduce((a, b) => a + b, 0);
             return { rep, monthlyTargets, totalRep };
@@ -493,8 +494,8 @@ export const ManagerDashboard: React.FC = () => {
             // Linhas de dados dos representantes
             const body = matrixData.rows.map(row => [
                 row.rep.nome.toUpperCase(),
-                ...row.monthlyTargets.map(val => val > 0 ? formatBRL(val) : '-'),
-                formatBRL(row.totalRep)
+                ...row.monthlyTargets.map(val => val > 0 ? formatBRL(Number(val)) : '-'),
+                formatBRL(Number(row.totalRep))
             ]);
 
             // Linha de totais regionais no rodapé

@@ -23,7 +23,7 @@ export const NotificationDetailModal: React.FC<NotificationDetailModalProps> = (
   const handleRequestRevision = () => {
      if (window.confirm('Solicitar revisão deste conteúdo ao gerente?')) {
         // Assume usuário padrão para mock. Em prod, passaria user context.
-        requestRevision(notification.id, 'Ricardo Souza');
+        requestRevision(notification.id);
         onUpdate();
         alert('Solicitação de revisão enviada ao gerente.');
      }

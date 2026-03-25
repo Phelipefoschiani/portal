@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { TrendingUp, CheckCircle2, Loader2, X, Trash2, AlertTriangle, RotateCcw, Edit3, Search, Camera } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { TrendingUp, CheckCircle2, Loader2, X, Trash2, AlertTriangle, RotateCcw, Edit3, Search, Camera, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { createPortal } from 'react-dom';
@@ -42,7 +42,6 @@ export const ManagerForecastScreen: React.FC = () => {
     const [isExporting, setIsExporting] = useState(false);
     const [view, setView] = useState<ViewType>('weekly_checkin');
     const [previsoes, setPrevisoes] = useState<Forecast[]>([]);
-    const [showMissingRepsModal, setShowMissingRepsModal] = useState(false);
     const [showResetModal, setShowResetModal] = useState(false);
     
     // Check-in Semanal
@@ -57,15 +56,12 @@ export const ManagerForecastScreen: React.FC = () => {
     // Modal de Detalhe do Histórico
     const [selectedHistoryReport, setSelectedHistoryReport] = useState<Forecast | null>(null);
     const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+    const [showMissingRepsModal, setShowMissingRepsModal] = useState(false);
 
     // Ref para a área de exportação oculta
     const exportContainerRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        fetchData();
-    }, [view]);
-
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
             if (view === 'mensais') {
@@ -99,7 +95,11 @@ export const ManagerForecastScreen: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [view]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     const formatBRL = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
@@ -234,7 +234,7 @@ export const ManagerForecastScreen: React.FC = () => {
             await supabase.from('previsoes').update({ status: 'rejected', previsao_total: newTotal, observacao: `WEEKLY_CHECKIN: [REVISÃO GERENTE: ${rejectionReason.toUpperCase()}]` }).eq('id', reviewModalReport?.id);
             await fetchData();
             setReviewModalReport(null);
-        } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
+        } catch (e: unknown) { alert(e instanceof Error ? e.message : String(e)); } finally { setIsActionLoading(false); }
     };
 
     const handleDeleteForecast = async (id: string) => {
@@ -244,7 +244,7 @@ export const ManagerForecastScreen: React.FC = () => {
             await supabase.from('previsao_clientes').delete().eq('previsao_id', id);
             await supabase.from('previsoes').delete().eq('id', id);
             await fetchData();
-        } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
+        } catch (e: unknown) { alert(e instanceof Error ? e.message : String(e)); } finally { setIsActionLoading(false); }
     };
 
     const executeResetCycle = async () => {
@@ -260,7 +260,7 @@ export const ManagerForecastScreen: React.FC = () => {
             await fetchData();
             setShowResetModal(false);
             alert('Ciclo resetado.');
-        } catch (e: any) { alert(e.message); } finally { setIsActionLoading(false); }
+        } catch (e: unknown) { alert(e instanceof Error ? e.message : String(e)); } finally { setIsActionLoading(false); }
     };
 
     const handleDeleteClientItem = (itemId: string) => {
@@ -322,9 +322,9 @@ export const ManagerForecastScreen: React.FC = () => {
             
             setItemToDelete(null);
 
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
-            alert('Erro ao excluir item: ' + (e.message || 'Erro desconhecido'));
+            alert('Erro ao excluir item: ' + (e instanceof Error ? e.message : 'Erro desconhecido'));
         } finally {
             setIsActionLoading(false);
         }
@@ -343,7 +343,9 @@ export const ManagerForecastScreen: React.FC = () => {
                             <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight uppercase leading-none">
                                 {view === 'mensais' ? 'Confirmação de Meta Anual' : 'Gestão de Previsões Regional'}
                             </h2>
-                            <p className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mt-2">Acompanhamento do faturamento semanal projetado</p>
+                            {view !== 'mensais' && (
+                                <p className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mt-2">Acompanhamento do faturamento semanal projetado</p>
+                            )}
                         </div>
                     </div>
 
@@ -359,7 +361,7 @@ export const ManagerForecastScreen: React.FC = () => {
 
                         <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar">
                             <button onClick={() => setView('weekly_checkin')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${view === 'weekly_checkin' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>Check-in</button>
-                            <button onClick={() => setView('mensais')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${view === 'mensais' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>Ciência Anual</button>
+                            <button onClick={() => setView('mensais')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${view === 'mensais' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>Confirmação de Meta Anual</button>
                         </div>
                     </div>
                 </div>
@@ -372,11 +374,14 @@ export const ManagerForecastScreen: React.FC = () => {
 
                     {view === 'weekly_checkin' ? (
                         <>
-                            <div onClick={() => setShowMissingRepsModal(true)} className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm relative cursor-pointer hover:border-blue-400 transition-all">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Reps s/ Check-in</p>
+                            <div onClick={() => setShowMissingRepsModal(true)} className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm relative cursor-pointer hover:border-blue-400 transition-all group">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-blue-600 transition-colors">Reps s/ Check-in</p>
                                 <div className="flex items-baseline gap-2">
                                     <h3 className="text-3xl font-black text-slate-900">{kpis.missingCount}</h3>
-                                    <span className="text-xs text-slate-400 font-bold">/ {totalDataStore.users.length}</span>
+                                    <span className="text-xs text-slate-400 font-bold">/ {totalDataStore.users.filter(u => u.role === 'rep').length}</span>
+                                </div>
+                                <div className="absolute top-6 right-6 w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                                    <Users className="w-4 h-4 text-slate-400 group-hover:text-blue-600" />
                                 </div>
                             </div>
 
@@ -424,7 +429,7 @@ export const ManagerForecastScreen: React.FC = () => {
 
                         <div className="space-y-4">
                             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest px-4">
-                                {view === 'mensais' ? 'Ciência de Metas Anuais' : 'Histórico Consolidado por Representante'}
+                                {view === 'mensais' ? 'Confirmação de Meta Anual' : 'Histórico Consolidado por Representante'}
                             </h3>
                             <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                                 <table className="w-full text-left">
@@ -486,9 +491,11 @@ export const ManagerForecastScreen: React.FC = () => {
                         <h2 style={{ fontSize: '42px', fontWeight: '900', textTransform: 'uppercase', margin: '0', color: '#0f172a' }}>
                             {view === 'mensais' ? 'Confirmação de Meta Anual' : 'Gestão de Previsões Regional'}
                         </h2>
-                        <p style={{ fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '4px', marginTop: '8px' }}>
-                            Acompanhamento do faturamento semanal projetado
-                        </p>
+                        {view !== 'mensais' && (
+                            <p style={{ fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '4px', marginTop: '8px' }}>
+                                Acompanhamento do faturamento semanal projetado
+                            </p>
+                        )}
                     </div>
                 </div>
 
@@ -674,6 +681,50 @@ export const ManagerForecastScreen: React.FC = () => {
                             >
                                 Cancelar
                             </Button>
+                        </div>
+                    </div>
+                </div>, document.body
+            )}
+
+            {/* Missing Reps Modal */}
+            {showMissingRepsModal && createPortal(
+                <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fadeIn">
+                    <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden border border-white/20 flex flex-col max-h-[80vh]">
+                        <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
+                            <div>
+                                <h3 className="text-xl font-black uppercase tracking-tight">Reps sem Check-in</h3>
+                                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mt-1">Ciclo Atual</p>
+                            </div>
+                            <button onClick={() => setShowMissingRepsModal(false)} className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                            <div className="space-y-3">
+                                {totalDataStore.users
+                                    .filter(u => u.role === 'rep' && !weeklyReports.some(r => r.usuario_id === u.id))
+                                    .sort((a, b) => a.nome.localeCompare(b.nome))
+                                    .map(rep => (
+                                        <div key={rep.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center border border-slate-200 font-black text-slate-400 text-xs">
+                                                    {rep.nome.substring(0, 2).toUpperCase()}
+                                                </div>
+                                                <span className="font-black text-slate-700 uppercase text-[11px]">{rep.nome}</span>
+                                            </div>
+                                            <span className="text-[9px] font-black text-red-500 bg-red-50 px-3 py-1 rounded-full uppercase">Pendente</span>
+                                        </div>
+                                    ))}
+                                {totalDataStore.users.filter(u => u.role === 'rep' && !weeklyReports.some(r => r.usuario_id === u.id)).length === 0 && (
+                                    <div className="text-center py-10">
+                                        <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
+                                        <p className="text-sm font-bold text-slate-400 uppercase">Todos os representantes enviaram!</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="p-6 bg-slate-50 border-t border-slate-100">
+                            <Button fullWidth onClick={() => setShowMissingRepsModal(false)} className="bg-slate-900 text-white rounded-2xl h-14 font-black uppercase text-[10px]">Fechar</Button>
                         </div>
                     </div>
                 </div>, document.body

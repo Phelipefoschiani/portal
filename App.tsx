@@ -12,8 +12,9 @@ import { HydrationScreen } from './components/HydrationScreen';
 import { Sidebar } from './components/Sidebar';
 import { supabase } from './lib/supabase';
 import { checkAndMarkDeliveredNotifications } from './lib/mockData';
-import { Menu, AlertTriangle, X } from 'lucide-react';
+import { Menu, AlertTriangle, X, Loader2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { backgroundSync } from './lib/dataService';
 
 // Rep Screens
 import { RepAnalysisScreen } from './components/rep/RepAnalysisScreen';
@@ -60,6 +61,8 @@ const App: React.FC = () => {
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showImportantNotice, setShowImportantNotice] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [, setUpdateTrigger] = useState(0);
 
   const checkImportantNotices = async (uid: string) => {
       try {
@@ -101,6 +104,22 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated, userRole, userId]);
 
+  useEffect(() => {
+    if (isHydrated && userId) {
+      const startSync = async () => {
+        setIsSyncing(true);
+        try {
+          await backgroundSync(userId, userRole, () => {
+            setUpdateTrigger(prev => prev + 1);
+          });
+        } finally {
+          setIsSyncing(false);
+        }
+      };
+      startSync();
+    }
+  }, [isHydrated, userId, userRole]);
+
   const handleLogin = (name: string, role: 'admin' | 'rep' | 'director', id: string) => {
     setUserName(name);
     setUserRole(role);
@@ -132,11 +151,17 @@ const App: React.FC = () => {
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
   
   if (!isHydrated && userId) {
-    return <HydrationScreen userId={userId} userRole={userRole} onComplete={() => setIsHydrated(true)} />;
+    return <HydrationScreen onComplete={() => setIsHydrated(true)} />;
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row font-inter overflow-x-hidden">
+      {isSyncing && (
+        <div className="fixed top-4 right-4 z-[200] bg-white/90 backdrop-blur-sm border border-blue-100 rounded-full px-4 py-2 shadow-lg flex items-center gap-2 animate-bounce">
+          <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+          <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Atualizando Dados...</span>
+        </div>
+      )}
       <Sidebar 
         currentView={currentView} 
         onChangeView={setCurrentView} 

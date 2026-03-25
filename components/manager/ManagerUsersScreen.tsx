@@ -1,10 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Key, Clock, Search, User, Loader2, Mail, CheckCircle2, AlertCircle, Eye, EyeOff, Hash, Calendar } from 'lucide-react';
+import { ShieldCheck, Search, User, Loader2, Eye, EyeOff, Hash, Calendar, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 export const ManagerUsersScreen: React.FC = () => {
-    const [users, setUsers] = useState<any[]>([]);
+    const [users, setUsers] = useState<{
+        id: string;
+        nome: string;
+        senha_hash: string;
+        nivel_acesso: string;
+        ativo: boolean;
+        ultimo_acesso: string | null;
+    }[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
@@ -54,7 +61,7 @@ export const ManagerUsersScreen: React.FC = () => {
             year: 'numeric',
             hour: '2-digit',
             minute: '2-digit',
-            timeZone: 'America/Sao_Paulo'
+            timeZone: 'America/Porto_Velho'
         });
     };
 

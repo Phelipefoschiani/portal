@@ -11,9 +11,6 @@ interface PositivizedModalProps {
 }
 
 export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, selectedMonths, selectedYear }) => {
-  const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
-  // const userId = session.id; // Removed unused variable
-
   const cleanCnpj = (val: string | null | undefined) => {
     const numeric = String(val || '').replace(/\D/g, '');
     if (numeric.length > 11) return numeric.padStart(14, '0');
@@ -23,7 +20,7 @@ export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, sel
   const list = useMemo(() => {
     if (!totalDataStore.isHydrated) return [];
 
-    const sales = totalDataStore.sales;
+    const sales = totalDataStore.vendasClientesMes;
     const portfolioClients = totalDataStore.clients;
 
     const clientNameMap = new Map<string, string>();
@@ -33,9 +30,8 @@ export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, sel
 
     const summary = new Map<string, { total: number; name: string; originalCnpj: string }>();
     sales.forEach(s => {
-      const d = new Date(s.data + 'T00:00:00');
-      const m = d.getUTCMonth() + 1;
-      const y = d.getUTCFullYear();
+      const m = s.mes;
+      const y = s.ano;
 
       if (y !== selectedYear || !selectedMonths.includes(m)) return;
 
@@ -49,7 +45,7 @@ export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, sel
       };
       
       summary.set(cleaned, { 
-        total: current.total + Number(s.faturamento || 0), 
+        total: current.total + Number(s.faturamento_total || 0), 
         name: current.name,
         originalCnpj: current.originalCnpj
       });

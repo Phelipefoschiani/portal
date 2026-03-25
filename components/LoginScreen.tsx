@@ -42,10 +42,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         return;
       }
 
+      const getRondoniaTime = () => {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'America/Porto_Velho',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        const parts = formatter.formatToParts(now);
+        const map = new Map(parts.map(p => [p.type, p.value]));
+        return `${map.get('year')}-${map.get('month')}-${map.get('day')} ${map.get('hour')}:${map.get('minute')}:${map.get('second')}`;
+      };
+
       const { error: updateError } = await supabase
         .from('usuarios')
         .update({ 
-          ultimo_acesso: new Date()
+          ultimo_acesso: getRondoniaTime()
         })
         .eq('id', data.id)
         .select();

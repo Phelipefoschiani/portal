@@ -1,87 +1,122 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, ShieldCheck, CheckCircle2, BarChart3, Users, Target } from 'lucide-react';
+import { Database, ShieldCheck, CheckCircle2, BarChart3, Users, Target as TargetIcon } from 'lucide-react';
+import { Client, Target, Investment, User, VendaConsolidada, ClienteUltimaCompra, VendaClienteMes, VendaCanalMes, VendaProdutoMes } from '../types';
 import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
+import { saveToLocal, getFromLocal } from '../lib/storage';
+import { performBackgroundSync } from '../lib/sync';
+
+const fetchAllRecords = async <T,>(queryFn: () => unknown): Promise<T[]> => {
+    let allData: T[] = [];
+    let from = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+        const query = queryFn() as { range: (from: number, to: number) => Promise<{ data: T[] | null; error: unknown }> };
+        const { data, error } = await query.range(from, from + pageSize - 1);
+        if (error) throw error;
+        if (data && data.length > 0) {
+            allData = [...allData, ...data];
+            from += pageSize;
+            if (data.length < pageSize) hasMore = false;
+        } else {
+            hasMore = false;
+        }
+    }
+    return allData;
+};
 
 interface HydrationScreenProps {
-  userId: string;
-  userRole: 'admin' | 'rep' | 'director';
   onComplete: () => void;
 }
 
-export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRole, onComplete }) => {
+const steps = [
+  { label: 'Segurança', icon: ShieldCheck },
+  { label: 'Carteira', icon: Users },
+  { label: 'Faturamento', icon: BarChart3 },
+  { label: 'Objetivos', icon: TargetIcon },
+  { label: 'Pronto', icon: CheckCircle2 }
+];
+
+export const HydrationScreen: React.FC<HydrationScreenProps> = ({ onComplete }) => {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('Iniciando conexão...');
   const [currentStep, setCurrentStep] = useState(0);
-
-  const steps = [
-    { label: 'Segurança', icon: ShieldCheck },
-    { label: 'Carteira', icon: Users },
-    { label: 'Faturamento', icon: BarChart3 },
-    { label: 'Objetivos', icon: Target },
-    { label: 'Pronto', icon: CheckCircle2 }
-  ];
-
-  const fetchAllSalesParallel = useCallback(async (role: string, uid: string) => {
-    // Range expandido até 2027 conforme solicitação
-    const startDate = `2024-01-01`;
-    const endDate = `2027-12-31`;
-    const pageSize = 1000;
-
-    const columns = 'faturamento, cnpj, usuario_id, data, qtde_faturado, produto, codigo_produto, canal_vendas, grupo, cliente_nome';
-
-    let countQuery = supabase
-      .from('dados_vendas')
-      .select('*', { count: 'exact', head: true })
-      .gte('data', startDate)
-      .lte('data', endDate);
-    
-    if (role !== 'admin' && role !== 'director') countQuery = countQuery.eq('usuario_id', uid);
-    
-    const { count, error: countError } = await countQuery;
-    if (countError) throw countError;
-
-    const totalRecords = count || 0;
-    if (totalRecords === 0) return [];
-
-    const totalPages = Math.ceil(totalRecords / pageSize);
-    const promises = [];
-
-    for (let i = 0; i < totalPages; i++) {
-      const from = i * pageSize;
-      const to = from + pageSize - 1;
-
-      let query = supabase
-        .from('dados_vendas')
-        .select(columns)
-        .gte('data', startDate)
-        .lte('data', endDate)
-        .range(from, to);
-
-      if (role !== 'admin' && role !== 'director') query = query.eq('usuario_id', uid);
-
-      promises.push(
-        query.then(res => {
-          setProgress(prev => Math.min(prev + (40 / totalPages), 88));
-          return res.data || [];
-        })
-      );
-    }
-
-    const results = await Promise.all(promises);
-    return results.flat();
-  }, []);
+  const hydrationStarted = React.useRef(false);
 
   const startHydration = useCallback(async () => {
     const execute = async () => {
+      let stepIdx = 0;
       try {
         totalDataStore.clear();
         
+        const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+        const userId = session.id;
+        const userRole = session.role;
+
+        if (!userId) {
+          throw new Error('Sessão expirada. Por favor, faça login novamente.');
+        }
+
+        stepIdx = 0;
+        setCurrentStep(0);
+        setStatus('Verificando cache local...');
+        setProgress(10);
+        
+        const cachedUsers = await getFromLocal('users_cache', userId) as User[] | null;
+        const cachedClients = await getFromLocal('clients_cache', userId) as Client[] | null;
+        const cachedVendasConsolidadas = await getFromLocal('vendas_consolidadas_cache', userId) as VendaConsolidada[] | null;
+        const cachedClientesUltimaCompra = await getFromLocal('clientes_ultima_compra_cache', userId) as ClienteUltimaCompra[] | null;
+        const cachedVendasClientesMes = await getFromLocal('vendas_clientes_mes_cache', userId) as VendaClienteMes[] | null;
+        const cachedVendasCanaisMes = await getFromLocal('vendas_canais_mes_cache', userId) as VendaCanalMes[] | null;
+        const cachedVendasProdutosMes = await getFromLocal('vendas_produtos_mes_cache', userId) as VendaProdutoMes[] | null;
+        const cachedTargets = await getFromLocal('targets_cache', userId) as Target[] | null;
+        const cachedInvs = await getFromLocal('investments_cache', userId) as Investment[] | null;
+        const lastSync = await getFromLocal('last_sync', userId) as number | null;
+
+        const isCacheValid = lastSync && (Date.now() - lastSync < 1000 * 60 * 60); // 1 hour cache validity
+
+        if (
+            cachedUsers && cachedClients && cachedVendasConsolidadas && cachedClientesUltimaCompra && 
+            cachedVendasClientesMes && cachedVendasCanaisMes && cachedVendasProdutosMes && 
+            cachedTargets && cachedInvs
+        ) {
+            setStatus('Carregando dados do cache criptografado...');
+            setProgress(50);
+            
+            totalDataStore.users = cachedUsers;
+            totalDataStore.clients = cachedClients;
+            totalDataStore.vendasConsolidadas = cachedVendasConsolidadas;
+            totalDataStore.clientesUltimaCompra = cachedClientesUltimaCompra;
+            totalDataStore.vendasClientesMes = cachedVendasClientesMes;
+            totalDataStore.vendasCanaisMes = cachedVendasCanaisMes;
+            totalDataStore.vendasProdutosMes = cachedVendasProdutosMes;
+            totalDataStore.targets = cachedTargets;
+            totalDataStore.investments = cachedInvs;
+            
+            setProgress(100);
+            setStatus('Ambiente Gerencial Pronto!');
+            totalDataStore.isHydrated = true;
+            
+            await new Promise(r => setTimeout(r, 400));
+            onComplete();
+
+            // Background sync if cache is old
+            if (!isCacheValid) {
+                console.log('Cache expirado, iniciando sincronização em segundo plano...');
+                performBackgroundSync(userId, userRole);
+            }
+            return;
+        }
+
+        // If no cache, fetch everything normally
+        stepIdx = 0;
         setCurrentStep(0);
         setStatus('Validando credenciais...');
         setProgress(10);
-        const { data: users } = await supabase
+        const getUsersQuery = () => supabase
           .from('usuarios')
           .select('id, nome, nivel_acesso')
           .not('nivel_acesso', 'ilike', 'admin')
@@ -89,63 +124,135 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
           .not('nivel_acesso', 'ilike', 'director')
           .not('nivel_acesso', 'ilike', 'diretor')
           .order('nome');
+        const users = await fetchAllRecords<User>(getUsersQuery);
         totalDataStore.users = users || [];
-        await new Promise(r => setTimeout(r, 200));
 
+        stepIdx = 1;
         setCurrentStep(1);
         setStatus('Mapeando carteira...');
         setProgress(25);
-        let clientQuery = supabase.from('clientes').select('*, usuarios(nome, id)');
-        if (userRole !== 'admin' && userRole !== 'director') clientQuery = clientQuery.eq('usuario_id', userId);
-        const { data: clients } = await clientQuery;
+        
+        const getClientQuery = () => {
+            let q = supabase.from('clientes').select('*, usuarios(nome, id)');
+            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+            return q;
+        };
+        const clients = await fetchAllRecords<Client>(getClientQuery);
         totalDataStore.clients = clients || [];
-
+        
+        stepIdx = 2;
         setCurrentStep(2);
-        setStatus('Baixando histórico 2024-2027...');
-        const sales = await fetchAllSalesParallel(userRole, userId);
-        totalDataStore.sales = sales;
+        setStatus('Sincronizando visões consolidadas...');
+        const getVendasConsolidadas = () => {
+            let q = supabase.from('vw_vendas_consolidadas').select('*');
+            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+            return q;
+        };
+        const getClientesUltimaCompra = () => {
+            return supabase.from('vw_clientes_ultima_compra').select('*');
+        };
+        const getVendasClientesMes = () => {
+            let q = supabase.from('vw_vendas_clientes_mes').select('*');
+            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+            return q;
+        };
+        const getVendasCanaisMes = () => {
+            let q = supabase.from('vw_vendas_canais_mes').select('*');
+            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+            return q;
+        };
+        const getVendasProdutosMes = () => {
+            let q = supabase.from('vw_vendas_produtos_mes').select('*');
+            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+            return q;
+        };
 
-        totalDataStore.clients = totalDataStore.clients.map(client => {
-          const clientSales = sales.filter(s => s.cnpj === client.cnpj);
-          if (clientSales.length === 0) {
-            return { ...client, ativo: false, data_inativacao: 'Sem compras' };
-          }
+        const [
+            vendasConsolidadas,
+            clientesUltimaCompra,
+            vendasClientesMes,
+            vendasCanaisMes,
+            vendasProdutosMes
+        ] = await Promise.all([
+            fetchAllRecords<VendaConsolidada>(getVendasConsolidadas),
+            fetchAllRecords<ClienteUltimaCompra>(getClientesUltimaCompra),
+            fetchAllRecords<VendaClienteMes>(getVendasClientesMes),
+            fetchAllRecords<VendaCanalMes>(getVendasCanaisMes),
+            fetchAllRecords<VendaProdutoMes>(getVendasProdutosMes)
+        ]);
 
-          const lastSale = clientSales.reduce((latest, current) => {
-            const currentDate = new Date(current.data + 'T00:00:00');
-            return currentDate > latest ? currentDate : latest;
-          }, new Date(0));
+        totalDataStore.vendasConsolidadas = vendasConsolidadas || [];
+        totalDataStore.clientesUltimaCompra = clientesUltimaCompra || [];
+        totalDataStore.vendasClientesMes = vendasClientesMes || [];
+        totalDataStore.vendasCanaisMes = vendasCanaisMes || [];
+        totalDataStore.vendasProdutosMes = vendasProdutosMes || [];
+        totalDataStore.sales = []; // Clear old sales data to save memory
 
-          const lastPurchaseDate = lastSale.toISOString().split('T')[0];
-          
-          const inactivationDate = new Date(lastSale);
-          inactivationDate.setMonth(inactivationDate.getMonth() + 3);
-          
-          return {
-            ...client,
-            lastPurchaseDate,
-            data_inativacao: inactivationDate.toISOString().split('T')[0]
-          };
+        // Otimização: Atualizar lastPurchaseDate dos clientes
+        const ultimaCompraMap = new Map<string, string>();
+        totalDataStore.clientesUltimaCompra.forEach(c => {
+            if (c.cnpj) ultimaCompraMap.set(c.cnpj.replace(/\D/g, ''), c.ultima_compra);
         });
 
+        totalDataStore.clients = totalDataStore.clients.map(client => {
+            const cleanCnpj = client.cnpj.replace(/\D/g, '');
+            const lastPurchase = ultimaCompraMap.get(cleanCnpj);
+            
+            if (!lastPurchase) {
+                return { ...client, ativo: false, data_inativacao: 'Sem compras' };
+            }
+            
+            const inactivationDate = new Date(lastPurchase + 'T00:00:00');
+            inactivationDate.setMonth(inactivationDate.getMonth() + 3);
+            
+            return {
+                ...client,
+                lastPurchaseDate: lastPurchase,
+                data_inativacao: inactivationDate.toISOString().split('T')[0]
+            };
+        });
+ 
         setProgress(80);
-
+ 
+        stepIdx = 3;
         setCurrentStep(3);
         setStatus('Consolidando metas...');
         
-        let targetQuery = supabase.from('metas_usuarios').select('*').in('ano', [2024, 2025, 2026, 2027]);
-        if (userRole !== 'admin' && userRole !== 'director') targetQuery = targetQuery.eq('usuario_id', userId);
-        const { data: targets } = await targetQuery;
+        const getTargetQuery = () => {
+            let q = supabase.from('metas_usuarios').select('*').in('ano', [2024, 2025, 2026, 2027]);
+            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+            return q;
+        };
+        const targets = await fetchAllRecords<Target>(getTargetQuery);
         totalDataStore.targets = targets || [];
 
-        let invQuery = supabase.from('investimentos').select('*').gte('data', `2024-01-01`).eq('status', 'approved');
-        if (userRole !== 'admin' && userRole !== 'director') invQuery = invQuery.eq('usuario_id', userId);
-        const { data: invs } = await invQuery;
+        const getInvQuery = () => {
+            let q = supabase.from('investimentos').select('*').gte('data', `2024-01-01`).eq('status', 'approved');
+            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+            return q;
+        };
+        const invs = await fetchAllRecords<Investment>(getInvQuery);
         totalDataStore.investments = invs || [];
 
+        // Save everything to cache
+        setStatus('Criptografando e salvando cache local...');
+        await Promise.all([
+            saveToLocal('users_cache', totalDataStore.users, userId),
+            saveToLocal('clients_cache', totalDataStore.clients, userId),
+            saveToLocal('vendas_consolidadas_cache', totalDataStore.vendasConsolidadas, userId),
+            saveToLocal('clientes_ultima_compra_cache', totalDataStore.clientesUltimaCompra, userId),
+            saveToLocal('vendas_clientes_mes_cache', totalDataStore.vendasClientesMes, userId),
+            saveToLocal('vendas_canais_mes_cache', totalDataStore.vendasCanaisMes, userId),
+            saveToLocal('vendas_produtos_mes_cache', totalDataStore.vendasProdutosMes, userId),
+            saveToLocal('targets_cache', totalDataStore.targets, userId),
+            saveToLocal('investments_cache', totalDataStore.investments, userId),
+            saveToLocal('last_sync', Date.now(), userId)
+        ]);
+ 
         setProgress(95);
         await new Promise(r => setTimeout(r, 300));
-
+ 
+        stepIdx = 4;
         setCurrentStep(4);
         setStatus('Ambiente Gerencial Pronto!');
         setProgress(100);
@@ -153,19 +260,35 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRo
         
         await new Promise(r => setTimeout(r, 400));
         onComplete();
+ 
+      } catch (err: unknown) {
+        console.error('Erro detalhado na hidratação:', err);
+        const errorMsg = err instanceof Error ? err.message : (typeof err === 'string' ? err : JSON.stringify(err)) || 'Erro desconhecido';
+        setStatus(`Erro no passo ${stepIdx + 1} (${steps[stepIdx]?.label || 'Processamento'}): ${errorMsg.substring(0, 60)}...`);
+        
+        // Stop retrying if it's an auth/permission error (401, 403)
+        const isAuthError = (err && typeof err === 'object' && 'status' in err && (err.status === 401 || err.status === 403)) || 
+                           errorMsg.toLowerCase().includes('unauthorized') || 
+                           errorMsg.toLowerCase().includes('permission denied') ||
+                           errorMsg.toLowerCase().includes('invalid api key');
 
-      } catch (err) {
-        console.error('Erro na hidratação:', err);
-        setStatus('Falha na rede. Reconectando...');
-        setTimeout(execute, 2000);
+        if (!isAuthError) {
+          // Retry with backoff for other errors (network, etc)
+          setTimeout(execute, 5000);
+        } else {
+          setStatus(`Erro Crítico: Falha de Permissão/Autenticação. Verifique as chaves do Supabase.`);
+        }
       }
     };
 
     await execute();
-  }, [userId, userRole, onComplete, fetchAllSalesParallel]);
+  }, [onComplete]);
 
   useEffect(() => {
-    startHydration();
+    if (!hydrationStarted.current) {
+      hydrationStarted.current = true;
+      startHydration();
+    }
   }, [startHydration]);
 
   return (

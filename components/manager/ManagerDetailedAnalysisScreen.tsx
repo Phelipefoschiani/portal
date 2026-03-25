@@ -1,10 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight, FileSpreadsheet, Search, BarChart4, Layers, CheckSquare, Square, ChevronDown, Trash2, RotateCcw, CalendarDays, Loader2, User, Tag, Boxes, Building2, Package } from 'lucide-react';
+import { ChevronRight, FileSpreadsheet, Search, Layers, CheckSquare, Square, ChevronDown, Trash2, RotateCcw, CalendarDays, Loader2, User, Tag, Boxes, Building2, Package } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import * as XLSX from 'xlsx';
 import { Button } from '../Button';
-import { VisualAnalysisModal } from './VisualAnalysisModal';
 
 type Dimension = 'representante' | 'canal' | 'grupo' | 'cliente' | 'produto';
 
@@ -16,6 +15,7 @@ interface GroupData {
     pedidos: number;
     parentTotal: number;
     skuSet: Set<string>; 
+    clientSet: Set<string>;
     lastSaleDate: string;
     purchaseCount: number;
     purchaseDates: Set<string>;
@@ -224,7 +224,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const [displayMode, setDisplayMode] = useState<'value' | 'percent'>(initialState.displayMode);
     const [searchTerm, setSearchTerm] = useState(initialState.searchTerm);
     const [isExporting, setIsExporting] = useState(false);
-    const [showVisualAnalysis, setShowVisualAnalysis] = useState(false);
 
     const dropdownRef = useRef<HTMLDivElement>(null);
     const monthDropdownRef = useRef<HTMLDivElement>(null);
@@ -234,7 +233,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const years = [2024, 2025, 2026, 2027];
 
     const processedBI = useMemo(() => {
-        const sales = totalDataStore.sales;
+        const vendasProdutosMes = totalDataStore.vendasProdutosMes;
         if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0, entities: 0, clients: 0 } };
 
         const usersMap = new Map<string, string>(totalDataStore.users.map(u => [u.id, u.nome]));
@@ -243,6 +242,12 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         totalDataStore.clients.forEach(c => {
             const clean = String(c.cnpj || '').replace(/\D/g, '');
             clientLookup.set(clean, c.nome_fantasia);
+        });
+
+        const canalLookup = new Map<string, string>();
+        totalDataStore.vendasCanaisMes.forEach(c => {
+            const cleanCnpj = String(c.cnpj || '').replace(/\D/g, '');
+            canalLookup.set(`${cleanCnpj}_${c.ano}_${c.mes}`, c.canal_vendas);
         });
 
         // Prepara Set de CNPJs permitidos se houver filtro de clientes
@@ -255,20 +260,22 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             });
         }
 
-        const filteredSales = sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            const m = d.getUTCMonth() + 1;
-            const y = d.getUTCFullYear();
+        const filteredSales = vendasProdutosMes.filter(s => {
+            const m = s.mes;
+            const y = s.ano;
             const matchTime = y === selectedYear && selectedMonths.includes(m);
             if (!matchTime) return false;
 
             if (isAdmin && filterReps.length > 0 && !filterReps.includes(s.usuario_id)) return false;
-            if (filterCanais.length > 0 && (!s.canal_vendas || !filterCanais.includes(s.canal_vendas))) return false;
+            
+            const saleCnpj = String(s.cnpj || '').replace(/\D/g, '');
+            const canal_vendas = canalLookup.get(`${saleCnpj}_${y}_${m}`) || 'GERAL / OUTROS';
+            
+            if (filterCanais.length > 0 && (!canal_vendas || !filterCanais.includes(canal_vendas))) return false;
             if (filterGrupos.length > 0 && (!s.grupo || !filterGrupos.includes(s.grupo))) return false;
             
             // Filtro de Cliente aplicado aqui
             if (filterClients.length > 0) {
-                const saleCnpj = String(s.cnpj || '').replace(/\D/g, '');
                 if (!allowedClientCnpjs.has(saleCnpj)) return false;
             }
 
@@ -282,37 +289,26 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         });
 
         const tree = new Map<string, GroupData>();
-        let grandTotalFaturamento = 0;
-        let grandTotalQuantidade = 0;
-        const grandTotalSkuSet = new Set<string>();
-        const grandTotalEntitySet = new Set<string>();
-        const grandTotalClientSet = new Set<string>();
 
         filteredSales.forEach(sale => {
-            const fat = Number(sale.faturamento) || 0;
-            const qtd = Number(sale.qtde_faturado) || 0;
+            const fat = Number(sale.faturamento_total) || 0;
+            const qtd = Number(sale.qtde_total) || 0;
             const skuId = sale.codigo_produto || sale.produto || 'N/I';
-            const saleDate = sale.data || '0000-00-00';
+            const saleDate = `${sale.ano}-${String(sale.mes).padStart(2, '0')}-01`; // Use month start as proxy
             const cnpjClean = String(sale.cnpj || '').replace(/\D/g, '');
+            const canal_vendas = canalLookup.get(`${cnpjClean}_${sale.ano}_${sale.mes}`) || 'GERAL / OUTROS';
             
-            grandTotalFaturamento += fat;
-            grandTotalQuantidade += qtd;
-            grandTotalSkuSet.add(skuId);
-            grandTotalClientSet.add(cnpjClean);
-
             let currentLevel = tree;
             rowDimensions.forEach((dim, idx) => {
                 let key = 'N/I';
                 if (dim === 'representante') key = usersMap.get(sale.usuario_id) || 'N/I';
-                else if (dim === 'canal') key = sale.canal_vendas || 'GERAL';
+                else if (dim === 'canal') key = canal_vendas;
                 else if (dim === 'grupo') key = sale.grupo || 'SEM GRUPO';
                 else if (dim === 'cliente') {
                     const name = clientLookup.get(cnpjClean) || sale.cliente_nome;
                     key = (name || `CNPJ: ${sale.cnpj}`).trim().toUpperCase();
                 }
                 else if (dim === 'produto') key = sale.produto ? sale.produto.trim().toUpperCase() : 'ITEM SEM DESCRIÇÃO';
-
-                if (idx === 0) grandTotalEntitySet.add(key);
 
                 if (!currentLevel.has(key)) {
                     currentLevel.set(key, {
@@ -323,6 +319,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         pedidos: 0,
                         parentTotal: 0,
                         skuSet: new Set(),
+                        clientSet: new Set(),
                         lastSaleDate: '0000-00-00',
                         purchaseCount: 0,
                         purchaseDates: new Set(),
@@ -335,6 +332,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 node.quantidade += qtd;
                 node.pedidos += 1;
                 node.skuSet.add(skuId);
+                node.clientSet.add(cnpjClean);
                 node.purchaseCount += 1;
                 node.purchaseDates.add(saleDate);
                 if (saleDate > node.lastSaleDate) node.lastSaleDate = saleDate;
@@ -352,13 +350,12 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
         }
 
         const flatList: FlatItem[] = [];
-        const flatten = (nodes: Map<string, GroupData>, parentLabels: string[] = []) => {
-            const currentLevelIndex = parentLabels.length;
-            const currentDimension = rowDimensions[currentLevelIndex];
-            
+
+        // Pass 1: Apply truncation and propagate totals upwards
+        const pruneAndPropagate = (nodes: Map<string, GroupData>, level: number) => {
+            const currentDimension = rowDimensions[level];
             let sortedNodes = Array.from(nodes.values()).sort((a, b) => b.faturamento - a.faturamento);
-            
-            // Apply Top/Bottom filter if the current dimension is 'produto'
+
             if (currentDimension === 'produto' && topBottomFilter !== 'none') {
                 if (topBottomFilter === 'top') {
                     sortedNodes = sortedNodes.slice(0, topBottomLimit);
@@ -366,12 +363,40 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     sortedNodes = Array.from(nodes.values())
                         .sort((a, b) => a.faturamento - b.faturamento)
                         .slice(0, topBottomLimit)
-                        .sort((a, b) => b.faturamento - a.faturamento); // Re-sort DESC for visual consistency
+                        .sort((a, b) => b.faturamento - a.faturamento);
                 }
+                nodes.clear();
+                sortedNodes.forEach(n => nodes.set(n.label, n));
             }
 
-            // Calculate the total of the nodes that will actually be displayed at this level
-            const visibleTotal = sortedNodes.reduce((acc, n) => acc + n.faturamento, 0);
+            let levelFat = 0;
+            let levelQty = 0;
+            const levelSkus = new Set<string>();
+            const levelClients = new Set<string>();
+
+            nodes.forEach(node => {
+                if (node.children) {
+                    const totals = pruneAndPropagate(node.children, level + 1);
+                    node.faturamento = totals.faturamento;
+                    node.quantidade = totals.quantidade;
+                    node.skuSet = totals.skus;
+                    node.clientSet = totals.clients;
+                }
+                levelFat += node.faturamento;
+                levelQty += node.quantidade;
+                node.skuSet.forEach(s => levelSkus.add(s));
+                node.clientSet.forEach(c => levelClients.add(c));
+            });
+
+            return { faturamento: levelFat, quantidade: levelQty, skus: levelSkus, clients: levelClients };
+        };
+
+        pruneAndPropagate(tree, 0);
+
+        // Pass 2: Flatten
+        const flatten = (nodes: Map<string, GroupData>, parentLabels: string[] = []) => {
+            const levelTotal = Array.from(nodes.values()).reduce((acc, n) => acc + n.faturamento, 0);
+            const sortedNodes = Array.from(nodes.values()).sort((a, b) => b.faturamento - a.faturamento);
 
             sortedNodes.forEach(node => {
                 const currentLabels = [...parentLabels, node.label];
@@ -379,7 +404,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     ...node,
                     hierarchyLabels: currentLabels,
                     skusCount: node.skuSet.size,
-                    participation: visibleTotal > 0 ? (node.faturamento / visibleTotal) * 100 : 100
+                    participation: levelTotal > 0 ? (node.faturamento / levelTotal) * 100 : 100
                 });
                 if (node.children) flatten(node.children, currentLabels);
             });
@@ -392,14 +417,38 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             filteredList = flatList.filter(item => item.label.toLowerCase().includes(searchTerm.toLowerCase()));
         }
 
+        // Calculate final totals from filteredList to reflect all filters and search
+        const finalTotals = {
+            faturamento: 0,
+            quantidade: 0,
+            skus: new Set<string>(),
+            clients: new Set<string>(),
+            entities: 0
+        };
+
+        const visiblePaths = new Set(filteredList.map(item => item.hierarchyLabels.join('|')));
+        
+        filteredList.forEach(item => {
+            const parentPath = item.hierarchyLabels.slice(0, -1).join('|');
+            const hasParentVisible = parentPath !== '' && visiblePaths.has(parentPath);
+            
+            if (!hasParentVisible) {
+                finalTotals.faturamento += item.faturamento;
+                finalTotals.quantidade += item.quantidade;
+                item.skuSet.forEach(s => finalTotals.skus.add(s));
+                item.clientSet.forEach(c => finalTotals.clients.add(c));
+                if (item.level === 0) finalTotals.entities++;
+            }
+        });
+
         return {
             items: filteredList,
             totals: { 
-                faturamento: grandTotalFaturamento, 
-                quantidade: grandTotalQuantidade, 
-                skus: grandTotalSkuSet.size,
-                entities: grandTotalEntitySet.size,
-                clients: grandTotalClientSet.size
+                faturamento: finalTotals.faturamento, 
+                quantidade: finalTotals.quantidade, 
+                skus: finalTotals.skus.size,
+                entities: finalTotals.entities,
+                clients: finalTotals.clients.size
             }
         };
     }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin, topBottomFilter, topBottomLimit]);
@@ -477,14 +526,18 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     };
 
     const filterOptions = useMemo(() => {
-        const sales = totalDataStore.sales;
+        const vendasCanaisMes = totalDataStore.vendasCanaisMes;
+        const vendasProdutosMes = totalDataStore.vendasProdutosMes;
         const clients = totalDataStore.clients;
         const canais = new Set<string>();
         const grupos = new Set<string>();
         const productMap = new Map();
         
-        sales.forEach(s => {
+        vendasCanaisMes.forEach(s => {
             if (s.canal_vendas) canais.add(s.canal_vendas);
+        });
+        
+        vendasProdutosMes.forEach(s => {
             if (s.grupo) grupos.add(s.grupo);
             
             // Build Product List
@@ -522,8 +575,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
 
         setIsExporting(true);
         try {
-            const X = XLSX as any;
-            if (!X || !X.utils) {
+            if (!XLSX || !XLSX.utils) {
                 throw new Error("Biblioteca XLSX não carregada corretamente.");
             }
 
@@ -566,10 +618,10 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 ])
             ];
 
-            const ws = X.utils.aoa_to_sheet(dataMatrix);
+            const ws = XLSX.utils.aoa_to_sheet(dataMatrix);
 
             if (ws['A1']) {
-                ws['A1'].s = {
+                (ws['A1'] as { s?: unknown }).s = {
                     font: { bold: true, color: { rgb: "1E40AF" }, sz: 14 },
                     alignment: { horizontal: "left", vertical: "center" }
                 };
@@ -579,7 +631,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
             headerCols.forEach(col => {
                 const cellRef = `${col}2`;
                 if (ws[cellRef]) {
-                    ws[cellRef].s = {
+                    (ws[cellRef] as { s?: unknown }).s = {
                         font: { bold: true, color: { rgb: "000000" }, sz: 11 },
                         fill: { fgColor: { rgb: "F1F5F9" } },
                         alignment: { horizontal: "center", vertical: "center" },
@@ -591,57 +643,57 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 }
             });
 
-            const range = X.utils.decode_range(ws['!ref']!);
+            const range = XLSX.utils.decode_range(ws['!ref']!);
             for (let R = 2; R <= range.e.r; ++R) {
                 // Faturamento (C)
-                const cellC = ws[X.utils.encode_cell({r: R, c: 2})];
+                const cellC = ws[XLSX.utils.encode_cell({r: R, c: 2})];
                 if (cellC) {
                     cellC.t = 'n';
                     cellC.z = '"R$" #,##0.00';
-                    cellC.s = { alignment: { horizontal: "right" } };
+                    (cellC as { s?: unknown }).s = { alignment: { horizontal: "right" } };
                 }
                 // MIX SKU (D)
-                const cellD = ws[X.utils.encode_cell({r: R, c: 3})];
+                const cellD = ws[XLSX.utils.encode_cell({r: R, c: 3})];
                 if (cellD) {
                     cellD.t = 'n';
                     cellD.z = '#,##0';
-                    cellD.s = { alignment: { horizontal: "center" } };
+                    (cellD as { s?: unknown }).s = { alignment: { horizontal: "center" } };
                 }
                 // Volume (E)
-                const cellE = ws[X.utils.encode_cell({r: R, c: 4})];
+                const cellE = ws[XLSX.utils.encode_cell({r: R, c: 4})];
                 if (cellE) {
                     cellE.t = 'n';
                     cellE.z = '#,##0';
-                    cellE.s = { alignment: { horizontal: "center" } };
+                    (cellE as { s?: unknown }).s = { alignment: { horizontal: "center" } };
                 }
 
                 if (isAdvancedAnalysis) {
                     // Recompra (F)
-                    const cellF = ws[X.utils.encode_cell({r: R, c: 5})];
+                    const cellF = ws[XLSX.utils.encode_cell({r: R, c: 5})];
                     if (cellF) {
                         cellF.t = 'n';
                         cellF.z = '#,##0';
-                        cellF.s = { alignment: { horizontal: "center" } };
+                        (cellF as { s?: unknown }).s = { alignment: { horizontal: "center" } };
                     }
                     // Última Venda (G)
-                    const cellG = ws[X.utils.encode_cell({r: R, c: 6})];
+                    const cellG = ws[XLSX.utils.encode_cell({r: R, c: 6})];
                     if (cellG) {
-                        cellG.s = { alignment: { horizontal: "center" } };
+                        (cellG as { s?: unknown }).s = { alignment: { horizontal: "center" } };
                     }
                     // Partic (H)
-                    const cellH = ws[X.utils.encode_cell({r: R, c: 7})];
+                    const cellH = ws[XLSX.utils.encode_cell({r: R, c: 7})];
                     if (cellH) {
                         cellH.t = 'n';
                         cellH.z = '0.00%';
-                        cellH.s = { alignment: { horizontal: "right" } };
+                        (cellH as { s?: unknown }).s = { alignment: { horizontal: "right" } };
                     }
                 } else {
                     // Partic (F)
-                    const cellF = ws[X.utils.encode_cell({r: R, c: 5})];
+                    const cellF = ws[XLSX.utils.encode_cell({r: R, c: 5})];
                     if (cellF) {
                         cellF.t = 'n';
                         cellF.z = '0.00%';
-                        cellF.s = { alignment: { horizontal: "right" } };
+                        (cellF as { s?: unknown }).s = { alignment: { horizontal: "right" } };
                     }
                 }
             }
@@ -650,9 +702,9 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 ? [ { wch: 65 }, { wch: 45 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 20 } ]
                 : [ { wch: 65 }, { wch: 45 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 20 } ];
 
-            const wb = X.utils.book_new();
-            X.utils.book_append_sheet(wb, ws, "BI_CENTRONORTE");
-            X.writeFile(wb, `BI_CENTRONORTE_${new Date().getTime()}.xlsx`);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "BI_CENTRONORTE");
+            XLSX.writeFile(wb, `BI_CENTRONORTE_${new Date().getTime()}.xlsx`);
         } catch (e: unknown) {
             console.error('Erro Exportação Excel:', e);
             alert('Falha ao processar arquivo Excel. Tente recarregar a página.');
@@ -673,14 +725,6 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
-                    <button 
-                        onClick={() => setShowVisualAnalysis(true)} 
-                        disabled={processedBI.items.length === 0}
-                        className="flex-1 md:flex-none h-10 px-4 md:px-6 rounded-xl text-[9px] md:text-[10px] font-black bg-blue-600 text-white hover:bg-blue-700 transition-all uppercase flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
-                    >
-                        <BarChart4 className="w-3.5 h-3.5" /> 
-                        <span className="md:inline">Análise Visual</span>
-                    </button>
                     <button onClick={resetAllFilters} className="flex-1 md:flex-none h-10 px-4 md:px-6 rounded-xl text-[9px] md:text-[10px] font-black border border-red-100 text-red-500 hover:bg-red-50 transition-all uppercase flex items-center justify-center gap-2">
                         <RotateCcw className="w-3.5 h-3.5" /> 
                         <span className="md:inline">Resetar</span>
@@ -799,7 +843,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                         disabled={isProcessingAdvanced}
                                         className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${isAdvancedAnalysis ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'} ${isProcessingAdvanced ? 'opacity-50 cursor-wait' : ''}`}
                                     >
-                                        <BarChart4 className={`w-3 h-3 ${isProcessingAdvanced ? 'animate-spin' : ''}`} />
+                                        <Layers className={`w-3 h-3 ${isProcessingAdvanced ? 'animate-spin' : ''}`} />
                                         {isProcessingAdvanced ? 'Analisando...' : isAdvancedAnalysis ? 'Análise Avançada Ativa' : 'Ativar Análise Avançada'}
                                     </button>
                                 </div>
@@ -891,6 +935,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                 <th className="px-8 py-5">Destrinchamento Hierárquico</th>
                                 <th className="px-6 py-5 text-right">Faturamento</th>
                                 <th className="px-6 py-5 text-center">Mix SKU</th>
+                                <th className="px-6 py-5 text-center">Clientes</th>
                                 <th className="px-6 py-5 text-center">Volume (Un)</th>
                                 {isAdvancedAnalysis && (
                                     <>
@@ -904,8 +949,8 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                         <tbody className="divide-y divide-slate-50">
                             {processedBI.items.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-8 py-40 text-center text-slate-300">
-                                        <BarChart4 className="w-20 h-20 mx-auto opacity-10 mb-4" />
+                                    <td colSpan={isAdvancedAnalysis ? 8 : 6} className="px-8 py-40 text-center text-slate-300">
+                                        <Layers className="w-20 h-20 mx-auto opacity-10 mb-4" />
                                         <p className="text-[11px] font-black uppercase tracking-[0.4em]">
                                             {rowDimensions.length === 0 ? "Defina os níveis de análise" : "Sem dados"}
                                         </p>
@@ -932,6 +977,11 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-4 text-center tabular-nums text-xs font-black text-slate-900">
                                                 {row.skusCount.toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-4 text-center tabular-nums text-xs font-black text-slate-900">
+                                                {(rowDimensions[row.level] === 'representante' || rowDimensions[row.level] === 'canal') 
+                                                    ? row.clientSet.size.toLocaleString() 
+                                                    : '-'}
                                             </td>
                                             <td className="px-6 py-4 text-center tabular-nums text-xs font-bold text-slate-500">
                                                 {row.quantidade.toLocaleString()}
@@ -991,23 +1041,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 )}
             </div>
 
-            {showVisualAnalysis && (
-                <VisualAnalysisModal 
-                    onClose={() => setShowVisualAnalysis(false)}
-                    totals={processedBI.totals}
-                    items={processedBI.items}
-                    dimensions={rowDimensions}
-                    selectedYear={selectedYear}
-                    selectedMonths={selectedMonths}
-                    filters={{
-                        reps: filterReps,
-                        canais: filterCanais,
-                        grupos: filterGrupos,
-                        clients: filterClients,
-                        products: filterProducts
-                    }}
-                />
-            )}
+            {/* Modal removed */}
         </div>
     );
 };

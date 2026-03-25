@@ -12,16 +12,6 @@ interface RepData {
     role: string;
 }
 
-interface Sale {
-    id: string;
-    data: string;
-    usuario_id: string;
-    faturamento: number | string;
-    canal_vendas?: string;
-    cnpj?: string;
-    cliente_nome?: string;
-}
-
 interface Target {
     id: string;
     usuario_id: string;
@@ -82,21 +72,20 @@ const MonthlyChannelBreakdown: React.FC<{
             clientNameLookup.set(clean, c.nome_fantasia);
         });
 
-        const sales = totalDataStore.sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return s.usuario_id === userId && d.getUTCMonth() === monthIdx && d.getUTCFullYear() === year;
+        const vendasCanaisMes = totalDataStore.vendasCanaisMes.filter(s => {
+            return s.usuario_id === userId && s.mes === monthIdx + 1 && s.ano === year;
         });
 
-        const monthTotal = sales.reduce((a, b) => a + Number(b.faturamento), 0);
+        const monthTotal = vendasCanaisMes.reduce((a, b) => a + Number(b.faturamento_total), 0);
         const channelMap = new Map<string, { label: string; total: number; clients: Map<string, { name: string; total: number }> }>();
 
-        sales.forEach(s => {
+        vendasCanaisMes.forEach(s => {
             const cName = s.canal_vendas || 'GERAL / OUTROS';
             if (!channelMap.has(cName)) {
                 channelMap.set(cName, { label: cName, total: 0, clients: new Map() });
             }
             const channel = channelMap.get(cName)!;
-            channel.total += Number(s.faturamento);
+            channel.total += Number(s.faturamento_total);
 
             const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
             if (!channel.clients.has(cnpjClean)) {
@@ -105,7 +94,7 @@ const MonthlyChannelBreakdown: React.FC<{
                     total: 0 
                 });
             }
-            channel.clients.get(cnpjClean)!.total += Number(s.faturamento);
+            channel.clients.get(cnpjClean)!.total += Number(s.faturamento_total);
         });
 
         return Array.from(channelMap.values())
@@ -185,15 +174,17 @@ const MonthRepDetailModal: React.FC<{
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     
     const data = useMemo(() => {
-        const sales = totalDataStore.sales as Sale[];
+        const vendasClientesMes = totalDataStore.vendasClientesMes;
         const targets = totalDataStore.targets as Target[];
         const reps = totalDataStore.users as RepData[];
         const allClients = totalDataStore.clients as Client[];
 
         return reps.map(rep => {
-            const repSales = sales.filter(s => s.usuario_id === rep.id);
-            const billed = repSales.reduce((a, b) => a + Number(b.faturamento), 0);
-            const target = Number(targets.find(t => t.usuario_id === rep.id)?.valor || 0);
+            const repSales = vendasClientesMes.filter(s => {
+                return s.usuario_id === rep.id && s.mes === monthIdx + 1 && s.ano === year;
+            });
+            const billed = repSales.reduce((a, b) => a + Number(b.faturamento_total), 0);
+            const target = Number(targets.find(t => t.usuario_id === rep.id && t.mes === monthIdx + 1 && t.ano === year)?.valor || 0);
             const positivados = new Set(repSales.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
             
             const totalRepClients = allClients.filter(c => c.usuario_id === rep.id).length || 1;
@@ -296,13 +287,12 @@ const IndividualRepMonthlyDetailModal: React.FC<{
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
     const summary = useMemo(() => {
-        const sales = (totalDataStore.sales as Sale[]).filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return s.usuario_id === rep.id && d.getUTCMonth() === monthIdx && d.getUTCFullYear() === year;
+        const vendasClientesMes = totalDataStore.vendasClientesMes.filter(s => {
+            return s.usuario_id === rep.id && s.mes === monthIdx + 1 && s.ano === year;
         });
-        const target = Number(totalDataStore.targets.find((t: any) => t.usuario_id === rep.id && t.mes === monthIdx + 1 && t.ano === year)?.valor || 0);
-        const billed = sales.reduce((a, b) => a + Number(b.faturamento), 0);
-        const positivados = new Set(sales.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
+        const target = Number((totalDataStore.targets as Target[]).find((t) => t.usuario_id === rep.id && t.mes === monthIdx + 1 && t.ano === year)?.valor || 0);
+        const billed = vendasClientesMes.reduce((a, b) => a + Number(b.faturamento_total), 0);
+        const positivados = new Set(vendasClientesMes.map(s => String(s.cnpj || '').replace(/\D/g, ''))).size;
         
         return { billed, target, positivados };
     }, [rep.id, monthIdx, year]);
@@ -393,27 +383,24 @@ export const ManagerAnalysisScreen: React.FC = () => {
     }, []);
 
     const processAnalysisData = useCallback(() => {
-        const sales = totalDataStore.sales as Sale[];
+        const vendasConsolidadas = totalDataStore.vendasConsolidadas;
         const targets = totalDataStore.targets as Target[];
         const reps = totalDataStore.users as RepData[];
 
         const performance: PerformanceItem[] = Array.from({ length: 12 }, (_, i) => {
             const month = i + 1;
-            const monthSales = sales.filter(s => {
-                const d = new Date(s.data + 'T00:00:00');
-                return d.getUTCMonth() + 1 === month && d.getUTCFullYear() === selectedYear;
-            }).reduce((a, b) => a + Number(b.faturamento), 0);
+            const monthSales = vendasConsolidadas.filter(s => {
+                return s.mes === month && s.ano === selectedYear;
+            }).reduce((a, b) => a + Number(b.faturamento_total), 0);
             
             const monthTarget = targets.filter(t => t.mes === month && t.ano === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             return { month, sales: monthSales, target: monthTarget };
         });
 
         const repAnalysis: RepAnalysisItem[] = reps.map(rep => {
-            const rSales = sales.filter(s => {
-                const d = new Date(s.data + 'T00:00:00');
-                const m = d.getUTCMonth() + 1;
-                return s.usuario_id === rep.id && d.getUTCFullYear() === selectedYear && selectedMonths.includes(m);
-            }).reduce((a, b) => a + Number(b.faturamento), 0);
+            const rSales = vendasConsolidadas.filter(s => {
+                return s.usuario_id === rep.id && s.ano === selectedYear && selectedMonths.includes(s.mes);
+            }).reduce((a, b) => a + Number(b.faturamento_total), 0);
 
             const rTarget = targets.filter(t => t.usuario_id === rep.id && t.ano === selectedYear && selectedMonths.includes(t.mes)).reduce((a, b) => a + Number(b.valor), 0);
             

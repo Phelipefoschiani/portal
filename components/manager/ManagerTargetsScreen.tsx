@@ -127,21 +127,19 @@ export const ManagerTargetsScreen: React.FC = () => {
         setIsLoadingClients(true);
         try {
             const prevYear = selectedYear - 1;
-            const sales = totalDataStore.sales;
+            const vendasClientesMes = totalDataStore.vendasClientesMes;
             const clients = totalDataStore.clients.filter(c => c.usuario_id === selectedRepId);
             
             // Faturamento Total do Representante no ano anterior
-            const repTotalPrev = sales.filter(s => {
-                const d = new Date(s.data + 'T00:00:00');
-                return s.usuario_id === selectedRepId && d.getUTCFullYear() === prevYear;
-            }).reduce((a, b) => a + Number(b.faturamento), 0);
+            const repTotalPrev = vendasClientesMes.filter(v => 
+                v.usuario_id === selectedRepId && v.ano === prevYear
+            ).reduce((a, b) => a + Number(b.faturamento_total), 0);
 
             const engineering = clients.map(client => {
                 const cleanCnpj = String(client.cnpj || '').replace(/\D/g, '');
-                const clientSalesPrev = sales.filter(s => {
-                    const d = new Date(s.data + 'T00:00:00');
-                    return String(s.cnpj || '').replace(/\D/g, '') === cleanCnpj && d.getUTCFullYear() === prevYear;
-                }).reduce((a, b) => a + Number(b.faturamento), 0);
+                const clientSalesPrev = vendasClientesMes.filter(v => 
+                    String(v.cnpj || '').replace(/\D/g, '') === cleanCnpj && v.ano === prevYear
+                ).reduce((a, b) => a + Number(b.faturamento_total), 0);
 
                 const weight = repTotalPrev > 0 ? (clientSalesPrev / repTotalPrev) : 0;
                 return { ...client, salesPrev: clientSalesPrev, weight: weight };

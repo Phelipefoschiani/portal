@@ -2,9 +2,9 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-    LayoutDashboard, Calendar, Filter, ChevronDown, CheckSquare, Square, 
-    TrendingUp, DollarSign, Target, PieChart, BarChart3, ArrowUpRight, ArrowDownRight,
-    Package, Layers, Users, X, Info, Briefcase, Award
+    ChevronDown, CheckSquare, Square, 
+    DollarSign, Target, PieChart, ArrowUpRight, ArrowDownRight,
+    Package, Layers, X, Info, Award
 } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import { 
@@ -13,7 +13,13 @@ import {
 } from 'recharts';
 import { createPortal } from 'react-dom';
 
-const AllGroupsModal: React.FC<{ groups: any[]; onClose: () => void }> = ({ groups, onClose }) => {
+interface GroupData {
+    name: string;
+    value: number;
+    share: number;
+}
+
+const AllGroupsModal: React.FC<{ groups: GroupData[]; onClose: () => void }> = ({ groups, onClose }) => {
     const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
 
     return createPortal(
@@ -125,24 +131,24 @@ export const DirectorDashboard: React.FC = () => {
 
     // --- DATA PROCESSING ---
     const data = useMemo(() => {
-        const sales = totalDataStore.sales;
+        const vendasConsolidadas = totalDataStore.vendasConsolidadas;
+        const vendasCanaisMes = totalDataStore.vendasCanaisMes;
+        const vendasProdutosMes = totalDataStore.vendasProdutosMes;
         const targets = totalDataStore.targets;
 
         // 1. Filter Sales for Current Period
-        const currentSales = sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return d.getUTCFullYear() === selectedYear && selectedMonths.includes(d.getUTCMonth() + 1);
-        });
+        const currentVendas = vendasConsolidadas.filter(v => 
+            v.ano === selectedYear && selectedMonths.includes(v.mes)
+        );
 
         // 2. Filter Sales for Previous Period
-        const prevSales = sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return d.getUTCFullYear() === (selectedYear - 1) && selectedMonths.includes(d.getUTCMonth() + 1);
-        });
+        const prevVendas = vendasConsolidadas.filter(v => 
+            v.ano === (selectedYear - 1) && selectedMonths.includes(v.mes)
+        );
 
         // 3. Calculate Totals (Period)
-        const totalRevenue = currentSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
-        const totalPrevRevenue = prevSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+        const totalRevenue = currentVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
+        const totalPrevRevenue = prevVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
         const revenueGrowth = totalPrevRevenue > 0 ? ((totalRevenue / totalPrevRevenue) - 1) * 100 : 0;
 
         // 4. Calculate Targets (Period)
@@ -153,11 +159,10 @@ export const DirectorDashboard: React.FC = () => {
         const targetAchievement = totalTarget > 0 ? (totalRevenue / totalTarget) * 100 : 0;
 
         // 5. Calculate Annual Totals (Year)
-        const annualSales = sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            return d.getUTCFullYear() === selectedYear;
-        });
-        const totalAnnualRevenue = annualSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+        const annualVendas = vendasConsolidadas.filter(v => 
+            v.ano === selectedYear
+        );
+        const totalAnnualRevenue = annualVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
         
         const totalAnnualTarget = targets
             .filter(t => t.ano === selectedYear)
@@ -167,40 +172,46 @@ export const DirectorDashboard: React.FC = () => {
 
         // 6. Channel Analysis
         const channelMap = new Map<string, number>();
-        currentSales.forEach(s => {
-            const channel = s.canal_vendas || 'OUTROS';
-            channelMap.set(channel, (channelMap.get(channel) || 0) + Number(s.faturamento));
+        const currentCanais = vendasCanaisMes.filter(v => 
+            v.ano === selectedYear && selectedMonths.includes(v.mes)
+        );
+        currentCanais.forEach(v => {
+            const channel = v.canal_vendas || 'OUTROS';
+            channelMap.set(channel, (channelMap.get(channel) || 0) + Number(v.faturamento_total));
         });
         const channelData = Array.from(channelMap.entries())
-            .map(([name, value]) => ({ name, value, share: (value / totalRevenue) * 100 }))
+            .map(([name, value]) => ({ name, value, share: totalRevenue > 0 ? (value / totalRevenue) * 100 : 0 }))
             .sort((a, b) => b.value - a.value);
 
         // 7. Group Analysis
         const groupMap = new Map<string, number>();
-        currentSales.forEach(s => {
-            const group = s.grupo || 'GERAL';
-            groupMap.set(group, (groupMap.get(group) || 0) + Number(s.faturamento));
+        const currentProdutos = vendasProdutosMes.filter(v => 
+            v.ano === selectedYear && selectedMonths.includes(v.mes)
+        );
+        currentProdutos.forEach(v => {
+            const group = v.grupo || 'GERAL';
+            groupMap.set(group, (groupMap.get(group) || 0) + Number(v.faturamento_total));
         });
         const groupData = Array.from(groupMap.entries())
-            .map(([name, value]) => ({ name, value, share: (value / totalRevenue) * 100 }))
+            .map(([name, value]) => ({ name, value, share: totalRevenue > 0 ? (value / totalRevenue) * 100 : 0 }))
             .sort((a, b) => b.value - a.value);
 
         // 8. Product Analysis
         const productMap = new Map<string, { name: string, revenue: number, units: number, group: string }>();
-        currentSales.forEach(s => {
-            const key = s.codigo_produto || s.produto;
+        currentProdutos.forEach(v => {
+            const key = v.codigo_produto || v.produto;
             const existing = productMap.get(key) || { 
-                name: s.produto || 'Item', 
+                name: v.produto || 'Item', 
                 revenue: 0, 
                 units: 0, 
-                group: s.grupo || 'GERAL'
+                group: v.grupo || 'GERAL'
             };
-            existing.revenue += Number(s.faturamento);
-            existing.units += Number(s.qtde_faturado || s.quantidade || 0); // Fix units check
+            existing.revenue += Number(v.faturamento_total);
+            existing.units += Number(v.qtde_total || 0);
             productMap.set(key, existing);
         });
         const productData = Array.from(productMap.values())
-            .map(p => ({ ...p, share: (p.revenue / totalRevenue) * 100 }))
+            .map(p => ({ ...p, share: totalRevenue > 0 ? (p.revenue / totalRevenue) * 100 : 0 }))
             .sort((a, b) => b.revenue - a.revenue)
             .slice(0, 10); // Top 10 Products
 
@@ -371,28 +382,32 @@ export const DirectorDashboard: React.FC = () => {
                         <div className="p-2 bg-blue-50 text-blue-600 rounded-xl"><PieChart className="w-5 h-5" /></div>
                         <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Canais de Venda</h3>
                     </div>
-                    <div className="h-[300px] w-full">
+                    <div className="h-[300px] w-full" style={{ minWidth: 0 }}>
                         <ResponsiveContainer width="100%" height="100%">
-                            <RePieChart>
-                                <Pie
-                                    data={data.channelData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={60}
-                                    outerRadius={100}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {data.channelData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip 
-                                    formatter={(value: any) => formatCurrency(Number(value) || 0)}
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
-                                />
-                                <Legend />
-                            </RePieChart>
+                                                <RePieChart>
+                                                    <Pie
+                                                        data={data.channelData}
+                                                        cx="50%"
+                                                        cy="50%"
+                                                        innerRadius={60}
+                                                        outerRadius={100}
+                                                        paddingAngle={5}
+                                                        dataKey="value"
+                                                        nameKey="name"
+                                                        label={({ name, percent }) => `${name || ''} (${((percent || 0) * 100).toFixed(0)}%)`}
+                                                        labelLine={{ stroke: '#64748b', strokeWidth: 1 }}
+                                                    >
+                                                        {data.channelData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip 
+                                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                                        formatter={(value: any) => formatCurrency(Number(value) || 0)}
+                                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
+                                                    />
+                                                    <Legend />
+                                                </RePieChart>
                         </ResponsiveContainer>
                     </div>
                     <div className="mt-4 space-y-2">
@@ -418,7 +433,7 @@ export const DirectorDashboard: React.FC = () => {
                         <div className="p-2 bg-purple-50 text-purple-600 rounded-xl"><Layers className="w-5 h-5" /></div>
                         <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Top Grupos</h3>
                     </div>
-                    <div className="h-[400px] w-full">
+                    <div className="h-[400px] w-full" style={{ minWidth: 0 }}>
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart 
                                 layout="vertical" 
@@ -437,6 +452,7 @@ export const DirectorDashboard: React.FC = () => {
                                     interval={0}
                                 />
                                 <Tooltip 
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                     formatter={(value: any) => formatCurrency(Number(value) || 0)}
                                     cursor={{ fill: '#f8fafc' }}
                                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
@@ -454,6 +470,7 @@ export const DirectorDashboard: React.FC = () => {
                                     <LabelList 
                                         dataKey="share" 
                                         position="right" 
+                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                         formatter={(val: any) => `${Number(val).toFixed(2)}%`} 
                                         style={{ fontSize: '10px', fontWeight: '900', fill: '#64748b' }} 
                                     />

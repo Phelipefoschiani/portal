@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Trophy, Target, Users, ShoppingBag, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, AlertCircle, Search, User, Filter, Medal, Activity, BarChart3, Star, Percent, Info, ChevronDown, CheckSquare, Square, Tag, Package, X, Briefcase, CheckCircle2, XCircle, Download, Loader2, Sparkles, FileText } from 'lucide-react';
+import { Trophy, Target, Users, ShoppingBag, TrendingUp, Calendar, ArrowUpRight, ArrowDownRight, User, Medal, Info, ChevronDown, CheckSquare, Square, Tag, Package, X, Briefcase, Download, Loader2, Sparkles, FileText, MapPin } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { GenericScoreCardModal } from '../GenericScoreCardModal';
 
 const ScoreRulesModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     return createPortal(
@@ -58,7 +59,14 @@ const ScoreRulesModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 };
 
 const ClientDetailModal: React.FC<{ 
-    client: any; 
+    client: {
+        id: string;
+        cnpj: string;
+        name: string;
+        achievement: number;
+        value: number;
+        prevValue: number;
+    }; 
     year: number; 
     monthsLabel: string;
     onClose: () => void;
@@ -135,8 +143,19 @@ export const ManagerScoreCardScreen: React.FC = () => {
     
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const [showInfoModal, setShowInfoModal] = useState(false);
-    const [selectedClientDetail, setSelectedClientDetail] = useState<any | null>(null);
+    const [selectedClientDetail, setSelectedClientDetail] = useState<{
+        id: string;
+        cnpj: string;
+        name: string;
+        achievement: number;
+        value: number;
+        prevValue: number;
+    } | null>(null);
     const [isExporting, setIsExporting] = useState(false);
+    
+    // State for Generic Score Card
+    const [genericModal, setGenericModal] = useState<{ dimension: 'canal_vendas' | 'grupo' | 'cidade' | 'usuario_id', value: string, label: string } | null>(null);
+    const [showDimensionSelector, setShowDimensionSelector] = useState<{ type: 'canal_vendas' | 'grupo' | 'cidade' | 'usuario_id', open: boolean }>({ type: 'canal_vendas', open: false });
     
     const dropdownRef = useRef<HTMLDivElement>(null);
     const exportRef = useRef<HTMLDivElement>(null);
@@ -176,8 +195,43 @@ export const ManagerScoreCardScreen: React.FC = () => {
         return `${selectedMonths.length} MESES`;
     };
     
-    const [scoreData, setScoreData] = useState<any>(null);
+    const [scoreData, setScoreData] = useState<{
+        totalFaturado: number;
+        totalMeta: number;
+        pctMeta: number;
+        positivacaoCount: number;
+        totalPortfolio: number;
+        pctPositivacao: number;
+        mediaMensal: number;
+        uniqueSkus: number;
+        uniqueSkusPrev: number;
+        mixEvolutionPct: number;
+        finalScore: number;
+        scoreFinanceiro: number;
+        scoreCarteira: number;
+        scoreMix: number;
+        monthlyData: { month: number; sales: number; target: number }[];
+        monthsHit: number;
+        segmentationData: { label: string; value: number; percent: number }[];
+        topProducts: { name: string; value: number; percent: number }[];
+        topClients: { id: string; cnpj: string; name: string; value: number; prevValue: number; percent: number; achievement: number }[];
+    } | null>(null);
     const [isCalculating, setIsCalculating] = useState(true);
+
+    const dimensions = useMemo(() => {
+        const vendasCanaisMes = totalDataStore.vendasCanaisMes;
+        const vendasProdutosMes = totalDataStore.vendasProdutosMes;
+        const clients = totalDataStore.clients;
+        return {
+            canal_vendas: Array.from(new Set(vendasCanaisMes.map(s => s.canal_vendas).filter(Boolean))).sort(),
+            grupo: Array.from(new Set(vendasProdutosMes.map(s => s.grupo).filter(Boolean))).sort(),
+            cidade: Array.from(new Set(clients.map(c => c.cidade).filter(Boolean))).sort(),
+            usuario_id: Array.from(new Set(totalDataStore.users.map(u => u.id).filter(Boolean))).map(id => ({
+                id,
+                nome: totalDataStore.users.find(u => String(u.id) === String(id))?.nome || `Vendedor ${id}`
+            })).sort((a, b) => a.nome.localeCompare(b.nome))
+        };
+    }, []);
 
     // ... (keep existing refs and effects)
 
@@ -187,31 +241,28 @@ export const ManagerScoreCardScreen: React.FC = () => {
 
         const timer = setTimeout(() => {
             try {
-                const sales = totalDataStore.sales || [];
+                const vendasConsolidadas = totalDataStore.vendasConsolidadas || [];
+                const vendasClientesMes = totalDataStore.vendasClientesMes || [];
+                const vendasProdutosMes = totalDataStore.vendasProdutosMes || [];
+                const vendasCanaisMes = totalDataStore.vendasCanaisMes || [];
                 const targets = totalDataStore.targets || [];
                 const clients = totalDataStore.clients || [];
 
-                const filterSales = (s: any, yearToCheck: number) => {
-                    if (!s.data) return false;
-                    const d = new Date(s.data + 'T00:00:00');
-                    const m = d.getUTCMonth() + 1;
-                    const y = d.getUTCFullYear();
-                    
-                    const matchesYear = y === yearToCheck;
-                    const matchesMonth = selectedMonths.includes(m);
-                    const matchesRep = selectedRepId === 'all' ? true : String(s.usuario_id) === String(selectedRepId);
-                    
+                const filterView = (v: { ano: number; mes: number; usuario_id: string }, yearToCheck: number) => {
+                    const matchesYear = v.ano === yearToCheck;
+                    const matchesMonth = selectedMonths.includes(v.mes);
+                    const matchesRep = selectedRepId === 'all' ? true : String(v.usuario_id) === String(selectedRepId);
                     return matchesYear && matchesMonth && matchesRep;
                 };
                 
-                const currentSales = sales.filter(s => filterSales(s, selectedYear));
-                const prevSales = sales.filter(s => filterSales(s, selectedYear - 1));
-                const totalFaturado = currentSales.reduce((acc, curr) => acc + Number(curr.faturamento || 0), 0);
+                const currentVendasConsolidadas = vendasConsolidadas.filter(v => filterView(v, selectedYear));
+                const totalFaturado = currentVendasConsolidadas.reduce((acc, curr) => acc + Number(curr.faturamento_total || 0), 0);
                 
                 const currentTargets = targets.filter(t => t.ano === selectedYear && selectedMonths.includes(t.mes) && (selectedRepId === 'all' ? true : t.usuario_id === selectedRepId));
                 const totalMeta = currentTargets.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
 
-                const activeCnpjs = new Set(currentSales.map(s => String(s.cnpj || '').replace(/\D/g, '')));
+                const currentVendasClientes = vendasClientesMes.filter(v => filterView(v, selectedYear));
+                const activeCnpjs = new Set(currentVendasClientes.map(v => String(v.cnpj || '').replace(/\D/g, '')));
                 
                 // Regra de Carteira Dinâmica: Clientes ativos no final do ano anterior OU que compraram no ano selecionado
                 const portfolioClients = clients.filter(c => {
@@ -233,8 +284,10 @@ export const ManagerScoreCardScreen: React.FC = () => {
                 const totalPortfolio = portfolioClients.length || 1; 
                 const positivacaoCount = portfolioClients.filter(c => activeCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;
                 
-                const uniqueSkus = new Set(currentSales.map(s => s.codigo_produto)).size;
-                const uniqueSkusPrev = new Set(prevSales.map(s => s.codigo_produto)).size;
+                const currentVendasProdutos = vendasProdutosMes.filter(v => filterView(v, selectedYear));
+                const prevVendasProdutos = vendasProdutosMes.filter(v => filterView(v, selectedYear - 1));
+                const uniqueSkus = new Set(currentVendasProdutos.map(v => v.codigo_produto)).size;
+                const uniqueSkusPrev = new Set(prevVendasProdutos.map(v => v.codigo_produto)).size;
                 
                 const monthsCount = selectedMonths.length || 1;
                 const mediaMensal = totalFaturado / monthsCount;
@@ -257,11 +310,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                 const finalScore = Math.round(scoreFinanceiro + scoreCarteira + scoreMix);
 
                 const monthlyData = selectedMonths.sort((a,b) => a-b).map(month => {
-                    const mSales = currentSales.filter(s => {
-                        if (!s.data) return false;
-                        const d = new Date(s.data + 'T00:00:00');
-                        return d.getUTCMonth() + 1 === month;
-                    }).reduce((a, b) => a + Number(b.faturamento || 0), 0);
+                    const mSales = currentVendasConsolidadas.filter(v => v.mes === month).reduce((a, b) => a + Number(b.faturamento_total || 0), 0);
                     
                     const mTarget = currentTargets.filter(t => t.mes === month).reduce((a, b) => a + Number(b.valor || 0), 0);
                     
@@ -270,19 +319,20 @@ export const ManagerScoreCardScreen: React.FC = () => {
 
                 const monthsHit = monthlyData.filter(m => m.target > 0 && m.sales >= m.target).length;
 
+                const currentVendasCanais = vendasCanaisMes.filter(v => filterView(v, selectedYear));
                 const segmentMap = new Map<string, number>();
-                currentSales.forEach(s => {
-                    const seg = s.canal_vendas || 'GERAL / OUTROS';
-                    segmentMap.set(seg, (segmentMap.get(seg) || 0) + Number(s.faturamento || 0));
+                currentVendasCanais.forEach(v => {
+                    const seg = v.canal_vendas || 'GERAL / OUTROS';
+                    segmentMap.set(seg, (segmentMap.get(seg) || 0) + Number(v.faturamento_total || 0));
                 });
                 const segmentationData = Array.from(segmentMap.entries())
                     .map(([label, value]) => ({ label, value, percent: totalFaturado > 0 ? (value / totalFaturado) * 100 : 0 }))
                     .sort((a, b) => b.value - a.value);
 
                 const productMap = new Map<string, number>();
-                currentSales.forEach(s => {
-                    const prod = s.produto || 'PRODUTO N/I';
-                    productMap.set(prod, (productMap.get(prod) || 0) + Number(s.faturamento || 0));
+                currentVendasProdutos.forEach(v => {
+                    const prod = v.produto || 'PRODUTO N/I';
+                    productMap.set(prod, (productMap.get(prod) || 0) + Number(v.faturamento_total || 0));
                 });
                 const topProducts = Array.from(productMap.entries())
                     .map(([name, value]) => ({ 
@@ -295,31 +345,35 @@ export const ManagerScoreCardScreen: React.FC = () => {
 
                 const clientMap = new Map<string, { current: number, prev: number }>();
                 const clientNameMap = new Map<string, string>();
+                const clientIdMap = new Map<string, string>();
                 
-                currentSales.forEach(s => {
-                    const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
+                currentVendasClientes.forEach(v => {
+                    const cnpjClean = String(v.cnpj || '').replace(/\D/g, '');
                     if (!cnpjClean) return;
 
                     if (!clientNameMap.has(cnpjClean)) {
                         const clientObj = clients.find(c => String(c.cnpj || '').replace(/\D/g,'') === cnpjClean);
-                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || s.cliente_nome || `CNPJ ${s.cnpj}`);
+                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || v.cliente_nome || `CNPJ ${v.cnpj}`);
+                        if (clientObj?.id) clientIdMap.set(cnpjClean, clientObj.id);
                     }
                     const data = clientMap.get(cnpjClean) || { current: 0, prev: 0 };
-                    data.current += Number(s.faturamento || 0);
+                    data.current += Number(v.faturamento_total || 0);
                     clientMap.set(cnpjClean, data);
                 });
 
-                prevSales.forEach(s => {
-                    const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
+                const prevVendasClientes = vendasClientesMes.filter(v => filterView(v, selectedYear - 1));
+                prevVendasClientes.forEach(v => {
+                    const cnpjClean = String(v.cnpj || '').replace(/\D/g, '');
                     if (!cnpjClean) return;
                     
                     if (!clientNameMap.has(cnpjClean)) {
                         const clientObj = clients.find(c => String(c.cnpj || '').replace(/\D/g,'') === cnpjClean);
-                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || s.cliente_nome || `CNPJ ${s.cnpj}`);
+                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || v.cliente_nome || `CNPJ ${v.cnpj}`);
+                        if (clientObj?.id) clientIdMap.set(cnpjClean, clientObj.id);
                     }
 
                     const data = clientMap.get(cnpjClean) || { current: 0, prev: 0 };
-                    data.prev += Number(s.faturamento || 0);
+                    data.prev += Number(v.faturamento_total || 0);
                     clientMap.set(cnpjClean, data);
                 });
 
@@ -331,6 +385,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             : (data.current > 0 ? 100 : 0);
                             
                         return {
+                            id: clientIdMap.get(cnpj) || '',
                             cnpj,
                             name: clientNameMap.get(cnpj) || 'Cliente',
                             value: data.current,
@@ -529,6 +584,69 @@ export const ManagerScoreCardScreen: React.FC = () => {
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    {/* DEMAIS SCORE CARD Buttons */}
+                    <div className="flex flex-wrap gap-2 mr-4 border-r border-slate-100 pr-4">
+                        <div className="relative group">
+                            <button 
+                                onClick={() => setShowDimensionSelector({ type: 'canal_vendas', open: !showDimensionSelector.open || showDimensionSelector.type !== 'canal_vendas' })}
+                                className="flex items-center gap-2 px-3 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all"
+                            >
+                                <Tag className="w-3 h-3" /> Canal
+                            </button>
+                            {showDimensionSelector.open && showDimensionSelector.type === 'canal_vendas' && (
+                                <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[160] py-2 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {dimensions.canal_vendas.map(v => (
+                                        <button key={v} onClick={() => { setGenericModal({ dimension: 'canal_vendas', value: v || '', label: v || '' }); setShowDimensionSelector({ ...showDimensionSelector, open: false }); }} className="w-full text-left px-4 py-2 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50 hover:text-indigo-600">{v}</button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="relative group">
+                            <button 
+                                onClick={() => setShowDimensionSelector({ type: 'grupo', open: !showDimensionSelector.open || showDimensionSelector.type !== 'grupo' })}
+                                className="flex items-center gap-2 px-3 py-2 bg-purple-50 text-purple-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-purple-100 transition-all"
+                            >
+                                <Briefcase className="w-3 h-3" /> Grupo
+                            </button>
+                            {showDimensionSelector.open && showDimensionSelector.type === 'grupo' && (
+                                <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[160] py-2 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {dimensions.grupo.map(v => (
+                                        <button key={v} onClick={() => { setGenericModal({ dimension: 'grupo', value: v || '', label: v || '' }); setShowDimensionSelector({ ...showDimensionSelector, open: false }); }} className="w-full text-left px-4 py-2 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50 hover:text-purple-600">{v}</button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="relative group">
+                            <button 
+                                onClick={() => setShowDimensionSelector({ type: 'cidade', open: !showDimensionSelector.open || showDimensionSelector.type !== 'cidade' })}
+                                className="flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                            >
+                                <MapPin className="w-3 h-3" /> Cidade
+                            </button>
+                            {showDimensionSelector.open && showDimensionSelector.type === 'cidade' && (
+                                <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[160] py-2 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {dimensions.cidade.map(v => (
+                                        <button key={v} onClick={() => { setGenericModal({ dimension: 'cidade', value: v || '', label: v || '' }); setShowDimensionSelector({ ...showDimensionSelector, open: false }); }} className="w-full text-left px-4 py-2 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50 hover:text-emerald-600">{v}</button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="relative group">
+                            <button 
+                                onClick={() => setShowDimensionSelector({ type: 'usuario_id', open: !showDimensionSelector.open || showDimensionSelector.type !== 'usuario_id' })}
+                                className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all"
+                            >
+                                <Users className="w-3 h-3" /> Vendedor
+                            </button>
+                            {showDimensionSelector.open && showDimensionSelector.type === 'usuario_id' && (
+                                <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[160] py-2 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {dimensions.usuario_id.map(v => (
+                                        <button key={v.id} onClick={() => { setGenericModal({ dimension: 'usuario_id', value: String(v.id), label: v.nome || '' }); setShowDimensionSelector({ ...showDimensionSelector, open: false }); }} className="w-full text-left px-4 py-2 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50 hover:text-amber-600">{v.nome}</button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                     {/* Botão de Exportação */}
                     <div className="flex gap-2">
                         <button 
@@ -661,16 +779,23 @@ export const ManagerScoreCardScreen: React.FC = () => {
                         <div className="flex items-center gap-3 mb-6"><Briefcase className="w-5 h-5 text-emerald-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top 5 Clientes</h3></div>
                         {scoreData.topClients.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem clientes</p></div>) : (
                             <div className="space-y-3 flex-1">
-                                {scoreData.topClients.map((client: any, idx: number) => (
+                                {scoreData.topClients.map((client: { id: string; cnpj: string; name: string; achievement: number; percent: number; value: number; prevValue: number }, idx: number) => (
                                     <button 
                                         key={idx} 
-                                        onClick={() => setSelectedClientDetail(client)}
+                                        onClick={() => setSelectedClientDetail({
+                                            id: client.id,
+                                            cnpj: client.cnpj,
+                                            name: client.name,
+                                            achievement: client.achievement,
+                                            value: client.value,
+                                            prevValue: client.prevValue
+                                        })}
                                         className="w-full flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left group"
                                     >
-                                        <div className="flex items-center gap-3 overflow-hidden">
+                                        <div className="flex items-center gap-3 min-w-0">
                                             <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-[9px] shrink-0 ${idx === 0 ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>{idx + 1}</div>
                                             <div className="min-w-0">
-                                                <span className="text-[9px] font-bold text-slate-700 uppercase truncate max-w-[100px] block group-hover:text-blue-700">{client.name}</span>
+                                                <span className="text-[9px] font-bold text-slate-700 uppercase leading-tight block group-hover:text-blue-700">{client.name}</span>
                                                 <span className={`text-[8px] font-black flex items-center gap-0.5 ${client.achievement >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                                                     {client.achievement >= 0 ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
                                                     {Math.abs(client.achievement).toFixed(2)}% vs Ano Ant
@@ -690,11 +815,11 @@ export const ManagerScoreCardScreen: React.FC = () => {
                         <div className="flex items-center gap-3 mb-6"><Package className="w-5 h-5 text-purple-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top 5 Produtos</h3></div>
                         {scoreData.topProducts.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><ShoppingBag className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem vendas</p></div>) : (
                             <div className="space-y-3 flex-1">
-                                {scoreData.topProducts.map((prod: any, idx: number) => (
+                                {scoreData.topProducts.map((prod: { name: string; percent: number }, idx: number) => (
                                     <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-2xl">
-                                        <div className="flex items-center gap-3 overflow-hidden">
+                                        <div className="flex items-center gap-3 min-w-0">
                                             <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-[9px] shrink-0 ${idx === 0 ? 'bg-purple-600 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>{idx + 1}</div>
-                                            <span className="text-[9px] font-bold text-slate-700 uppercase truncate max-w-[120px]">{prod.name}</span>
+                                            <span className="text-[9px] font-bold text-slate-700 uppercase leading-tight">{prod.name}</span>
                                         </div>
                                         <span className="text-[9px] font-black text-purple-700 tabular-nums shrink-0">{prod.percent.toFixed(1)}%</span>
                                     </div>
@@ -706,7 +831,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                         <div className="flex items-center gap-3 mb-6"><Tag className="w-5 h-5 text-blue-600" /><h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Segmentação</h3></div>
                         {scoreData.segmentationData.length === 0 ? (<div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-10"><Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-[10px] font-black uppercase tracking-widest">Sem dados</p></div>) : (
                             <div className="space-y-4 flex-1">
-                                {scoreData.segmentationData.slice(0, 5).map((seg: any, idx: number) => (
+                                {scoreData.segmentationData.slice(0, 5).map((seg: { label: string; percent: number }, idx: number) => (
                                     <div key={idx} className="space-y-1.5">
                                         <div className="flex justify-between items-end"><span className="text-[9px] font-black text-slate-700 uppercase tracking-tight">{seg.label}</span><span className="text-[9px] font-black text-blue-600">{seg.percent.toFixed(1)}%</span></div>
                                         <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(seg.percent, 100)}%` }}></div></div>
@@ -721,7 +846,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b border-slate-100"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-widest"><th className="px-8 py-5">Mês</th><th className="px-6 py-5 text-right">Meta</th><th className="px-6 py-5 text-right">Realizado</th><th className="px-6 py-5 text-center">Status</th><th className="px-6 py-5 text-center">Eficiência</th></tr></thead>
                         <tbody className="divide-y divide-slate-50">
-                            {scoreData.monthlyData.map((m: any, idx: number) => {
+                            {scoreData.monthlyData.map((m: { month: number; sales: number; target: number }, idx: number) => {
                                 const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                                 const isSuccess = achievement >= 100;
                                 const isPending = m.sales === 0 && m.target > 0 && m.month > (new Date().getMonth() + 1);
@@ -735,6 +860,15 @@ export const ManagerScoreCardScreen: React.FC = () => {
                     <p style={{ fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', color: '#cbd5e1', letterSpacing: '6px' }}>Portal Centro-Norte • Inteligência Comercial Avançada</p>
                 </div>
             </div>
+            )}
+
+            {genericModal && (
+                <GenericScoreCardModal 
+                    dimension={genericModal.dimension}
+                    value={genericModal.value}
+                    label={genericModal.label}
+                    onClose={() => setGenericModal(null)}
+                />
             )}
 
             {/* --- LAYOUT DEDICADO PARA EXPORTAÇÃO (SÓ APARECE DURANTE O CAPTURE) --- */}
@@ -762,9 +896,11 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             <svg width="35" height="35" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg>
                         </div>
                         <div>
-                            <h2 style={{ fontSize: '32px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', margin: 0, letterSpacing: '-1px', lineHeight: '1.1' }}>Score Card Performance</h2>
+                            <h2 style={{ fontSize: '32px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', margin: 0, letterSpacing: '-1px', lineHeight: '1.1' }}>
+                                Score Card - {selectedRepId === 'all' ? 'Regional' : users.find(u => u.id === selectedRepId)?.nome || 'Representante'}
+                            </h2>
                             <p style={{ fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '3px', marginTop: '5px' }}>
-                                {selectedRepId === 'all' ? 'VISÃO REGIONAL CONSOLIDADA' : users.find(u => u.id === selectedRepId)?.nome || 'REPRESENTANTE'} • {getMonthsLabel()} {selectedYear}
+                                Período de Referência: {getMonthsLabel()} {selectedYear}
                             </p>
                         </div>
                     </div>
@@ -879,7 +1015,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                             Top 5 Clientes
                         </h3>
-                        {scoreData.topClients.map((client: any, idx: number) => (
+                        {scoreData.topClients.map((client: { id: string; cnpj: string; name: string; achievement: number; percent: number; value: number; prevValue: number }, idx: number) => (
                             <div key={idx} style={{ display: 'flex', alignItems: 'center', padding: '16px 0', borderBottom: idx === 4 ? 'none' : '2px solid #f8fafc', justifyContent: 'space-between', gap: '15px', minHeight: '60px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
                                     <div style={{ width: '32px', height: '32px', backgroundColor: idx === 0 ? '#059669' : '#f1f5f9', color: idx === 0 ? 'white' : '#94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '900', flexShrink: 0 }}>{idx + 1}</div>
@@ -908,7 +1044,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15"></path><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
                             Principais Itens
                         </h3>
-                        {scoreData.topProducts.map((prod: any, idx: number) => (
+                        {scoreData.topProducts.map((prod: { name: string; percent: number }, idx: number) => (
                             <div key={idx} style={{ display: 'flex', alignItems: 'center', padding: '18px 0', borderBottom: idx === 4 ? 'none' : '2px solid #f8fafc', justifyContent: 'space-between', gap: '15px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
                                     <div style={{ width: '30px', height: '30px', backgroundColor: idx === 0 ? '#7c3aed' : '#f1f5f9', color: idx === 0 ? 'white' : '#94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '900', flexShrink: 0 }}>{idx + 1}</div>
@@ -926,7 +1062,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             Mix de Canais
                         </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            {scoreData.segmentationData.slice(0, 5).map((seg: any, idx: number) => (
+                            {scoreData.segmentationData.slice(0, 5).map((seg: { label: string; percent: number }, idx: number) => (
                                 <div key={idx}>
                                     <div style={{ display: 'flex', marginBottom: '8px', justifyContent: 'space-between' }}>
                                         <span style={{ fontSize: '11px', fontWeight: '900', color: '#334155', textTransform: 'uppercase' }}>{seg.label}</span>
@@ -952,7 +1088,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {scoreData.monthlyData.map((m: any, idx: number) => {
+                            {scoreData.monthlyData.map((m: { month: number; sales: number; target: number }, idx: number) => {
                                 const achievement = m.target > 0 ? (m.sales / m.target) * 100 : 0;
                                 const isSuccess = achievement >= 100;
                                 return (

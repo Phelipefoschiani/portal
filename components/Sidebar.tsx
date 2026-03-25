@@ -20,7 +20,7 @@ interface MenuItem {
   label: string;
   icon: LucideIcon;
   badge?: number;
-  hasAlert?: boolean;
+  alertType?: 'red' | 'yellow' | null;
   isHighlighted?: boolean;
 }
 
@@ -34,8 +34,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggle
 }) => {
   const [unreadCount, setUnreadCount] = useState(0);
-  const [forecastAlert, setForecastAlert] = useState(false);
-  const [investmentAlert, setInvestmentAlert] = useState(false);
+  const [forecastAlert, setForecastAlert] = useState<'red' | 'yellow' | null>(null);
+  const [investmentAlert, setInvestmentAlert] = useState<'red' | 'yellow' | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
@@ -58,21 +58,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
             setUnreadCount(count || 0);
 
             if (userRole === 'rep') {
-                const { data: rejForecast } = await supabase.from('previsao_clientes').select('id, previsoes!inner(usuario_id)').eq('status', 'rejected').eq('previsoes.usuario_id', userId);
-                setForecastAlert(!!(rejForecast && rejForecast.length > 0));
+                const { data: rejForecast } = await supabase.from('previsoes').select('id').eq('status', 'rejected').eq('usuario_id', userId);
+                setForecastAlert(rejForecast && rejForecast.length > 0 ? 'red' : null);
                 const { data: rejInv } = await supabase.from('investimentos').select('id').eq('status', 'rejected').eq('usuario_id', userId);
                 if (rejInv && rejInv.length > 0) {
                     const seenIds = JSON.parse(localStorage.getItem('pcn_seen_inv_rejections') || '[]');
                     const hasUnseenRejection = rejInv.some(inv => !seenIds.includes(inv.id));
-                    setInvestmentAlert(hasUnseenRejection);
+                    setInvestmentAlert(hasUnseenRejection ? 'red' : null);
                 } else {
-                    setInvestmentAlert(false);
+                    setInvestmentAlert(null);
                 }
             } else if (userRole === 'admin') {
-                const { data: penForecast } = await supabase.from('previsao_clientes').select('id').eq('status', 'pending');
-                setForecastAlert(!!(penForecast && penForecast.length > 0));
+                const { data: allForecasts } = await supabase
+                    .from('previsoes')
+                    .select('status, criado_em')
+                    .order('criado_em', { ascending: false });
+
+                if (allForecasts && allForecasts.length > 0) {
+                    const hasPending = allForecasts.some(f => f.status === 'pending');
+                    if (hasPending) {
+                        setForecastAlert('red');
+                    } else {
+                        const lastDate = new Date(allForecasts[0].criado_em).getTime();
+                        const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+                        if (Date.now() - lastDate > sevenDaysInMs) {
+                            setForecastAlert('yellow');
+                        } else {
+                            setForecastAlert(null);
+                        }
+                    }
+                } else {
+                    setForecastAlert(null);
+                }
+
                 const { data: penInv } = await supabase.from('investimentos').select('id').eq('status', 'pendente');
-                setInvestmentAlert(!!(penInv && penInv.length > 0));
+                setInvestmentAlert(penInv && penInv.length > 0 ? 'red' : null);
             }
         };
         fetchStatus();
@@ -87,8 +107,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'rep-bi-builder', label: 'Construtor de BI', icon: Table2 },
     { id: 'clients', label: 'Meus Clientes', icon: Users },
     { id: 'campaigns', label: 'Campanhas', icon: Megaphone },
-    { id: 'forecast', label: 'Previsão', icon: TrendingUp, hasAlert: forecastAlert },
-    { id: 'investments', label: 'Investimentos', icon: Wallet, hasAlert: investmentAlert },
+    { id: 'forecast', label: 'Previsão', icon: TrendingUp, alertType: forecastAlert },
+    { id: 'investments', label: 'Investimentos', icon: Wallet, alertType: investmentAlert },
     { id: 'notifications', label: 'Notificações', icon: Bell, badge: unreadCount },
   ];
 
@@ -97,8 +117,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-analysis', label: 'Análise Performance', icon: BarChart3 },
     { id: 'admin-detailed-analysis', label: 'Construtor de BI', icon: Table2 },
     { id: 'admin-clients', label: 'Carteira Total', icon: Users },
-    { id: 'admin-campaigns', label: 'Análise Campanhas', icon: ShieldCheck, hasAlert: investmentAlert },
-    { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, hasAlert: forecastAlert },
+    { id: 'admin-campaigns', label: 'Análise Campanhas', icon: ShieldCheck, alertType: investmentAlert },
+    { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, alertType: forecastAlert },
     { id: 'admin-scorecard', label: 'Score Card RCA', icon: Trophy },
   ];
 
@@ -140,7 +160,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className={`font-medium text-sm ${item.isHighlighted && !isActive ? 'font-bold' : ''}`}>{item.label}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          {item.hasAlert && <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>}
+          {item.alertType && (
+            <div className={`w-2.5 h-2.5 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)] ${
+              item.alertType === 'yellow' ? 'bg-yellow-500 shadow-yellow-500/50' : 'bg-red-500 shadow-red-500/50'
+            }`}></div>
+          )}
           {item.badge !== undefined && item.badge > 0 && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-50 text-[10px] font-bold text-white">{item.badge}</span>}
         </div>
       </button>

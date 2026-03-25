@@ -8,6 +8,7 @@ import { totalDataStore } from '../../lib/dataStore';
 interface Investment {
     id: string;
     data: string;
+    cliente_id: string;
     valor_total_investimento: number;
     valor_caju: number;
     valor_dinheiro: number;
@@ -92,7 +93,7 @@ export const ManagerCampaignsScreen: React.FC = () => {
             const consumptionPct = investmentPool > 0 ? (annualSpent / investmentPool) * 100 : 0;
             return { repId: rep.id, nome: rep.nome, metaAnual: annualTarget, verbaTotal: investmentPool, gastoAnual: annualSpent, saldo: remaining, consumoPct: consumptionPct };
         }).sort((a, b) => b.metaAnual - a.metaAnual);
-    }, [viewMode, filterYear, investments]);
+    }, [viewMode, filterYear]);
 
     const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
         if (isActionLoading || !selectedDetail) return;
