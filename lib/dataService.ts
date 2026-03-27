@@ -2,7 +2,8 @@
 import { supabase } from './supabase';
 import { totalDataStore } from './dataStore';
 import { saveToLocal, getFromLocal } from './storage';
-import { VendaConsolidada, ClienteUltimaCompra, VendaClienteMes, VendaCanalMes, VendaProdutoMes, Target, Investment } from '../types';
+import { VendaConsolidada, ClienteUltimaCompra, VendaClienteMes, VendaCanalMes, VendaProdutoMes, Target, Investment, Sale } from '../types';
+import { aggregateSales } from './aggregations';
 
 interface SupabaseError {
     message: string;
@@ -80,32 +81,31 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
 
     const needsUpdate = await checkUpdate();
 
-    // 1. Vendas Consolidadas
-    if (needsUpdate || !totalDataStore.vendasConsolidadas.length) {
+    // 1-5. Dados de Vendas e Agregações
+    if (needsUpdate || !totalDataStore.sales.length) {
         totalDataStore.loading.vendasConsolidadas = true;
+        totalDataStore.loading.clientesUltimaCompra = true;
+        totalDataStore.loading.vendasClientesMes = true;
+        totalDataStore.loading.vendasCanaisMes = true;
+        totalDataStore.loading.vendasProdutosMes = true;
         try {
-            const data = await fetchAllRecords<VendaConsolidada>(() => {
-                let q = supabase.from('vw_vendas_consolidadas').select('*');
+            const data = await fetchAllRecords<Sale>(() => {
+                let q = supabase.from('dados_vendas').select('*');
                 if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
                 return q;
             });
-            totalDataStore.vendasConsolidadas = data;
-            await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, vendasConsolidadas: data }, userId);
-        } finally {
-            totalDataStore.loading.vendasConsolidadas = false;
-        }
-    }
-
-    // 2. Última Compra
-    if (needsUpdate || !totalDataStore.clientesUltimaCompra.length) {
-        totalDataStore.loading.clientesUltimaCompra = true;
-        try {
-            const data = await fetchAllRecords<ClienteUltimaCompra>(() => supabase.from('vw_clientes_ultima_compra').select('*'));
-            totalDataStore.clientesUltimaCompra = data;
+            totalDataStore.sales = data;
             
+            const aggregations = aggregateSales(data);
+            totalDataStore.vendasConsolidadas = aggregations.vendasConsolidadas;
+            totalDataStore.clientesUltimaCompra = aggregations.clientesUltimaCompra;
+            totalDataStore.vendasClientesMes = aggregations.vendasClientesMes;
+            totalDataStore.vendasCanaisMes = aggregations.vendasCanaisMes;
+            totalDataStore.vendasProdutosMes = aggregations.vendasProdutosMes;
+
             // Update client activity in background
             const ultimaCompraMap = new Map<string, string>();
-            data.forEach(c => {
+            aggregations.clientesUltimaCompra.forEach(c => {
                 if (c.cnpj) ultimaCompraMap.set(c.cnpj.replace(/\D/g, ''), c.ultima_compra);
             });
 
@@ -118,56 +118,20 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
                 return { ...client, lastPurchaseDate: lastPurchase, data_inativacao: inactivationDate.toISOString().split('T')[0] };
             });
 
-            await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, clientesUltimaCompra: data }, userId);
+            await saveToLocal('sales_cache', data, userId);
+            await saveToLocal('views_cache', { 
+                ...await getFromLocal('views_cache', userId) as Record<string, unknown>, 
+                vendasConsolidadas: aggregations.vendasConsolidadas,
+                clientesUltimaCompra: aggregations.clientesUltimaCompra,
+                vendasClientesMes: aggregations.vendasClientesMes,
+                vendasCanaisMes: aggregations.vendasCanaisMes,
+                vendasProdutosMes: aggregations.vendasProdutosMes
+            }, userId);
         } finally {
+            totalDataStore.loading.vendasConsolidadas = false;
             totalDataStore.loading.clientesUltimaCompra = false;
-        }
-    }
-
-    // 3. Vendas Clientes Mês
-    if (needsUpdate || !totalDataStore.vendasClientesMes.length) {
-        totalDataStore.loading.vendasClientesMes = true;
-        try {
-            const data = await fetchAllRecords<VendaClienteMes>(() => {
-                let q = supabase.from('vw_vendas_clientes_mes').select('*');
-                if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
-                return q;
-            });
-            totalDataStore.vendasClientesMes = data;
-            await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, vendasClientesMes: data }, userId);
-        } finally {
             totalDataStore.loading.vendasClientesMes = false;
-        }
-    }
-
-    // 4. Vendas Canais Mês
-    if (needsUpdate || !totalDataStore.vendasCanaisMes.length) {
-        totalDataStore.loading.vendasCanaisMes = true;
-        try {
-            const data = await fetchAllRecords<VendaCanalMes>(() => {
-                let q = supabase.from('vw_vendas_canais_mes').select('*');
-                if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
-                return q;
-            });
-            totalDataStore.vendasCanaisMes = data;
-            await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, vendasCanaisMes: data }, userId);
-        } finally {
             totalDataStore.loading.vendasCanaisMes = false;
-        }
-    }
-
-    // 5. Vendas Produtos Mês
-    if (needsUpdate || !totalDataStore.vendasProdutosMes.length) {
-        totalDataStore.loading.vendasProdutosMes = true;
-        try {
-            const data = await fetchAllRecords<VendaProdutoMes>(() => {
-                let q = supabase.from('vw_vendas_produtos_mes').select('*');
-                if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
-                return q;
-            });
-            totalDataStore.vendasProdutosMes = data;
-            await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, vendasProdutosMes: data }, userId);
-        } finally {
             totalDataStore.loading.vendasProdutosMes = false;
         }
     }

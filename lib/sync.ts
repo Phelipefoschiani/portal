@@ -1,7 +1,8 @@
 import { supabase } from './supabase';
 import { totalDataStore } from './dataStore';
 import { saveToLocal } from './storage';
-import { Client, Target, Investment, User, VendaConsolidada, ClienteUltimaCompra, VendaClienteMes, VendaCanalMes, VendaProdutoMes } from '../types';
+import { Client, Target, Investment, User, VendaConsolidada, ClienteUltimaCompra, VendaClienteMes, VendaCanalMes, VendaProdutoMes, Sale } from '../types';
+import { aggregateSales } from './aggregations';
 
 const fetchAllRecords = async <T,>(queryFn: () => unknown): Promise<T[]> => {
     let allData: T[] = [];
@@ -43,28 +44,8 @@ export const performBackgroundSync = async (userId: string, userRole: string) =>
             return q;
         };
 
-        const getVendasConsolidadas = () => {
-            let q = supabase.from('vw_vendas_consolidadas').select('*');
-            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
-            return q;
-        };
-
-        const getClientesUltimaCompra = () => supabase.from('vw_clientes_ultima_compra').select('*');
-
-        const getVendasClientesMes = () => {
-            let q = supabase.from('vw_vendas_clientes_mes').select('*');
-            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
-            return q;
-        };
-
-        const getVendasCanaisMes = () => {
-            let q = supabase.from('vw_vendas_canais_mes').select('*');
-            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
-            return q;
-        };
-
-        const getVendasProdutosMes = () => {
-            let q = supabase.from('vw_vendas_produtos_mes').select('*');
+        const getSalesQuery = () => {
+            let q = supabase.from('dados_vendas').select('*');
             if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
             return q;
         };
@@ -84,24 +65,19 @@ export const performBackgroundSync = async (userId: string, userRole: string) =>
         const [
             users,
             clients,
-            vendasConsolidadas,
-            clientesUltimaCompra,
-            vendasClientesMes,
-            vendasCanaisMes,
-            vendasProdutosMes,
+            sales,
             targets,
             invs
         ] = await Promise.all([
             fetchAllRecords<User>(getUsersQuery),
             fetchAllRecords<Client>(getClientQuery),
-            fetchAllRecords<VendaConsolidada>(getVendasConsolidadas),
-            fetchAllRecords<ClienteUltimaCompra>(getClientesUltimaCompra),
-            fetchAllRecords<VendaClienteMes>(getVendasClientesMes),
-            fetchAllRecords<VendaCanalMes>(getVendasCanaisMes),
-            fetchAllRecords<VendaProdutoMes>(getVendasProdutosMes),
+            fetchAllRecords<Sale>(getSalesQuery),
             fetchAllRecords<Target>(getTargetQuery),
             fetchAllRecords<Investment>(getInvQuery)
         ]);
+
+        const aggregations = aggregateSales(sales);
+        const { vendasConsolidadas, clientesUltimaCompra, vendasClientesMes, vendasCanaisMes, vendasProdutosMes } = aggregations;
 
         // Otimização: Atualizar lastPurchaseDate dos clientes
         const ultimaCompraMap = new Map<string, string>();
@@ -130,6 +106,7 @@ export const performBackgroundSync = async (userId: string, userRole: string) =>
         // Update DataStore
         totalDataStore.users = users;
         totalDataStore.clients = processedClients;
+        totalDataStore.sales = sales;
         totalDataStore.vendasConsolidadas = vendasConsolidadas;
         totalDataStore.clientesUltimaCompra = clientesUltimaCompra;
         totalDataStore.vendasClientesMes = vendasClientesMes;
@@ -142,6 +119,7 @@ export const performBackgroundSync = async (userId: string, userRole: string) =>
         await Promise.all([
             saveToLocal('users_cache', users, userId),
             saveToLocal('clients_cache', processedClients, userId),
+            saveToLocal('sales_cache', sales, userId),
             saveToLocal('vendas_consolidadas_cache', vendasConsolidadas, userId),
             saveToLocal('clientes_ultima_compra_cache', clientesUltimaCompra, userId),
             saveToLocal('vendas_clientes_mes_cache', vendasClientesMes, userId),

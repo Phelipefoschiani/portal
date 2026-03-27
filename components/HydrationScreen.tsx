@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Database, ShieldCheck, CheckCircle2, Users } from 'lucide-react';
-import { Client, Target, Investment, User, VendaConsolidada, ClienteUltimaCompra, VendaClienteMes, VendaCanalMes, VendaProdutoMes } from '../types';
+import { Client, Target, Investment, User, VendaConsolidada, ClienteUltimaCompra, VendaClienteMes, VendaCanalMes, VendaProdutoMes, Sale } from '../types';
 import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
 import { saveToLocal, getFromLocal } from '../lib/storage';
@@ -139,6 +139,9 @@ export const HydrationScreen: React.FC<HydrationScreenProps> = ({ onComplete }) 
 
         // Tentar carregar visões do cache em silêncio (não bloqueante)
         try {
+            const cachedSales = await getFromLocal('sales_cache', userId) as Sale[] | null;
+            if (cachedSales) totalDataStore.sales = cachedSales;
+
             const cachedViews = await getFromLocal('views_cache', userId) as { 
                 vendasConsolidadas?: VendaConsolidada[], 
                 clientesUltimaCompra?: ClienteUltimaCompra[], 

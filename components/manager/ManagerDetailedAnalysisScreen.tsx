@@ -238,7 +238,7 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
 
     const processedBI = useMemo(() => {
         void updateTrigger;
-        const vendasProdutosMes = totalDataStore.vendasProdutosMes;
+        const sales = totalDataStore.sales;
         if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0, entities: 0, clients: 0 } };
 
         const usersMap = new Map<string, string>(totalDataStore.users.map(u => [u.id, u.nome]));
@@ -247,12 +247,6 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
         totalDataStore.clients.forEach(c => {
             const clean = String(c.cnpj || '').replace(/\D/g, '');
             clientLookup.set(clean, c.nome_fantasia);
-        });
-
-        const canalLookup = new Map<string, string>();
-        totalDataStore.vendasCanaisMes.forEach(c => {
-            const cleanCnpj = String(c.cnpj || '').replace(/\D/g, '');
-            canalLookup.set(`${cleanCnpj}_${c.ano}_${c.mes}`, c.canal_vendas);
         });
 
         // Prepara Set de CNPJs permitidos se houver filtro de clientes
@@ -265,16 +259,17 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
             });
         }
 
-        const filteredSales = vendasProdutosMes.filter(s => {
-            const m = s.mes;
-            const y = s.ano;
+        const filteredSales = sales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            const m = d.getUTCMonth() + 1;
+            const y = d.getUTCFullYear();
             const matchTime = y === selectedYear && selectedMonths.includes(m);
             if (!matchTime) return false;
 
             if (isAdmin && filterReps.length > 0 && !filterReps.includes(s.usuario_id)) return false;
             
             const saleCnpj = String(s.cnpj || '').replace(/\D/g, '');
-            const canal_vendas = canalLookup.get(`${saleCnpj}_${y}_${m}`) || 'GERAL / OUTROS';
+            const canal_vendas = s.canal_vendas || 'GERAL / OUTROS';
             
             if (filterCanais.length > 0 && (!canal_vendas || !filterCanais.includes(canal_vendas))) return false;
             if (filterGrupos.length > 0 && (!s.grupo || !filterGrupos.includes(s.grupo))) return false;
@@ -296,12 +291,12 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
         const tree = new Map<string, GroupData>();
 
         filteredSales.forEach(sale => {
-            const fat = Number(sale.faturamento_total) || 0;
-            const qtd = Number(sale.qtde_total) || 0;
+            const fat = Number(sale.faturamento) || 0;
+            const qtd = Number(sale.quantidade || sale.qtde_faturado) || 0;
             const skuId = sale.codigo_produto || sale.produto || 'N/I';
-            const saleDate = `${sale.ano}-${String(sale.mes).padStart(2, '0')}-01`; // Use month start as proxy
+            const saleDate = sale.data;
             const cnpjClean = String(sale.cnpj || '').replace(/\D/g, '');
-            const canal_vendas = canalLookup.get(`${cnpjClean}_${sale.ano}_${sale.mes}`) || 'GERAL / OUTROS';
+            const canal_vendas = sale.canal_vendas || 'GERAL / OUTROS';
             
             let currentLevel = tree;
             rowDimensions.forEach((dim, idx) => {
@@ -313,7 +308,7 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
                     const name = clientLookup.get(cnpjClean) || sale.cliente_nome;
                     key = (name || `CNPJ: ${sale.cnpj}`).trim().toUpperCase();
                 }
-                else if (dim === 'produto') key = sale.produto ? sale.produto.trim().toUpperCase() : 'ITEM SEM DESCRIÇÃO';
+                else if (dim === 'produto') key = (sale.produto_nome || sale.produto) ? (sale.produto_nome || sale.produto).trim().toUpperCase() : 'ITEM SEM DESCRIÇÃO';
 
                 if (!currentLevel.has(key)) {
                     currentLevel.set(key, {
@@ -531,31 +526,27 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
     };
 
     const filterOptions = useMemo(() => {
-        const vendasCanaisMes = totalDataStore.vendasCanaisMes;
-        const vendasProdutosMes = totalDataStore.vendasProdutosMes;
+        const sales = totalDataStore.sales;
         const clients = totalDataStore.clients;
         const canais = new Set<string>();
         const grupos = new Set<string>();
         const productMap = new Map();
         
-        vendasCanaisMes.forEach(s => {
+        sales.forEach(s => {
             if (s.canal_vendas) canais.add(s.canal_vendas);
-        });
-        
-        vendasProdutosMes.forEach(s => {
             if (s.grupo) grupos.add(s.grupo);
             
             // Build Product List
             const pKey = s.codigo_produto || s.produto;
             if (pKey && !productMap.has(pKey)) {
-                productMap.set(pKey, { id: pKey, nome: s.produto || 'Sem Descrição' });
+                productMap.set(pKey, { id: pKey, nome: s.produto_nome || s.produto || 'Sem Descrição' });
             }
         });
 
         // Prepara Set de CNPJs permitidos se houver filtro de clientes
-        const dynamicClients = (!isAdmin || filterReps.length > 0)
-            ? clients.filter(c => isAdmin ? filterReps.includes(c.usuario_id) : true)
-            : [];
+        const dynamicClients = filterReps.length > 0
+            ? clients.filter(c => filterReps.includes(c.usuario_id))
+            : clients;
 
         return {
             reps: totalDataStore.users.sort((a, b) => a.nome.localeCompare(b.nome)),

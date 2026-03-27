@@ -349,9 +349,6 @@ export const ManagerForecastScreen: React.FC<ManagerForecastScreenProps> = ({ up
                             <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight uppercase leading-none">
                                 {view === 'mensais' ? 'Confirmação de Meta Anual' : 'Gestão de Previsões Regional'}
                             </h2>
-                            {view !== 'mensais' && (
-                                <p className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mt-2">Acompanhamento do faturamento semanal projetado</p>
-                            )}
                         </div>
                     </div>
 
@@ -497,11 +494,6 @@ export const ManagerForecastScreen: React.FC<ManagerForecastScreenProps> = ({ up
                         <h2 style={{ fontSize: '42px', fontWeight: '900', textTransform: 'uppercase', margin: '0', color: '#0f172a' }}>
                             {view === 'mensais' ? 'Confirmação de Meta Anual' : 'Gestão de Previsões Regional'}
                         </h2>
-                        {view !== 'mensais' && (
-                            <p style={{ fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '4px', marginTop: '8px' }}>
-                                Acompanhamento do faturamento semanal projetado
-                            </p>
-                        )}
                     </div>
                 </div>
 

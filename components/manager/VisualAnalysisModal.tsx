@@ -65,8 +65,8 @@ export const VisualAnalysisModal: React.FC<VisualAnalysisModalProps> = ({
         if (filters.products.length > 0) {
             // Tenta encontrar o nome do produto nas vendas se não houver uma lista mestre
             const names = filters.products.map(id => {
-                const sale = (totalDataStore.sales as unknown as {produto_id: string, produto_descricao: string}[])?.find(s => s.produto_id === id);
-                return sale?.produto_descricao || id;
+                const sale = totalDataStore.sales.find(s => (s.codigo_produto || s.produto) === id);
+                return sale?.produto_nome || sale?.produto || id;
             });
             summary.push(`Produtos: ${names.length > 3 ? `${names.length} selecionados` : names.join(', ')}`);
         }
