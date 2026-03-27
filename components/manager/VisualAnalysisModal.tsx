@@ -1,4 +1,3 @@
-
 import React, { useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, TrendingUp, ShoppingBag, Users, Package, PieChart, BarChart3, Share2 } from 'lucide-react';
@@ -66,7 +65,7 @@ export const VisualAnalysisModal: React.FC<VisualAnalysisModalProps> = ({
         if (filters.products.length > 0) {
             // Tenta encontrar o nome do produto nas vendas se não houver uma lista mestre
             const names = filters.products.map(id => {
-                const sale = (totalDataStore.sales as {produto_id: string, produto_descricao: string}[])?.find(s => s.produto_id === id);
+                const sale = (totalDataStore.sales as unknown as {produto_id: string, produto_descricao: string}[])?.find(s => s.produto_id === id);
                 return sale?.produto_descricao || id;
             });
             summary.push(`Produtos: ${names.length > 3 ? `${names.length} selecionados` : names.join(', ')}`);
