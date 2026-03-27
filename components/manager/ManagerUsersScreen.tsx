@@ -3,7 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Search, User, Loader2, Eye, EyeOff, Hash, Calendar, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
-export const ManagerUsersScreen: React.FC = () => {
+interface ManagerUsersScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerUsersScreen: React.FC<ManagerUsersScreenProps> = ({ updateTrigger = 0 }) => {
     const [users, setUsers] = useState<{
         id: string;
         nome: string;
@@ -17,8 +21,9 @@ export const ManagerUsersScreen: React.FC = () => {
     const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
+        void updateTrigger;
         fetchUsers();
-    }, []);
+    }, [updateTrigger]);
 
     const fetchUsers = async () => {
         setIsLoading(true);

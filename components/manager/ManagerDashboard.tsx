@@ -274,7 +274,11 @@ const KpiDetailModal: React.FC<{
     );
 };
 
-export const ManagerDashboard: React.FC = () => {
+interface ManagerDashboardProps {
+    updateTrigger?: number;
+}
+
+export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
@@ -295,6 +299,7 @@ export const ManagerDashboard: React.FC = () => {
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const processConsolidatedData = useCallback(() => {
+        void updateTrigger;
         const reps = totalDataStore.users;
         const vendasConsolidadas = totalDataStore.vendasConsolidadas;
         const vendasClientesMes = totalDataStore.vendasClientesMes;
@@ -347,7 +352,7 @@ export const ManagerDashboard: React.FC = () => {
         });
 
         setTeamDetails(details);
-    }, [selectedMonths, selectedYear]);
+    }, [selectedMonths, selectedYear, updateTrigger]);
 
     useEffect(() => { processConsolidatedData(); }, [processConsolidatedData]);
 

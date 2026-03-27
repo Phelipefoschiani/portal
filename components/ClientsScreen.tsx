@@ -20,7 +20,11 @@ interface Client {
   data_inativacao?: string;
 }
 
-export const ClientsScreen: React.FC = () => {
+interface ClientsScreenProps {
+  updateTrigger?: number;
+}
+
+export const ClientsScreen: React.FC<ClientsScreenProps> = ({ updateTrigger = 0 }) => {
   const now = new Date();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState<number | 'all'>(new Date().getFullYear());
@@ -36,15 +40,17 @@ export const ClientsScreen: React.FC = () => {
 
   // 1. Lista de canais únicos para o filtro (Baseado na carteira real)
   const channels = useMemo(() => {
+    void updateTrigger;
     const set = new Set<string>();
     totalDataStore.clients.forEach(c => {
         if (c.canal_vendas) set.add(c.canal_vendas);
     });
     return Array.from(set).sort();
-  }, []);
+  }, [updateTrigger]);
 
   // 2. Motor de Inteligência: Processa Ranking, Participação Dinâmica e Última Compra
   const processedData = useMemo(() => {
+    void updateTrigger;
     const clients = totalDataStore.clients;
     const sales = totalDataStore.vendasClientesMes;
 
@@ -142,7 +148,7 @@ export const ClientsScreen: React.FC = () => {
       ranking,
       totalGroupFaturamento
     };
-  }, [searchTerm, selectedYear, selectedChannel]);
+  }, [searchTerm, selectedYear, selectedChannel, updateTrigger]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 

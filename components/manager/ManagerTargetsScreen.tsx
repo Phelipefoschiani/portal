@@ -48,7 +48,11 @@ interface Rep {
     nivel_acesso: string;
 }
 
-export const ManagerTargetsScreen: React.FC = () => {
+interface ManagerTargetsScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerTargetsScreen: React.FC<ManagerTargetsScreenProps> = ({ updateTrigger = 0 }) => {
     const [activeTab, setActiveTab] = useState<TabType>('team');
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [managerTotalTarget, setManagerTotalTarget] = useState<number>(0);
@@ -83,6 +87,7 @@ export const ManagerTargetsScreen: React.FC = () => {
     };
 
     const fetchInitialData = useCallback(async () => {
+        void updateTrigger;
         try {
             const { data: repsData } = await supabase.from('usuarios').select('id, nome, nivel_acesso')
                 .not('nivel_acesso', 'ilike', 'admin')
@@ -121,9 +126,10 @@ export const ManagerTargetsScreen: React.FC = () => {
             setMonthlyRepShares(initialMonthlyShares);
             setSavedReps(syncedReps);
         } catch (e) { console.error(e); }
-    }, [selectedYear]);
+    }, [selectedYear, updateTrigger]);
 
     const fetchClientWeights = useCallback(async () => {
+        void updateTrigger;
         setIsLoadingClients(true);
         try {
             const prevYear = selectedYear - 1;
@@ -147,7 +153,7 @@ export const ManagerTargetsScreen: React.FC = () => {
 
             setClientEngineeringData(engineering);
         } catch (e) { console.error(e); } finally { setIsLoadingClients(false); }
-    }, [selectedRepId, selectedYear]);
+    }, [selectedRepId, selectedYear, updateTrigger]);
 
     const handleGenerateAll = async () => {
         if (!selectedRepId) {

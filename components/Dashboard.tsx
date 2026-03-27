@@ -6,7 +6,11 @@ import { PositivizedModal } from './PositivizedModal';
 import { RepPerformanceModal } from './manager/RepPerformanceModal';
 import { totalDataStore } from '../lib/dataStore';
 
-export const Dashboard: React.FC = () => {
+interface DashboardProps {
+  updateTrigger?: number;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ updateTrigger = 0 }) => {
   const now = new Date();
   const [showNonPositivizedModal, setShowNonPositivizedModal] = useState(false);
   const [showPositivizedModal, setShowPositivizedModal] = useState(false);
@@ -40,6 +44,8 @@ export const Dashboard: React.FC = () => {
   }, []);
 
   const data = useMemo(() => {
+    // Satisfy linter by using updateTrigger
+    void updateTrigger;
     const vendasConsolidadas = totalDataStore.vendasConsolidadas;
     const vendasClientesMes = totalDataStore.vendasClientesMes;
     const targets = totalDataStore.targets;
@@ -95,7 +101,8 @@ export const Dashboard: React.FC = () => {
       growthPercent,
       hasPrevData: totalPrevFaturado > 0
     };
-  }, [selectedMonths, selectedYear, userId]);
+  }, [selectedMonths, selectedYear, userId, updateTrigger]);
+
 
   const percentualAtingido = data.meta > 0 ? (data.faturado / data.meta) * 100 : 0;
   const percentualClientes = data.totalClientes > 0 ? (data.clientesPositivados / data.totalClientes) * 100 : 0;

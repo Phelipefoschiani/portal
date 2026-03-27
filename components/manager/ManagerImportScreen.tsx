@@ -14,7 +14,11 @@ interface Rep {
   nivel_acesso: string;
 }
 
-export const ManagerImportScreen: React.FC = () => {
+interface ManagerImportScreenProps {
+  updateTrigger?: number;
+}
+
+export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ updateTrigger = 0 }) => {
   const now = new Date();
   const [activeTab, setActiveTab] = useState<ActiveTab>('import');
   
@@ -64,8 +68,9 @@ export const ManagerImportScreen: React.FC = () => {
   }, [resetMonth, resetYear]);
 
   useEffect(() => {
+    void updateTrigger;
     fetchReps();
-  }, []);
+  }, [updateTrigger]);
 
   useEffect(() => {
     if (activeTab === 'reset') calculateBillingSummary();

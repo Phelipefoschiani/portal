@@ -39,7 +39,11 @@ interface WeeklyForecast {
   }[];
 }
 
-export const ForecastScreen: React.FC = () => {
+interface ForecastScreenProps {
+  updateTrigger?: number;
+}
+
+export const ForecastScreen: React.FC<ForecastScreenProps> = ({ updateTrigger = 0 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('seasonality');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -140,7 +144,7 @@ export const ForecastScreen: React.FC = () => {
         fetchData();
         fetchWeeklyData();
     }
-  }, [userId, fetchData, fetchWeeklyData]);
+  }, [userId, fetchData, fetchWeeklyData, updateTrigger]);
 
   const handleValueMask = (val: string) => {
     const clean = val.replace(/\D/g, '');

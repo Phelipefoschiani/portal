@@ -37,7 +37,11 @@ interface ConsolidatedForecast extends Forecast {
     itemsMap?: Map<string, ForecastClient>;
 }
 
-export const ManagerForecastScreen: React.FC = () => {
+interface ManagerForecastScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerForecastScreen: React.FC<ManagerForecastScreenProps> = ({ updateTrigger = 0 }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [view, setView] = useState<ViewType>('weekly_checkin');
@@ -62,6 +66,7 @@ export const ManagerForecastScreen: React.FC = () => {
     const exportContainerRef = useRef<HTMLDivElement>(null);
 
     const fetchData = useCallback(async () => {
+        void updateTrigger;
         setIsLoading(true);
         try {
             if (view === 'mensais') {
@@ -95,7 +100,7 @@ export const ManagerForecastScreen: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [view]);
+    }, [view, updateTrigger]);
 
     useEffect(() => {
         fetchData();
@@ -105,6 +110,7 @@ export const ManagerForecastScreen: React.FC = () => {
 
     // --- LÓGICA DE CONSOLIDAÇÃO DO HISTÓRICO DE CHECK-IN ---
     const consolidatedHistory = useMemo(() => {
+        void updateTrigger;
         if (view !== 'weekly_checkin') return [];
 
         const processed = weeklyReports.filter(r => r.status !== 'pending');
@@ -154,7 +160,7 @@ export const ManagerForecastScreen: React.FC = () => {
             ...g,
             previsao_clientes: Array.from(g.itemsMap!.values()).sort((a: ForecastClient, b: ForecastClient) => b.valor_previsto_cliente - a.valor_previsto_cliente)
         })).sort((a, b) => b.previsao_total - a.previsao_total);
-    }, [weeklyReports, view]);
+    }, [weeklyReports, view, updateTrigger]);
 
     const handleDownloadImage = async () => {
         if (!exportContainerRef.current) return;

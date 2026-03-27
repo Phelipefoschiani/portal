@@ -11,7 +11,7 @@ interface SupabaseError {
     status?: number;
 }
 
-const fetchAllRecords = async <T,>(queryFn: () => any, maxRetries = 2): Promise<T[]> => {
+const fetchAllRecords = async <T,>(queryFn: () => { range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }> }, maxRetries = 2): Promise<T[]> => {
     let allData: T[] = [];
     let from = 0;
     const pageSize = 500;
@@ -21,9 +21,6 @@ const fetchAllRecords = async <T,>(queryFn: () => any, maxRetries = 2): Promise<
     while (hasMore) {
         try {
             const query = queryFn();
-            if (!query || typeof query.range !== 'function') {
-                throw new Error('Query function did not return a valid Supabase query object.');
-            }
             const { data, error } = await query.range(from, from + pageSize - 1);
             if (error) {
                 const err = error as SupabaseError;
@@ -59,8 +56,32 @@ const fetchAllRecords = async <T,>(queryFn: () => any, maxRetries = 2): Promise<
 };
 
 export const backgroundSync = async (userId: string, userRole: string, onUpdate?: (viewName: string) => void) => {
+    // Quick check to see if we really need to sync sales data
+    // This addresses the user's request for a "fast check"
+    const checkUpdate = async () => {
+        try {
+            const { count, error } = await supabase
+                .from('dados_vendas')
+                .select('*', { count: 'exact', head: true });
+            
+            if (error) return true;
+            
+            const lastCount = localStorage.getItem(`pcn_sync_count_${userId}`);
+            if (lastCount === String(count)) {
+                console.log('Dados sincronizados. Nenhuma alteração detectada no faturamento.');
+                return false;
+            }
+            localStorage.setItem(`pcn_sync_count_${userId}`, String(count || 0));
+            return true;
+        } catch {
+            return true;
+        }
+    };
+
+    const needsUpdate = await checkUpdate();
+
     // 1. Vendas Consolidadas
-    if (!totalDataStore.vendasConsolidadas.length) {
+    if (needsUpdate || !totalDataStore.vendasConsolidadas.length) {
         totalDataStore.loading.vendasConsolidadas = true;
         try {
             const data = await fetchAllRecords<VendaConsolidada>(() => {
@@ -70,14 +91,13 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
             });
             totalDataStore.vendasConsolidadas = data;
             await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, vendasConsolidadas: data }, userId);
-            if (onUpdate) onUpdate('vendasConsolidadas');
         } finally {
             totalDataStore.loading.vendasConsolidadas = false;
         }
     }
 
     // 2. Última Compra
-    if (!totalDataStore.clientesUltimaCompra.length) {
+    if (needsUpdate || !totalDataStore.clientesUltimaCompra.length) {
         totalDataStore.loading.clientesUltimaCompra = true;
         try {
             const data = await fetchAllRecords<ClienteUltimaCompra>(() => supabase.from('vw_clientes_ultima_compra').select('*'));
@@ -99,14 +119,13 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
             });
 
             await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, clientesUltimaCompra: data }, userId);
-            if (onUpdate) onUpdate('clientesUltimaCompra');
         } finally {
             totalDataStore.loading.clientesUltimaCompra = false;
         }
     }
 
     // 3. Vendas Clientes Mês
-    if (!totalDataStore.vendasClientesMes.length) {
+    if (needsUpdate || !totalDataStore.vendasClientesMes.length) {
         totalDataStore.loading.vendasClientesMes = true;
         try {
             const data = await fetchAllRecords<VendaClienteMes>(() => {
@@ -116,14 +135,13 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
             });
             totalDataStore.vendasClientesMes = data;
             await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, vendasClientesMes: data }, userId);
-            if (onUpdate) onUpdate('vendasClientesMes');
         } finally {
             totalDataStore.loading.vendasClientesMes = false;
         }
     }
 
     // 4. Vendas Canais Mês
-    if (!totalDataStore.vendasCanaisMes.length) {
+    if (needsUpdate || !totalDataStore.vendasCanaisMes.length) {
         totalDataStore.loading.vendasCanaisMes = true;
         try {
             const data = await fetchAllRecords<VendaCanalMes>(() => {
@@ -133,14 +151,13 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
             });
             totalDataStore.vendasCanaisMes = data;
             await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, vendasCanaisMes: data }, userId);
-            if (onUpdate) onUpdate('vendasCanaisMes');
         } finally {
             totalDataStore.loading.vendasCanaisMes = false;
         }
     }
 
     // 5. Vendas Produtos Mês
-    if (!totalDataStore.vendasProdutosMes.length) {
+    if (needsUpdate || !totalDataStore.vendasProdutosMes.length) {
         totalDataStore.loading.vendasProdutosMes = true;
         try {
             const data = await fetchAllRecords<VendaProdutoMes>(() => {
@@ -150,7 +167,6 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
             });
             totalDataStore.vendasProdutosMes = data;
             await saveToLocal('views_cache', { ...await getFromLocal('views_cache', userId) as Record<string, unknown>, vendasProdutosMes: data }, userId);
-            if (onUpdate) onUpdate('vendasProdutosMes');
         } finally {
             totalDataStore.loading.vendasProdutosMes = false;
         }
@@ -167,7 +183,6 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
             });
             totalDataStore.targets = data;
             await saveToLocal('targets_cache', data, userId);
-            if (onUpdate) onUpdate('targets');
         } finally {
             totalDataStore.loading.targets = false;
         }
@@ -184,9 +199,13 @@ export const backgroundSync = async (userId: string, userRole: string, onUpdate?
             });
             totalDataStore.investments = data;
             await saveToLocal('investments_cache', data, userId);
-            if (onUpdate) onUpdate('investments');
         } finally {
             totalDataStore.loading.investments = false;
         }
+    }
+
+    // Trigger update once at the end
+    if (onUpdate) {
+        onUpdate('all');
     }
 };

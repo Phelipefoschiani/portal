@@ -356,7 +356,11 @@ const IndividualRepMonthlyDetailModal: React.FC<{
     );
 };
 
-export const ManagerAnalysisScreen: React.FC = () => {
+interface ManagerAnalysisScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
@@ -383,6 +387,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
     }, []);
 
     const processAnalysisData = useCallback(() => {
+        void updateTrigger;
         const vendasConsolidadas = totalDataStore.vendasConsolidadas;
         const targets = totalDataStore.targets as Target[];
         const reps = totalDataStore.users as RepData[];
@@ -408,7 +413,7 @@ export const ManagerAnalysisScreen: React.FC = () => {
         });
 
         setStats({ globalPerformance: performance, repData: repAnalysis });
-    }, [selectedYear, selectedMonths]);
+    }, [selectedYear, selectedMonths, updateTrigger]);
 
     useEffect(() => {
         const timer = setTimeout(() => {

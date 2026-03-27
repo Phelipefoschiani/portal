@@ -125,7 +125,11 @@ const ClientDetailModal: React.FC<{
     );
 };
 
-export const ManagerScoreCardScreen: React.FC = () => {
+interface ManagerScoreCardScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     
     // Sessão
@@ -236,6 +240,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
     // ... (keep existing refs and effects)
 
     useEffect(() => {
+        void updateTrigger;
         setIsCalculating(true);
         setScoreData(null); 
 
@@ -426,7 +431,7 @@ export const ManagerScoreCardScreen: React.FC = () => {
         }, 1500);
 
         return () => clearTimeout(timer);
-    }, [selectedYear, selectedRepId, selectedMonths]);
+    }, [selectedYear, selectedRepId, selectedMonths, updateTrigger]);
 
     const getScoreLabel = (score: number) => {
         if (score >= 90) return { label: 'ELITE', color: 'text-blue-500', bg: 'bg-blue-500', border: 'border-blue-200', hex: '#3b82f6', bgHex: '#eff6ff' };

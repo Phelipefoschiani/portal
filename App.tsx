@@ -62,7 +62,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showImportantNotice, setShowImportantNotice] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [, setUpdateTrigger] = useState(0);
+  const [updateTrigger, setUpdateTrigger] = useState(0);
 
   const checkImportantNotices = async (uid: string) => {
       try {
@@ -221,34 +221,34 @@ const App: React.FC = () => {
         <div className="p-3 md:p-8">
            {userRole === 'rep' && (
                <>
-                {currentView === 'dashboard' && <Dashboard />}
-                {currentView === 'rep-analysis' && <RepAnalysisScreen />}
-                {currentView === 'rep-bi-builder' && <ManagerDetailedAnalysisScreen />}
-                {currentView === 'clients' && <ClientsScreen />}
-                {currentView === 'campaigns' && <CampaignsScreen onNavigateToInvestments={() => setCurrentView('investments')} />}
-                {currentView === 'forecast' && <ForecastScreen />}
-                {currentView === 'investments' && <InvestmentsScreen />}
-                {currentView === 'notifications' && <NotificationsScreen onFixForecast={handleNavigateToForecastCorrection} />}
+                {currentView === 'dashboard' && <Dashboard updateTrigger={updateTrigger} />}
+                {currentView === 'rep-analysis' && <RepAnalysisScreen updateTrigger={updateTrigger} />}
+                {currentView === 'rep-bi-builder' && <ManagerDetailedAnalysisScreen updateTrigger={updateTrigger} />}
+                {currentView === 'clients' && <ClientsScreen updateTrigger={updateTrigger} />}
+                {currentView === 'campaigns' && <CampaignsScreen updateTrigger={updateTrigger} onNavigateToInvestments={() => setCurrentView('investments')} />}
+                {currentView === 'forecast' && <ForecastScreen updateTrigger={updateTrigger} />}
+                {currentView === 'investments' && <InvestmentsScreen updateTrigger={updateTrigger} />}
+                {currentView === 'notifications' && <NotificationsScreen onFixForecast={handleNavigateToForecastCorrection} updateTrigger={updateTrigger} />}
                </>
            )}
            {userRole === 'admin' && (
                <>
-                {currentView === 'admin-dashboard' && <ManagerDashboard />}
-                {currentView === 'admin-import' && <ManagerImportScreen />}
-                {currentView === 'admin-analysis' && <ManagerAnalysisScreen />}
-                {currentView === 'admin-detailed-analysis' && <ManagerDetailedAnalysisScreen />}
-                {currentView === 'admin-campaigns' && <ManagerCampaignsScreen />}
-                {currentView === 'admin-forecast' && <ManagerForecastScreen />}
-                {currentView === 'admin-notifications' && <ManagerNotificationsScreen />}
-                {currentView === 'admin-users' && <ManagerUsersScreen />}
-                {currentView === 'admin-scorecard' && <ManagerScoreCardScreen />}
-                {currentView === 'admin-clients' && <ManagerClientsScreen />}
-                {currentView === 'admin-targets' && <ManagerTargetsScreen />}
+                {currentView === 'admin-dashboard' && <ManagerDashboard updateTrigger={updateTrigger} />}
+                {currentView === 'admin-import' && <ManagerImportScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-analysis' && <ManagerAnalysisScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-detailed-analysis' && <ManagerDetailedAnalysisScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-campaigns' && <ManagerCampaignsScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-forecast' && <ManagerForecastScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-notifications' && <ManagerNotificationsScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-users' && <ManagerUsersScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-scorecard' && <ManagerScoreCardScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-clients' && <ManagerClientsScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-targets' && <ManagerTargetsScreen updateTrigger={updateTrigger} />}
                </>
            )}
            {userRole === 'director' && (
                <>
-                {currentView === 'director-dashboard' && <DirectorDashboard />}
+                {currentView === 'director-dashboard' && <DirectorDashboard updateTrigger={updateTrigger} />}
                </>
            )}
         </div>

@@ -126,7 +126,11 @@ interface MonthlyStat {
     positive: number;
 }
 
-export const RepAnalysisScreen: React.FC = () => {
+interface RepAnalysisScreenProps {
+    updateTrigger?: number;
+}
+
+export const RepAnalysisScreen: React.FC<RepAnalysisScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
@@ -153,6 +157,7 @@ export const RepAnalysisScreen: React.FC = () => {
     }, []);
 
     const stats: { monthly: MonthlyStat[] } = useMemo(() => {
+        void updateTrigger;
         const sales = totalDataStore.vendasConsolidadas;
         const targets = totalDataStore.targets;
 
@@ -180,7 +185,7 @@ export const RepAnalysisScreen: React.FC = () => {
         });
 
         return { monthly };
-    }, [selectedYear, userId]);
+    }, [selectedYear, userId, updateTrigger]);
 
     const handleApplyFilter = () => {
         setSelectedMonths([...tempSelectedMonths]);

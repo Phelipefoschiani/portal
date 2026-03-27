@@ -6,6 +6,7 @@ import { Input } from './Input';
 
 interface NotificationsScreenProps {
   onFixForecast?: (id: string) => void;
+  updateTrigger?: number;
 }
 
 type FilterType = 'all' | 'info' | 'important' | 'urgent' | 'attachments';
@@ -33,7 +34,7 @@ interface Notification {
   };
 }
 
-export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixForecast }) => {
+export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixForecast, updateTrigger = 0 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('inbox');
   
   // States Inbox
@@ -110,7 +111,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onFixF
         if (activeTab === 'inbox') fetchNotifications();
         if (activeTab === 'compose') fetchSentMessages();
     }
-  }, [userId, activeTab, fetchNotifications, fetchSentMessages]);
+  }, [userId, activeTab, fetchNotifications, fetchSentMessages, updateTrigger]);
 
   // Função para buscar anexos completos sob demanda
   const fetchAttachmentDetails = async (notificationId: string) => {

@@ -26,7 +26,11 @@ interface Investment {
     };
 }
 
-export const ManagerCampaignsScreen: React.FC = () => {
+interface ManagerCampaignsScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerCampaignsScreen: React.FC<ManagerCampaignsScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [viewMode, setViewMode] = useState<'pending' | 'history'>('pending');
     const [subTab, setSubTab] = useState<'approved' | 'rejected'>('approved');
@@ -45,6 +49,7 @@ export const ManagerCampaignsScreen: React.FC = () => {
     const monthsNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
     const fetchInvestments = useCallback(async () => {
+        void updateTrigger;
         setIsLoading(true);
         try {
             let query = supabase
@@ -71,13 +76,14 @@ export const ManagerCampaignsScreen: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [viewMode, subTab, filterYear, filterMonth]);
+    }, [viewMode, subTab, filterYear, filterMonth, updateTrigger]);
 
     useEffect(() => {
         fetchInvestments();
     }, [fetchInvestments]);
 
     const teamStats = useMemo(() => {
+        void updateTrigger;
         if (viewMode !== 'history') return [];
         const reps = totalDataStore.users;
         const targets = totalDataStore.targets;
@@ -93,7 +99,7 @@ export const ManagerCampaignsScreen: React.FC = () => {
             const consumptionPct = investmentPool > 0 ? (annualSpent / investmentPool) * 100 : 0;
             return { repId: rep.id, nome: rep.nome, metaAnual: annualTarget, verbaTotal: investmentPool, gastoAnual: annualSpent, saldo: remaining, consumoPct: consumptionPct };
         }).sort((a, b) => b.metaAnual - a.metaAnual);
-    }, [viewMode, filterYear]);
+    }, [viewMode, filterYear, updateTrigger]);
 
     const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
         if (isActionLoading || !selectedDetail) return;

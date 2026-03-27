@@ -26,9 +26,10 @@ interface Investment {
 
 interface CampaignsScreenProps {
   onNavigateToInvestments?: () => void;
+  updateTrigger?: number;
 }
 
-export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToInvestments }) => {
+export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToInvestments, updateTrigger = 0 }) => {
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
   const [clients, setClients] = useState<Client[]>([]);
   const [history, setHistory] = useState<Investment[]>([]);
@@ -68,7 +69,7 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
       fetchClients();
       if (activeTab === 'history') fetchHistory();
     }
-  }, [userId, activeTab, fetchClients, fetchHistory]);
+  }, [userId, activeTab, fetchClients, fetchHistory, updateTrigger]);
 
   // --- Lógica de Máscara ---
   const formatCurrencyInput = (value: string) => {

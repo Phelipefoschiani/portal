@@ -25,7 +25,11 @@ interface Client {
     isAtivo: boolean;
 }
 
-export const ManagerClientsScreen: React.FC = () => {
+interface ManagerClientsScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [isExporting, setIsExporting] = useState(false);
     const [selectedRep, setSelectedRep] = useState('all');
@@ -80,6 +84,7 @@ export const ManagerClientsScreen: React.FC = () => {
 
     // 2. Motor de Processamento com Base Dinâmica
     const processedData = useMemo(() => {
+        void updateTrigger;
         const vendasClientesMes = totalDataStore.vendasClientesMes;
         const clientesUltimaCompra = totalDataStore.clientesUltimaCompra;
         const clients = totalDataStore.clients;
@@ -188,7 +193,7 @@ export const ManagerClientsScreen: React.FC = () => {
             ranking,
             totalGroupFaturamento
         };
-    }, [selectedRep, selectedChannel, searchTerm, selectedYear, selectedMonths]);
+    }, [selectedRep, selectedChannel, searchTerm, selectedYear, selectedMonths, updateTrigger]);
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 

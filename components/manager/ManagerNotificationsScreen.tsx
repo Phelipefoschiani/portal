@@ -32,7 +32,11 @@ interface Notification {
     notificacao_anexos?: NotificationAttachment[];
 }
 
-export const ManagerNotificationsScreen: React.FC = () => {
+interface ManagerNotificationsScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerNotificationsScreen: React.FC<ManagerNotificationsScreenProps> = ({ updateTrigger = 0 }) => {
     const [activeTab, setActiveTab] = useState<TabType>('new');
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
@@ -79,6 +83,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
     };
 
     const fetchHistory = useCallback(async () => {
+        void updateTrigger;
         setIsLoading(true);
         try {
             // OTIMIZAÇÃO: Select apenas na tabela principal, SEM JOIN pesado com anexos
@@ -122,9 +127,10 @@ export const ManagerNotificationsScreen: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [historyFilterYear, historyFilterMonth, historyFilterDay]);
+    }, [historyFilterYear, historyFilterMonth, historyFilterDay, updateTrigger]);
 
     const fetchInbox = useCallback(async () => {
+        void updateTrigger;
         if (!managerId) return;
         setIsLoading(true);
         try {
@@ -149,13 +155,14 @@ export const ManagerNotificationsScreen: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [managerId]);
+    }, [managerId, updateTrigger]);
 
     useEffect(() => {
         fetchAllUsers();
     }, []);
 
     useEffect(() => {
+        void updateTrigger;
         if (activeTab === 'history') {
             fetchHistory();
             setSelectedHistoryIds([]);
@@ -163,7 +170,7 @@ export const ManagerNotificationsScreen: React.FC = () => {
             fetchInbox();
             setSelectedHistoryIds([]);
         }
-    }, [activeTab, fetchHistory, fetchInbox]);
+    }, [activeTab, fetchHistory, fetchInbox, updateTrigger]);
 
     // --- CARREGAMENTO SOB DEMANDA DOS DETALHES ---
     const handleViewDetails = async (notification: Notification) => {

@@ -21,7 +21,11 @@ interface Investment {
   observacao: string;
 }
 
-export const InvestmentsScreen: React.FC = () => {
+interface InvestmentsScreenProps {
+  updateTrigger?: number;
+}
+
+export const InvestmentsScreen: React.FC<InvestmentsScreenProps> = ({ updateTrigger = 0 }) => {
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
   const [selectedInv, setSelectedInv] = useState<Investment | null>(null);
@@ -32,6 +36,7 @@ export const InvestmentsScreen: React.FC = () => {
 
   // --- MOTOR DE INTELIGÊNCIA FINANCEIRA ---
   const financialData = useMemo(() => {
+    void updateTrigger;
     // 1. Meta Anual e Teto de Verba (5%)
     const annualTarget = totalDataStore.targets
       .filter(t => t.usuario_id === userId && t.ano === selectedYear)
@@ -82,7 +87,7 @@ export const InvestmentsScreen: React.FC = () => {
         clientUsage,
         allYearInvs: yearInvs.sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime())
     };
-  }, [userId, selectedYear]);
+  }, [userId, selectedYear, updateTrigger]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 

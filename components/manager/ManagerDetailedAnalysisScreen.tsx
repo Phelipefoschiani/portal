@@ -164,7 +164,11 @@ const FilterDropdown = ({ id, label, icon: Icon, options, selected, onToggle, on
     );
 };
 
-export const ManagerDetailedAnalysisScreen: React.FC = () => {
+interface ManagerDetailedAnalysisScreenProps {
+    updateTrigger?: number;
+}
+
+export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
     const userRole = session.role as 'admin' | 'rep';
@@ -233,6 +237,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
     const years = [2024, 2025, 2026, 2027];
 
     const processedBI = useMemo(() => {
+        void updateTrigger;
         const vendasProdutosMes = totalDataStore.vendasProdutosMes;
         if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0, entities: 0, clients: 0 } };
 
@@ -451,7 +456,7 @@ export const ManagerDetailedAnalysisScreen: React.FC = () => {
                 clients: finalTotals.clients.size
             }
         };
-    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin, topBottomFilter, topBottomLimit]);
+    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin, topBottomFilter, topBottomLimit, updateTrigger]);
 
     useEffect(() => {
         const stateToSave = {

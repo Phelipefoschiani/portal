@@ -70,7 +70,11 @@ const AllGroupsModal: React.FC<{ groups: GroupData[]; onClose: () => void }> = (
     );
 };
 
-export const DirectorDashboard: React.FC = () => {
+interface DirectorDashboardProps {
+    updateTrigger?: number;
+}
+
+export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
@@ -131,6 +135,7 @@ export const DirectorDashboard: React.FC = () => {
 
     // --- DATA PROCESSING ---
     const data = useMemo(() => {
+        void updateTrigger;
         const vendasConsolidadas = totalDataStore.vendasConsolidadas;
         const vendasCanaisMes = totalDataStore.vendasCanaisMes;
         const vendasProdutosMes = totalDataStore.vendasProdutosMes;
@@ -228,7 +233,7 @@ export const DirectorDashboard: React.FC = () => {
             groupData,
             productData
         };
-    }, [selectedYear, selectedMonths]);
+    }, [selectedYear, selectedMonths, updateTrigger]);
 
     const chartGroupData = data.groupData.slice(0, 12); // Show top 12 in chart to avoid clutter
 
