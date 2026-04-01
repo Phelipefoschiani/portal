@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { X, Package, FileSpreadsheet, Filter, Calendar, Search, TrendingUp, DollarSign, Hash } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { totalDataStore } from '../lib/dataStore';
+import { useSalesData } from '../hooks/useSalesData';
 
 interface Product {
   id: string;
@@ -26,6 +27,9 @@ interface ClientProductsModalProps {
 
 export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client, onClose, onBack }) => {
   const [selectedYear, setSelectedYear] = useState<string>('all');
+  
+  useSalesData(selectedYear === 'all' ? 'all' : parseInt(selectedYear, 10));
+
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');

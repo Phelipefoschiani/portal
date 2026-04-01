@@ -9,6 +9,8 @@ import { ClientLastPurchaseModal } from './ClientLastPurchaseModal';
 import { ClientActionMenu } from './ClientActionMenu';
 import { totalDataStore } from '../lib/dataStore';
 import * as XLSX from 'xlsx';
+import { supabase } from '../lib/supabase';
+import { Sale } from '../types';
 
 interface Client {
   id: string;
@@ -20,17 +22,21 @@ interface Client {
   data_inativacao?: string;
 }
 
-interface ClientsScreenProps {
-  updateTrigger?: number;
-}
-
-export const ClientsScreen: React.FC<ClientsScreenProps> = ({ updateTrigger = 0 }) => {
+export const ClientsScreen: React.FC = () => {
   const now = new Date();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState<number | 'all'>(new Date().getFullYear());
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
   const [isExporting, setIsExporting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
+  const [clients, setClients] = useState<Client[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+
+  const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+  const userId = session.id;
+  const userRole = session.role;
+
   // Modais e Menu
   const [selectedClientForMenu, setSelectedClientForMenu] = useState<Client | null>(null);
   const [activeModal, setActiveModal] = useState<'none' | 'x-ray' | 'last-purchase' | 'mix' | 'replenishment' | 'score-card'>('none');
@@ -38,22 +44,50 @@ export const ClientsScreen: React.FC<ClientsScreenProps> = ({ updateTrigger = 0 
 
   const availableYears = [2024, 2025, 2026, 2027];
 
+  React.useEffect(() => {
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            const clientsQuery = supabase.from('clientes').select('*');
+            if (userRole !== 'admin' && userRole !== 'director') clientsQuery.eq('usuario_id', userId);
+
+            const salesQuery = supabase.from('dados_vendas').select('*');
+            if (selectedYear !== 'all') {
+                salesQuery.gte('data', `${selectedYear}-01-01`).lte('data', `${selectedYear}-12-31`);
+            }
+            if (userRole !== 'admin' && userRole !== 'director') salesQuery.eq('usuario_id', userId);
+
+            const [clientsRes, salesRes] = await Promise.all([clientsQuery, salesQuery]);
+
+            if (clientsRes.error) throw clientsRes.error;
+            if (salesRes.error) throw salesRes.error;
+
+            setClients(clientsRes.data || []);
+            setSales(salesRes.data || []);
+            
+            // Sync with store for other components that might use it
+            totalDataStore.clients = clientsRes.data || [];
+            totalDataStore.sales = salesRes.data || [];
+        } catch (e) {
+            console.error('Error fetching clients screen data:', e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    fetchData();
+  }, [selectedYear, userId, userRole]);
+
   // 1. Lista de canais únicos para o filtro (Baseado na carteira real)
   const channels = useMemo(() => {
-    void updateTrigger;
     const set = new Set<string>();
-    totalDataStore.clients.forEach(c => {
+    clients.forEach(c => {
         if (c.canal_vendas) set.add(c.canal_vendas);
     });
     return Array.from(set).sort();
-  }, [updateTrigger]);
+  }, [clients]);
 
   // 2. Motor de Inteligência: Processa Ranking, Participação Dinâmica e Última Compra
   const processedData = useMemo(() => {
-    void updateTrigger;
-    const clients = totalDataStore.clients;
-    const sales = totalDataStore.vendasClientesMes;
-
     // Filtrar clientes por busca e canal (Primeira camada de filtro)
     const filteredClientsBase = clients.filter(c => {
       const matchSearch = c.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -85,32 +119,34 @@ export const ClientsScreen: React.FC<ClientsScreenProps> = ({ updateTrigger = 0 
     const relevantSales = sales.filter(s => {
       const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
       const matchClient = filteredClientCnpjs.has(cleanCnpj);
-      const matchYear = selectedYear === 'all' ? true : s.ano === selectedYear;
+      const saleDate = new Date(s.data + 'T00:00:00');
+      const matchYear = selectedYear === 'all' ? true : saleDate.getUTCFullYear() === selectedYear;
       return matchClient && matchYear;
     });
 
     // Calcular Base 100% do Grupo Filtrado
-    const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento_total) || 0), 0);
+    const totalGroupFaturamento = relevantSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
 
     // Mapear estatísticas por cliente dentro do grupo
     const statsMap = new Map<string, { faturamento: number; lastDate: string; lastValue: number }>();
-    
-    // Para a data da última compra e valor da última compra, usaremos a view clientesUltimaCompra
-    const ultimaCompraMap = new Map<string, { data: string, valor: number }>();
-    totalDataStore.clientesUltimaCompra.forEach(c => {
-        ultimaCompraMap.set(String(c.cnpj).replace(/\D/g, ''), { data: c.ultima_compra, valor: Number(c.valor_ultima_compra) || 0 });
-    });
-
     relevantSales.forEach(s => {
       const cleanCnpj = String(s.cnpj || '').replace(/\D/g, '');
       const current = statsMap.get(cleanCnpj) || { faturamento: 0, lastDate: '0000-00-00', lastValue: 0 };
       
-      const ultimaCompraInfo = ultimaCompraMap.get(cleanCnpj);
+      let newLastDate = current.lastDate;
+      let newLastValue = current.lastValue;
       
+      if (s.data > current.lastDate) {
+          newLastDate = s.data;
+          newLastValue = Number(s.faturamento) || 0;
+      } else if (s.data === current.lastDate) {
+          newLastValue += Number(s.faturamento) || 0;
+      }
+
       statsMap.set(cleanCnpj, {
-        faturamento: current.faturamento + (Number(s.faturamento_total) || 0),
-        lastDate: ultimaCompraInfo ? ultimaCompraInfo.data : '0000-00-00',
-        lastValue: ultimaCompraInfo ? ultimaCompraInfo.valor : 0
+        faturamento: current.faturamento + (Number(s.faturamento) || 0),
+        lastDate: newLastDate,
+        lastValue: newLastValue
       });
     });
 
@@ -148,7 +184,7 @@ export const ClientsScreen: React.FC<ClientsScreenProps> = ({ updateTrigger = 0 
       ranking,
       totalGroupFaturamento
     };
-  }, [searchTerm, selectedYear, selectedChannel, updateTrigger]);
+  }, [searchTerm, selectedYear, selectedChannel, clients, sales]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
@@ -196,6 +232,14 @@ export const ClientsScreen: React.FC<ClientsScreenProps> = ({ updateTrigger = 0 
     setActiveModal(action);
   };
 
+  if (isLoading) {
+    return (
+      <div className="w-full h-[60vh] flex flex-col items-center justify-center gap-4">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-500 font-black animate-pulse uppercase text-[10px] tracking-widest">Carregando carteira de clientes...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 animate-fadeIn pb-20">
@@ -436,7 +480,7 @@ export const ClientsScreen: React.FC<ClientsScreenProps> = ({ updateTrigger = 0 
 
       {activeModal === 'mix' && modalClient && (
         <ClientProductsModal 
-            client={modalClient} 
+            client={{ id: modalClient.id, cnpj: modalClient.cnpj, nome_fantasia: modalClient.nome_fantasia }} 
             onClose={() => setActiveModal('none')} 
             onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
         />
@@ -444,7 +488,7 @@ export const ClientsScreen: React.FC<ClientsScreenProps> = ({ updateTrigger = 0 
 
       {activeModal === 'replenishment' && modalClient && (
         <ClientLastPurchaseModal 
-            client={modalClient} 
+            client={{ id: modalClient.id, cnpj: modalClient.cnpj, nome_fantasia: modalClient.nome_fantasia }} 
             onClose={() => setActiveModal('none')} 
             onBack={() => { setActiveModal('none'); setSelectedClientForMenu(modalClient); }}
         />

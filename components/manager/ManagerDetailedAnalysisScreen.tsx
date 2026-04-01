@@ -4,6 +4,9 @@ import { ChevronRight, FileSpreadsheet, Search, Layers, CheckSquare, Square, Che
 import { totalDataStore } from '../../lib/dataStore';
 import * as XLSX from 'xlsx';
 import { Button } from '../Button';
+import { useSalesData } from '../../hooks/useSalesData';
+
+import { LoadingOverlay } from '../LoadingOverlay';
 
 type Dimension = 'representante' | 'canal' | 'grupo' | 'cliente' | 'produto';
 
@@ -204,8 +207,22 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
     const initialState = getSavedState();
 
     const [selectedYear, setSelectedYear] = useState<number>(initialState.selectedYear);
+    const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
+    const [, setForceUpdate] = useState(0);
+    
     const [selectedMonths, setSelectedMonths] = useState<number[]>(initialState.selectedMonths);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>(initialState.selectedMonths);
+    
+    useEffect(() => {
+        const loadBaseData = async () => {
+            const { fetchClients, fetchUsers } = await import('../../lib/dataService');
+            await Promise.all([fetchClients(), fetchUsers()]);
+            setForceUpdate(prev => prev + 1);
+        };
+        loadBaseData();
+    }, []);
+
+    useSalesData(selectedYear, selectedMonths, updateTrigger, () => setForceUpdate(prev => prev + 1));
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const [showYearDropdown, setShowYearDropdown] = useState(false);
 
@@ -511,6 +528,36 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    const [isDataLoading, setIsDataLoading] = useState(true);
+
+    useEffect(() => {
+        const loadData = async () => {
+            setIsDataLoading(true);
+            try {
+                const { fetchClients, fetchSalesForMonths, fetchUsers } = await import('../../lib/dataService');
+                
+                // Busca apenas os meses selecionados no filtro (sob demanda)
+                await Promise.all([
+                    fetchUsers(),
+                    fetchClients(),
+                    fetchSalesForMonths(selectedYear, selectedMonths)
+                ]);
+            } catch (e) {
+                console.error('Error loading detailed analysis data:', e);
+            } finally {
+                setIsDataLoading(false);
+            }
+        };
+        loadData();
+
+        const handleUpdate = () => {
+            // Force re-render if needed
+            setIsDataLoading(false);
+        };
+        window.addEventListener('pcn_data_update', handleUpdate);
+        return () => window.removeEventListener('pcn_data_update', handleUpdate);
+    }, [selectedYear, selectedMonths]);
+
     const resetAllFilters = () => {
         if (!confirm('Deseja zerar todos os filtros e camadas desta consulta?')) return;
         setFilterReps([]);
@@ -555,7 +602,7 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
             clients: dynamicClients.sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia)),
             products: Array.from(productMap.values()).sort((a, b) => a.nome.localeCompare(b.nome))
         };
-    }, [filterReps, isAdmin]);
+    }, [filterReps]);
 
     const toggleFilter = (list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
         setList(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
@@ -709,8 +756,18 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
         }
     };
 
+    if (isDataLoading) {
+        return (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+                <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest animate-pulse">Carregando Construtor BI...</p>
+            </div>
+        );
+    }
+
     return (
         <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 animate-fadeIn pb-32" ref={dropdownRef}>
+            {isLoading && <LoadingOverlay />}
             
             <div className="bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-4 w-full md:w-auto">

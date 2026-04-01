@@ -54,17 +54,32 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
     setReps(data || []);
   };
 
-  const calculateBillingSummary = useCallback(() => {
+  const calculateBillingSummary = useCallback(async () => {
     setIsLoadingSummary(true);
-    const summary: Record<string, number> = {};
-    const filteredSales = totalDataStore.vendasConsolidadas.filter(s => {
-        return s.mes === resetMonth && s.ano === resetYear;
-    });
-    filteredSales.forEach(s => {
-        summary[s.usuario_id] = (summary[s.usuario_id] || 0) + Number(s.faturamento_total || 0);
-    });
-    setBillingSummary(summary);
-    setIsLoadingSummary(false);
+    try {
+        const monthStr = String(resetMonth).padStart(2, '0');
+        const lastDay = new Date(resetYear, resetMonth, 0).getDate();
+        const start = `${resetYear}-${monthStr}-01`;
+        const end = `${resetYear}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
+        const { data, error } = await supabase
+            .from('dados_vendas')
+            .select('usuario_id, faturamento')
+            .gte('data', start)
+            .lte('data', end);
+
+        if (error) throw error;
+
+        const summary: Record<string, number> = {};
+        data?.forEach(s => {
+            summary[s.usuario_id] = (summary[s.usuario_id] || 0) + Number(s.faturamento || 0);
+        });
+        setBillingSummary(summary);
+    } catch (e) {
+        console.error('Erro ao calcular resumo:', e);
+    } finally {
+        setIsLoadingSummary(false);
+    }
   }, [resetMonth, resetYear]);
 
   useEffect(() => {
@@ -85,21 +100,34 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
         const start = `${resetYear}-${monthStr}-01`;
         const end = `${resetYear}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
 
-        const { error } = await supabase
+        let query = supabase
             .from('dados_vendas')
             .delete()
-            .eq('usuario_id', confirmResetId)
             .gte('data', start)
             .lte('data', end);
+            
+        if (confirmResetId !== 'all') {
+            query = query.eq('usuario_id', confirmResetId);
+        }
+
+        const { error } = await query;
 
         if (error) throw error;
 
         setConfirmResetId(null);
         
-        // Force reload to update views
-        window.location.reload();
+        // Clear store to force re-fetch
+        totalDataStore.sales = [];
+        totalDataStore.fetchedMonths.clear();
+        totalDataStore.vendasConsolidadas = [];
+        totalDataStore.vendasClientesMes = [];
+        totalDataStore.vendasCanaisMes = [];
+        totalDataStore.vendasProdutosMes = [];
         
-        calculateBillingSummary();
+        // Trigger update across the app
+        window.dispatchEvent(new CustomEvent('pcn_data_update'));
+        
+        await calculateBillingSummary();
         alert('Dados removidos com sucesso!');
     } catch (e: unknown) {
         alert('Erro ao resetar: ' + (e instanceof Error ? e.message : String(e)));
@@ -110,18 +138,6 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
 
   const cleanCnpj = (val: string | number | null | undefined) => String(val || '').replace(/\D/g, '');
   const normalizeRepName = (name: string) => name ? name.split('(')[0].trim().toUpperCase() : "";
-
-  // FINGERPRINT BLINDADO: Usa toFixed(2) e Trim para evitar duplicação por arredondamento
-  const generateRowFingerprint = (row: Record<string, unknown>) => {
-    const cnpj = cleanCnpj(String(row.cnpj || ''));
-    const date = String(row.data || '').trim();
-    const pedido = String(row.pedido || '').trim();
-    const nf = String(row.nota_fiscal || '').trim();
-    const sku = String(row.codigo_produto || '').trim();
-    const vlr = Number(row.faturamento || 0).toFixed(2);
-    const qtd = Number(row.qtde_faturado || 0).toFixed(2);
-    return `${cnpj}|${date}|${pedido}|${nf}|${sku}|${vlr}|${qtd}`;
-  };
 
   const getVal = (row: Record<string, unknown>, keys: string[]) => {
     const foundKey = Object.keys(row).find(k => keys.some(key => k.toLowerCase().trim() === key.toLowerCase().trim()));
@@ -137,6 +153,7 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
   };
 
   const processImport = async () => {
+    console.log('Iniciando processImport...');
     if (!file) return;
     setIsProcessing(true);
     setProgress(0);
@@ -144,12 +161,14 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
     setStats({ totalRows: 0, newClientsInserted: 0, processedRows: 0, ignoredRows: 0 });
 
     try {
+      console.log('Lendo arquivo...');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
       const data = await file.arrayBuffer();
       const workbook = X.read(data);
       const jsonData: Record<string, unknown>[] = X.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
+      console.log('Arquivo lido, linhas:', jsonData.length);
       if (jsonData.length === 0) throw new Error('A planilha está vazia.');
 
       const repNameToIdMap = new Map<string, string>();
@@ -188,6 +207,7 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
         }
       });
 
+      console.log('Dados mapeados por representante:', dataByRep.size);
       setStats(prev => ({ ...prev, totalRows: jsonData.length }));
       const repIdsToProcess = Array.from(dataByRep.keys());
       let totalNewSales = 0, totalIgnored = 0, totalNewClients = 0;
@@ -197,6 +217,7 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
         const repRows = dataByRep.get(repId) || [];
         const repName = reps.find(r => r.id === repId)?.nome || 'Vendedor';
 
+        console.log(`Processando vendedor ${repName} (${repId}), linhas: ${repRows.length}`);
         setCurrentAction(`Processando Vendedor...`);
         setCurrentItemName(repName.toUpperCase());
 
@@ -216,16 +237,48 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
         if (newClients.length > 0) { await supabase.from('clientes').insert(newClients); totalNewClients += newClients.length; }
 
         // B. Anti-Duplicidade (Fingerprint Matching)
-        const dates = Array.from(new Set(repRows.map(r => r.data)));
-        const { data: existingSales } = await supabase.from('dados_vendas')
-            .select('cnpj, data, pedido, nota_fiscal, codigo_produto, faturamento, qtde_faturado')
-            .eq('usuario_id', repId).in('data', dates);
+        // Identifica todos os meses/anos presentes nos dados importados
+        const monthsToFetch = Array.from(new Set(repRows.map(r => {
+            const date = new Date(r.data as string);
+            return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
+        })));
+        
+        let existingSales: Record<string, unknown>[] = [];
+        
+        // Busca todas as vendas para cada mês identificado
+        for (const { year, month } of monthsToFetch) {
+            const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+            const endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Último dia do mês
+            
+            const { data, error } = await supabase.from('dados_vendas')
+                .select('cnpj, data, pedido, nota_fiscal, codigo_produto, faturamento, qtde_faturado')
+                .eq('usuario_id', repId)
+                .gte('data', startDate)
+                .lte('data', endDate);
+                
+            if (error) {
+                console.error('Erro ao buscar vendas existentes:', error);
+            }
+            if (data) existingSales = existingSales.concat(data);
+        }
 
-        const existingFingerprints = new Set(existingSales?.map(s => generateRowFingerprint(s)) || []);
+        // FINGERPRINT BLINDADO: Focado nos critérios do usuário + Cliente
+        const generateRowFingerprint = (row: Record<string, unknown>) => {
+            const cnpj = cleanCnpj(String(row.cnpj || ''));
+            const date = String(row.data || '').split('T')[0];
+            const sku = String(row.codigo_produto || '').trim().toUpperCase();
+            const qtd = Number(row.qtde_faturado || 0).toFixed(2);
+            const vlr = Number(row.faturamento || 0).toFixed(2);
+            // Incluindo valor para maior precisão
+            return `${cnpj}|${date}|${sku}|${qtd}|${vlr}`;
+        };
+
+        const existingFingerprints = new Set(existingSales.map(s => generateRowFingerprint(s)));
 
         const toInsert = repRows.filter(row => {
           const fingerprint = generateRowFingerprint(row);
           if (existingFingerprints.has(fingerprint)) { totalIgnored++; return false; }
+          existingFingerprints.add(fingerprint); // Adiciona para evitar duplicatas dentro do próprio arquivo Excel
           return true;
         }).map(row => ({
           data: row.data as string, 
@@ -243,8 +296,12 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
         }));
 
         if (toInsert.length > 0) {
-          const { error } = await supabase.from('dados_vendas').insert(toInsert);
-          if (error) throw error;
+          const insertChunkSize = 500;
+          for (let j = 0; j < toInsert.length; j += insertChunkSize) {
+              const chunk = toInsert.slice(j, j + insertChunkSize);
+              const { error } = await supabase.from('dados_vendas').insert(chunk);
+              if (error) throw error;
+          }
           totalNewSales += toInsert.length;
         }
 
@@ -252,13 +309,18 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
         setProgress(Math.round(((i + 1) / repIdsToProcess.length) * 100));
       }
 
-      setStatus({ type: 'success', message: `Concluído! ${totalNewSales} novas vendas importadas. ${totalIgnored} já existiam. A página será recarregada para atualizar os dados.` });
+      setStatus({ type: 'success', message: `Concluído! ${totalNewSales} novas vendas importadas. ${totalIgnored} já existiam. Os dados foram atualizados no portal.` });
       setFile(null);
       
-      // Force reload to update views
-      setTimeout(() => {
-          window.location.reload();
-      }, 3000);
+      // Clear store and trigger update
+      totalDataStore.sales = [];
+      totalDataStore.fetchedMonths.clear();
+      totalDataStore.vendasConsolidadas = [];
+      totalDataStore.vendasClientesMes = [];
+      totalDataStore.vendasCanaisMes = [];
+      totalDataStore.vendasProdutosMes = [];
+      
+      window.dispatchEvent(new CustomEvent('pcn_data_update'));
     } catch (err: unknown) {
       const error = err as Error;
       setStatus({ type: 'error', message: error.message || 'Erro no processamento.' });
@@ -364,6 +426,15 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
             </div>
 
             <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex justify-end bg-slate-50/50">
+                    <button 
+                        onClick={() => setConfirmResetId('all')} 
+                        disabled={Object.values(billingSummary).reduce((a, b) => a + b, 0) === 0 || isProcessing} 
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all ${Object.values(billingSummary).reduce((a, b) => a + b, 0) > 0 ? 'bg-red-600 text-white hover:bg-red-700 shadow-sm' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                    >
+                        <RotateCcw className="w-4 h-4" /> Apagar Todos do Mês
+                    </button>
+                </div>
                 <table className="w-full text-left">
                     <thead className="bg-slate-50 border-b border-slate-100">
                         <tr className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
@@ -404,7 +475,9 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
               <div className="bg-white w-full max-w-sm rounded-[32px] p-8 shadow-2xl animate-slideUp text-center border border-white/20">
                   <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle className="w-10 h-10" /></div>
                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Excluir Dados</h3>
-                  <p className="text-sm text-slate-500 mt-4 font-medium leading-relaxed">Você está prestes a apagar <strong>TODO</strong> o faturamento de <span className="text-red-600 font-bold">{reps.find(r => r.id === confirmResetId)?.nome}</span> em <span className="text-slate-900 font-black">{monthNames[resetMonth-1]} / {resetYear}</span>.</p>
+                  <p className="text-sm text-slate-500 mt-4 font-medium leading-relaxed">
+                    Você está prestes a apagar <strong>TODO</strong> o faturamento de <span className="text-red-600 font-bold">{confirmResetId === 'all' ? 'TODOS OS REPRESENTANTES' : reps.find(r => r.id === confirmResetId)?.nome}</span> em <span className="text-slate-900 font-black">{monthNames[resetMonth-1]} / {resetYear}</span>.
+                  </p>
                   <div className="grid grid-cols-2 gap-4 mt-8">
                       <Button variant="outline" onClick={() => setConfirmResetId(null)} className="rounded-2xl h-14 font-black uppercase text-[10px]">Cancelar</Button>
                       <Button onClick={executeReset} className="bg-red-600 hover:bg-red-700 text-white rounded-2xl h-14 font-black uppercase text-[10px]">Sim, Apagar</Button>

@@ -4,6 +4,11 @@ import { Button } from './Button';
 import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
 import { createPortal } from 'react-dom';
+import { useSalesData } from '../hooks/useSalesData';
+
+import { LoadingOverlay } from './LoadingOverlay';
+
+import { fetchClients } from '../lib/dataService';
 
 type TabType = 'seasonality' | 'weekly';
 
@@ -48,6 +53,9 @@ export const ForecastScreen: React.FC<ForecastScreenProps> = ({ updateTrigger = 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedYear] = useState(new Date().getFullYear());
+  const [, setForceUpdate] = useState(0);
+  
+  useSalesData(selectedYear, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], updateTrigger, () => setForceUpdate(prev => prev + 1));
 
   const [originalTargets, setOriginalTargets] = useState<TargetRecord[]>([]);
   const [adjustedTargets, setAdjustedTargets] = useState<Record<number, number>>({});
@@ -66,6 +74,8 @@ export const ForecastScreen: React.FC<ForecastScreenProps> = ({ updateTrigger = 
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
   const userName = session.name;
+
+  const isLoadingData = Object.values(totalDataStore.loading).some(v => v === true);
 
   const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
@@ -143,6 +153,7 @@ export const ForecastScreen: React.FC<ForecastScreenProps> = ({ updateTrigger = 
     if (userId) {
         fetchData();
         fetchWeeklyData();
+        fetchClients(() => setForceUpdate(prev => prev + 1));
     }
   }, [userId, fetchData, fetchWeeklyData, updateTrigger]);
 
@@ -288,8 +299,18 @@ export const ForecastScreen: React.FC<ForecastScreenProps> = ({ updateTrigger = 
 
   const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
+  if (isLoading) {
+    return (
+      <div className="w-full h-[60vh] flex flex-col items-center justify-center gap-4">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-500 font-black animate-pulse uppercase text-[10px] tracking-widest">Carregando previsões...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-fadeIn pb-32">
+      {(isLoading || isLoadingData) && <LoadingOverlay />}
       <div className="flex justify-center mb-6 md:mb-8">
         <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1 overflow-x-auto no-scrollbar w-full md:w-auto">
           <button onClick={() => setActiveTab('seasonality')} className={`flex-1 md:flex-none px-4 md:px-8 py-3 rounded-2xl text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'seasonality' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>1. Confirmação de Meta Anual</button>

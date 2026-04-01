@@ -1,68 +1,96 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { LoginScreen } from './components/LoginScreen';
-import { Dashboard } from './components/Dashboard';
-import { ClientsScreen } from './components/ClientsScreen';
-import { ForecastScreen } from './components/ForecastScreen';
-import { NotificationsScreen } from './components/NotificationsScreen';
-import { InvestmentsScreen } from './components/InvestmentsScreen';
-import { CampaignsScreen } from './components/CampaignsScreen';
-import { UrgentNoticeModal } from './components/UrgentNoticeModal';
 import { HydrationScreen } from './components/HydrationScreen';
 import { Sidebar } from './components/Sidebar';
 import { supabase } from './lib/supabase';
 import { checkAndMarkDeliveredNotifications } from './lib/mockData';
-import { Menu, AlertTriangle, X, Loader2 } from 'lucide-react';
+import { totalDataStore } from './lib/dataStore';
+import { Menu, AlertTriangle, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { backgroundSync } from './lib/dataService';
+
+const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+const ClientsScreen = lazy(() => import('./components/ClientsScreen').then(m => ({ default: m.ClientsScreen })));
+const ForecastScreen = lazy(() => import('./components/ForecastScreen').then(m => ({ default: m.ForecastScreen })));
+const NotificationsScreen = lazy(() => import('./components/NotificationsScreen').then(m => ({ default: m.NotificationsScreen })));
+const InvestmentsScreen = lazy(() => import('./components/InvestmentsScreen').then(m => ({ default: m.InvestmentsScreen })));
+const CampaignsScreen = lazy(() => import('./components/CampaignsScreen').then(m => ({ default: m.CampaignsScreen })));
+const UrgentNoticeModal = lazy(() => import('./components/UrgentNoticeModal').then(m => ({ default: m.UrgentNoticeModal })));
 
 // Rep Screens
-import { RepAnalysisScreen } from './components/rep/RepAnalysisScreen';
+const RepAnalysisScreen = lazy(() => import('./components/rep/RepAnalysisScreen').then(m => ({ default: m.RepAnalysisScreen })));
 
 // Manager Screens
-import { ManagerDashboard } from './components/manager/ManagerDashboard';
-import { ManagerCampaignsScreen } from './components/manager/ManagerCampaignsScreen';
-import { ManagerForecastScreen } from './components/manager/ManagerForecastScreen';
-import { ManagerNotificationsScreen } from './components/manager/ManagerNotificationsScreen';
-import { ManagerClientsScreen } from './components/manager/ManagerClientsScreen';
-import { ManagerTargetsScreen } from './components/manager/ManagerTargetsScreen';
-import { ManagerImportScreen } from './components/manager/ManagerImportScreen';
-import { ManagerAnalysisScreen } from './components/manager/ManagerAnalysisScreen';
-import { ManagerDetailedAnalysisScreen } from './components/manager/ManagerDetailedAnalysisScreen';
-import { ManagerUsersScreen } from './components/manager/ManagerUsersScreen';
-import { ManagerScoreCardScreen } from './components/manager/ManagerScoreCardScreen';
+const ManagerDashboard = lazy(() => import('./components/manager/ManagerDashboard').then(m => ({ default: m.ManagerDashboard })));
+const ManagerCampaignsScreen = lazy(() => import('./components/manager/ManagerCampaignsScreen').then(m => ({ default: m.ManagerCampaignsScreen })));
+const ManagerForecastScreen = lazy(() => import('./components/manager/ManagerForecastScreen').then(m => ({ default: m.ManagerForecastScreen })));
+const ManagerNotificationsScreen = lazy(() => import('./components/manager/ManagerNotificationsScreen').then(m => ({ default: m.ManagerNotificationsScreen })));
+const ManagerClientsScreen = lazy(() => import('./components/manager/ManagerClientsScreen').then(m => ({ default: m.ManagerClientsScreen })));
+const ManagerTargetsScreen = lazy(() => import('./components/manager/ManagerTargetsScreen').then(m => ({ default: m.ManagerTargetsScreen })));
+const ManagerImportScreen = lazy(() => import('./components/manager/ManagerImportScreen').then(m => ({ default: m.ManagerImportScreen })));
+const ManagerAnalysisScreen = lazy(() => import('./components/manager/ManagerAnalysisScreen').then(m => ({ default: m.ManagerAnalysisScreen })));
+const ManagerDetailedAnalysisScreen = lazy(() => import('./components/manager/ManagerDetailedAnalysisScreen').then(m => ({ default: m.ManagerDetailedAnalysisScreen })));
+const ManagerUsersScreen = lazy(() => import('./components/manager/ManagerUsersScreen').then(m => ({ default: m.ManagerUsersScreen })));
+const ManagerScoreCardScreen = lazy(() => import('./components/manager/ManagerScoreCardScreen').then(m => ({ default: m.ManagerScoreCardScreen })));
 
-import { DirectorDashboard } from './components/director/DirectorDashboard';
+const DirectorDashboard = lazy(() => import('./components/director/DirectorDashboard').then(m => ({ default: m.DirectorDashboard })));
+
+const LoadingFallback = () => <div className="p-8 text-white">Carregando...</div>;
 
 // Force rebuild
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => !!sessionStorage.getItem('pcn_session'));
-  const [isHydrated, setIsHydrated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    try {
+      return !!sessionStorage.getItem('pcn_session');
+    } catch {
+      return false;
+    }
+  });
+  const [isHydrated, setIsHydrated] = useState(true);
   const [currentView, setCurrentView] = useState(() => {
     const saved = sessionStorage.getItem('pcn_session');
     if (saved) {
-      const { role } = JSON.parse(saved);
-      return role === 'admin' ? 'admin-dashboard' : role === 'director' ? 'director-dashboard' : 'dashboard';
+      try {
+        const { role } = JSON.parse(saved);
+        return role === 'admin' ? 'admin-dashboard' : role === 'director' ? 'director-dashboard' : 'dashboard';
+      } catch {
+        return 'dashboard';
+      }
     }
     return 'dashboard';
   });
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [userName, setUserName] = useState(() => {
     const saved = sessionStorage.getItem('pcn_session');
-    return saved ? JSON.parse(saved).name : 'Visitante';
+    try {
+      return saved ? JSON.parse(saved).name : 'Visitante';
+    } catch {
+      return 'Visitante';
+    }
   }); 
   const [userRole, setUserRole] = useState<'admin' | 'rep' | 'director'>(() => {
     const saved = sessionStorage.getItem('pcn_session');
-    return saved ? JSON.parse(saved).role : 'rep';
+    try {
+      return saved ? JSON.parse(saved).role : 'rep';
+    } catch {
+      return 'rep';
+    }
   });
   const [userId, setUserId] = useState<string | null>(() => {
     const saved = sessionStorage.getItem('pcn_session');
-    return saved ? JSON.parse(saved).id : null;
+    try {
+      const id = saved ? JSON.parse(saved).id : null;
+      if (id) {
+          totalDataStore.userId = id;
+          totalDataStore.userRole = saved ? JSON.parse(saved).role : 'rep';
+      }
+      return id;
+    } catch {
+      return null;
+    }
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showImportantNotice, setShowImportantNotice] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [updateTrigger, setUpdateTrigger] = useState(0);
 
   const checkImportantNotices = async (uid: string) => {
       try {
@@ -84,6 +112,11 @@ const App: React.FC = () => {
   useEffect(() => {
     let noticeTimer: number | undefined;
     
+    if (isAuthenticated && userId) {
+        totalDataStore.userId = userId;
+        totalDataStore.userRole = userRole;
+    }
+
     if (isAuthenticated && userRole === 'rep' && userId) {
         noticeTimer = window.setTimeout(() => checkImportantNotices(userId), 5 * 60 * 1000);
     }
@@ -104,27 +137,14 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated, userRole, userId]);
 
-  useEffect(() => {
-    if (isHydrated && userId) {
-      const startSync = async () => {
-        setIsSyncing(true);
-        try {
-          await backgroundSync(userId, userRole, () => {
-            setUpdateTrigger(prev => prev + 1);
-          });
-        } finally {
-          setIsSyncing(false);
-        }
-      };
-      startSync();
-    }
-  }, [isHydrated, userId, userRole]);
-
   const handleLogin = (name: string, role: 'admin' | 'rep' | 'director', id: string) => {
     setUserName(name);
     setUserRole(role);
     setUserId(id);
+    totalDataStore.userId = id;
+    totalDataStore.userRole = role;
     setIsAuthenticated(true);
+    setIsHydrated(true);
     setCurrentView(role === 'admin' ? 'admin-dashboard' : role === 'director' ? 'director-dashboard' : 'dashboard');
     sessionStorage.setItem('pcn_session', JSON.stringify({ name, role, id }));
     if (role === 'rep') {
@@ -139,7 +159,26 @@ const App: React.FC = () => {
     setIsHydrated(false);
     setCurrentView('dashboard');
     setUserRole('rep');
-    setUserId(null);
+    setUserId('');
+    totalDataStore.userId = '';
+    totalDataStore.userRole = '';
+    totalDataStore.clients = [];
+    totalDataStore.sales = [];
+    totalDataStore.targets = [];
+    totalDataStore.investments = [];
+    totalDataStore.users = [];
+    totalDataStore.fetchedMonths.clear();
+    totalDataStore.vendasClientesMes = [];
+    totalDataStore.clientesUltimaCompra = [];
+    totalDataStore.loading = {
+        vendasConsolidadas: false,
+        clientesUltimaCompra: false,
+        vendasClientesMes: false,
+        vendasCanaisMes: false,
+        vendasProdutosMes: false,
+        targets: false,
+        investments: false,
+    };
     setIsSidebarOpen(false);
   };
 
@@ -151,17 +190,11 @@ const App: React.FC = () => {
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
   
   if (!isHydrated && userId) {
-    return <HydrationScreen onComplete={() => setIsHydrated(true)} />;
+    return <HydrationScreen userId={userId} userRole={userRole} onComplete={() => setIsHydrated(true)} />;
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row font-inter overflow-x-hidden">
-      {isSyncing && (
-        <div className="fixed top-4 right-4 z-[200] bg-white/90 backdrop-blur-sm border border-blue-100 rounded-full px-4 py-2 shadow-lg flex items-center gap-2 animate-bounce">
-          <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-          <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Atualizando Dados...</span>
-        </div>
-      )}
       <Sidebar 
         currentView={currentView} 
         onChangeView={setCurrentView} 
@@ -186,7 +219,7 @@ const App: React.FC = () => {
         </button>
       </header>
 
-      {userRole === 'rep' && <UrgentNoticeModal />}
+      {userRole === 'rep' && <Suspense fallback={<LoadingFallback />}><UrgentNoticeModal /></Suspense>}
 
       {showImportantNotice && createPortal(
           <div className="fixed bottom-6 right-6 z-[180] animate-slideUp">
@@ -219,38 +252,40 @@ const App: React.FC = () => {
 
       <main className="flex-1 min-h-screen bg-slate-50 lg:ml-64 transition-all duration-300">
         <div className="p-3 md:p-8">
+           <Suspense fallback={<LoadingFallback />}>
            {userRole === 'rep' && (
                <>
-                {currentView === 'dashboard' && <Dashboard updateTrigger={updateTrigger} />}
-                {currentView === 'rep-analysis' && <RepAnalysisScreen updateTrigger={updateTrigger} />}
-                {currentView === 'rep-bi-builder' && <ManagerDetailedAnalysisScreen updateTrigger={updateTrigger} />}
-                {currentView === 'clients' && <ClientsScreen updateTrigger={updateTrigger} />}
-                {currentView === 'campaigns' && <CampaignsScreen updateTrigger={updateTrigger} onNavigateToInvestments={() => setCurrentView('investments')} />}
-                {currentView === 'forecast' && <ForecastScreen updateTrigger={updateTrigger} />}
-                {currentView === 'investments' && <InvestmentsScreen updateTrigger={updateTrigger} />}
-                {currentView === 'notifications' && <NotificationsScreen onFixForecast={handleNavigateToForecastCorrection} updateTrigger={updateTrigger} />}
+                {currentView === 'dashboard' && <Dashboard />}
+                {currentView === 'rep-analysis' && <RepAnalysisScreen />}
+                {currentView === 'rep-bi-builder' && <ManagerDetailedAnalysisScreen />}
+                {currentView === 'clients' && <ClientsScreen />}
+                {currentView === 'campaigns' && <CampaignsScreen onNavigateToInvestments={() => setCurrentView('investments')} />}
+                {currentView === 'forecast' && <ForecastScreen />}
+                {currentView === 'investments' && <InvestmentsScreen />}
+                {currentView === 'notifications' && <NotificationsScreen onFixForecast={handleNavigateToForecastCorrection} />}
                </>
            )}
            {userRole === 'admin' && (
                <>
-                {currentView === 'admin-dashboard' && <ManagerDashboard updateTrigger={updateTrigger} />}
-                {currentView === 'admin-import' && <ManagerImportScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-analysis' && <ManagerAnalysisScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-detailed-analysis' && <ManagerDetailedAnalysisScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-campaigns' && <ManagerCampaignsScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-forecast' && <ManagerForecastScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-notifications' && <ManagerNotificationsScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-users' && <ManagerUsersScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-scorecard' && <ManagerScoreCardScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-clients' && <ManagerClientsScreen updateTrigger={updateTrigger} />}
-                {currentView === 'admin-targets' && <ManagerTargetsScreen updateTrigger={updateTrigger} />}
+                {currentView === 'admin-dashboard' && <ManagerDashboard />}
+                {currentView === 'admin-import' && <ManagerImportScreen />}
+                {currentView === 'admin-analysis' && <ManagerAnalysisScreen />}
+                {currentView === 'admin-detailed-analysis' && <ManagerDetailedAnalysisScreen />}
+                {currentView === 'admin-campaigns' && <ManagerCampaignsScreen />}
+                {currentView === 'admin-forecast' && <ManagerForecastScreen />}
+                {currentView === 'admin-notifications' && <ManagerNotificationsScreen />}
+                {currentView === 'admin-users' && <ManagerUsersScreen />}
+                {currentView === 'admin-scorecard' && <ManagerScoreCardScreen />}
+                {currentView === 'admin-clients' && <ManagerClientsScreen />}
+                {currentView === 'admin-targets' && <ManagerTargetsScreen />}
                </>
            )}
            {userRole === 'director' && (
                <>
-                {currentView === 'director-dashboard' && <DirectorDashboard updateTrigger={updateTrigger} />}
+                {currentView === 'director-dashboard' && <DirectorDashboard />}
                </>
            )}
+           </Suspense>
         </div>
       </main>
     </div>

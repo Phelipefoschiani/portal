@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { X, BarChart3, PieChart, Activity, ShoppingCart, AlertCircle, ArrowUpRight, ArrowDownRight, Calendar, Download } from 'lucide-react';
 import { totalDataStore } from '../lib/dataStore';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, LabelList, PieChart as RePieChart, Pie, Legend } from 'recharts';
+import { Sale } from '../types';
 import html2canvas from 'html2canvas';
 
 interface ClientScoreCardModalProps {
@@ -60,35 +61,34 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
 
     const years = useMemo(() => {
         const yearsSet = new Set<string>();
-        totalDataStore.vendasProdutosMes.forEach(s => {
-            if (s.ano) yearsSet.add(String(s.ano));
+        (totalDataStore.sales as Sale[]).forEach(s => {
+            if (s.data) yearsSet.add(s.data.substring(0, 4));
         });
         return Array.from(yearsSet).sort((a, b) => b.localeCompare(a));
     }, []);
 
     const scoreData = useMemo(() => {
-        const sales = totalDataStore.vendasProdutosMes.filter(s => 
+        const sales = (totalDataStore.sales as Sale[]).filter(s => 
             String(s.cnpj).replace(/\D/g, '') === String(client.cnpj).replace(/\D/g, '') && 
-            Number(s.faturamento_total) > 0 &&
-            (selectedYear === 'all' || String(s.ano) === selectedYear)
+            Number(s.faturamento) > 0 &&
+            (selectedYear === 'all' || s.data.startsWith(selectedYear))
         );
         
         if (sales.length === 0) return null;
 
-        const totalFaturamento = sales.reduce((acc, s) => acc + (Number(s.faturamento_total) || 0), 0);
-        const totalQuantidades = sales.reduce((acc, s) => acc + (Number(s.qtde_total) || 0), 0);
+        const totalFaturamento = sales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
+        const totalQuantidades = sales.reduce((acc, s) => acc + (Number(s.qtde_faturado) || 0), 0);
 
         // 1. Produtos mais comprados (Valor e Unidades)
         const productMap = new Map<string, { name: string, value: number, units: number, lastPurchase: string }>();
         sales.forEach(s => {
             const prodName = s.produto || 'Produto sem nome';
-            const saleDate = `${s.ano}-${String(s.mes).padStart(2, '0')}-01`;
             const current = productMap.get(prodName) || { name: prodName, value: 0, units: 0, lastPurchase: '0000-00-00' };
             productMap.set(prodName, {
                 name: prodName,
-                value: current.value + (Number(s.faturamento_total) || 0),
-                units: current.units + (Number(s.qtde_total) || 0),
-                lastPurchase: saleDate > current.lastPurchase ? saleDate : current.lastPurchase
+                value: current.value + (Number(s.faturamento) || 0),
+                units: current.units + (Number(s.qtde_faturado) || 0),
+                lastPurchase: s.data > current.lastPurchase ? s.data : current.lastPurchase
             });
         });
 
@@ -101,8 +101,8 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
             const current = categoryMap.get(cat) || { name: cat, value: 0, units: 0 };
             categoryMap.set(cat, {
                 name: cat,
-                value: current.value + (Number(s.faturamento_total) || 0),
-                units: current.units + (Number(s.qtde_total) || 0)
+                value: current.value + (Number(s.faturamento) || 0),
+                units: current.units + (Number(s.qtde_faturado) || 0)
             });
         });
         const categories = Array.from(categoryMap.values()).map(c => ({
@@ -113,9 +113,9 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
         // 3. Compras Mensais (Bar Chart)
         const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
         const monthlyData = Array.from({ length: 12 }, (_, i) => {
-            const monthNum = i + 1;
-            const monthSales = sales.filter(s => s.mes === monthNum);
-            const value = monthSales.reduce((acc, s) => acc + (Number(s.faturamento_total) || 0), 0);
+            const monthStr = String(i + 1).padStart(2, '0');
+            const monthSales = sales.filter(s => s.data.includes(`-${monthStr}-`));
+            const value = monthSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
             return {
                 name: monthNames[i],
                 value,
@@ -126,8 +126,8 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
         // 4. Recompra e Saúde
         const monthsMap = new Map<string, number>();
         sales.forEach(s => {
-            const monthKey = `${s.ano}-${String(s.mes).padStart(2, '0')}`;
-            monthsMap.set(monthKey, (monthsMap.get(monthKey) || 0) + (Number(s.faturamento_total) || 0));
+            const month = s.data.substring(0, 7); // YYYY-MM
+            monthsMap.set(month, (monthsMap.get(month) || 0) + (Number(s.faturamento) || 0));
         });
         const activeMonths = monthsMap.size;
         const avgMonthly = activeMonths > 0 ? totalFaturamento / activeMonths : 0;
@@ -138,13 +138,13 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
         // 6. Tendência (Comparando com o ano anterior se selecionado um ano específico)
         let trend = 0;
         if (selectedYear !== 'all') {
-            const prevYear = parseInt(selectedYear) - 1;
-            const prevYearSales = totalDataStore.vendasProdutosMes.filter(s => 
+            const prevYear = (parseInt(selectedYear) - 1).toString();
+            const prevYearSales = (totalDataStore.sales as Sale[]).filter(s => 
                 String(s.cnpj).replace(/\D/g, '') === String(client.cnpj).replace(/\D/g, '') && 
-                Number(s.faturamento_total) > 0 &&
-                s.ano === prevYear
+                Number(s.faturamento) > 0 &&
+                s.data.startsWith(prevYear)
             );
-            const prevYearTotal = prevYearSales.reduce((acc, s) => acc + (Number(s.faturamento_total) || 0), 0);
+            const prevYearTotal = prevYearSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
             trend = prevYearTotal > 0 ? ((totalFaturamento / prevYearTotal) - 1) * 100 : 0;
         }
 

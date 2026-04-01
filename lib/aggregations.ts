@@ -8,7 +8,7 @@ export function aggregateSales(sales: Sale[]) {
   const vendasProdutosMesMap = new Map<string, VendaProdutoMes>();
 
   for (const s of sales) {
-    const d = new Date(s.data + 'T00:00:00');
+    const d = new Date(s.data + 'T00:00:00Z');
     const ano = d.getUTCFullYear();
     const mes = d.getUTCMonth() + 1;
     const fat = Number(s.faturamento) || 0;

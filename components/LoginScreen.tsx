@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Lock, ArrowRight, Check, Building2, ShieldCheck } from 'lucide-react';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -17,22 +17,49 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [logoError, setLogoError] = useState(false);
 
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        // Query mais leve apenas para testar conectividade
+        const { error } = await supabase.from('usuarios').select('id').limit(1);
+        if (error) {
+          console.error('Erro de conexão com Supabase:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+          setError(`Falha de conexão: ${error.message}`);
+        } else {
+          console.log('Conexão com Supabase estabelecida com sucesso.');
+        }
+      } catch (e) {
+        console.error('Erro inesperado ao testar conexão:', e);
+        setError('Erro inesperado de rede.');
+      }
+    };
+    checkConnection();
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
     try {
+      // Usando eq para busca exata, mais performático que ilike em alguns casos
       const { data, error: queryError } = await supabase
         .from('usuarios')
         .select('id, nome, nivel_acesso, ativo')
-        .ilike('nome', login.trim())
+        .eq('nome', login.trim())
         .eq('senha_hash', password)
-        .single();
+        .maybeSingle();
 
-      if (queryError || !data) {
+      if (queryError) {
+        console.error('Erro na query de login:', JSON.stringify(queryError, Object.getOwnPropertyNames(queryError), 2));
         setIsLoading(false);
-        setError('Credenciais inválidas. Verifique usuário e senha.');
+        setError(`Erro de acesso: ${queryError.message || 'Credenciais inválidas'}`);
+        return;
+      }
+
+      if (!data) {
+        setIsLoading(false);
+        setError('Usuário não encontrado ou senha incorreta.');
         return;
       }
 
@@ -79,7 +106,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       setIsLoading(false);
       onLogin(data.nome, mappedRole, data.id);
 
-    } catch {
+    } catch (err: unknown) {
+      console.error('Erro inesperado no login:', err);
       setIsLoading(false);
       setError('Falha de comunicação com o servidor.');
     }

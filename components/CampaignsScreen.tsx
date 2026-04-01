@@ -2,11 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Megaphone, Save, TrendingUp, Percent, AlertCircle, ChevronRight, History, RefreshCw, Loader2, DollarSign } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '../lib/supabase';
-
-interface Client {
-  id: string;
-  nome_fantasia: string;
-}
+import { totalDataStore } from '../lib/dataStore';
+import { fetchClients as fetchClientsFromService } from '../lib/dataService';
 
 interface Investment {
   id: string;
@@ -31,7 +28,7 @@ interface CampaignsScreenProps {
 
 export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToInvestments, updateTrigger = 0 }) => {
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
-  const [clients, setClients] = useState<Client[]>([]);
+  const [, setForceUpdate] = useState(0);
   const [history, setHistory] = useState<Investment[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   
@@ -49,9 +46,8 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
   const userId = session.id;
 
   const fetchClients = useCallback(async () => {
-    const { data } = await supabase.from('clientes').select('id, nome_fantasia').eq('usuario_id', userId).order('nome_fantasia');
-    setClients(data || []);
-  }, [userId]);
+    fetchClientsFromService(() => setForceUpdate(prev => prev + 1));
+  }, []);
 
   const fetchHistory = useCallback(async () => {
     setIsLoadingHistory(true);
@@ -227,7 +223,7 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
                             className="w-full h-14 bg-slate-50 border border-slate-200 rounded-xl px-4 text-xs font-black uppercase text-slate-800 outline-none focus:ring-2 focus:ring-blue-100"
                         >
                             <option value="">Selecione...</option>
-                            {clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
+                            {totalDataStore.clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
                         </select>
                     </div>
 
@@ -411,7 +407,7 @@ export const CampaignsScreen: React.FC<CampaignsScreenProps> = ({ onNavigateToIn
                                     className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-100 transition-all"
                                 >
                                     <option value="">Buscar cliente...</option>
-                                    {clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
+                                    {totalDataStore.clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-2">

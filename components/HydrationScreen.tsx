@@ -1,225 +1,142 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, ShieldCheck, CheckCircle2, Users } from 'lucide-react';
-import { Client, Target, Investment, User, VendaConsolidada, ClienteUltimaCompra, VendaClienteMes, VendaCanalMes, VendaProdutoMes, Sale } from '../types';
+import { Database, ShieldCheck, CheckCircle2, BarChart3, Users, Target } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { totalDataStore } from '../lib/dataStore';
-import { saveToLocal, getFromLocal } from '../lib/storage';
-
-interface SupabaseError {
-    message: string;
-    details?: string;
-    code?: string;
-    status?: number;
-}
-
-const fetchAllRecords = async <T,>(queryFn: () => unknown, maxRetries = 2): Promise<T[]> => {
-    let allData: T[] = [];
-    let from = 0;
-    const pageSize = 500;
-    let hasMore = true;
-    let retryCount = 0;
-
-    while (hasMore) {
-        try {
-            const query = queryFn() as { range: (from: number, to: number) => Promise<{ data: T[] | null; error: unknown }> };
-            if (!query || typeof query.range !== 'function') {
-                throw new Error('Query function did not return a valid Supabase query object.');
-            }
-            const { data, error } = await query.range(from, from + pageSize - 1);
-            if (error) {
-                const err = error as SupabaseError;
-                // Check for timeout (57014)
-                if (err.code === '57014' && retryCount < maxRetries) {
-                    retryCount++;
-                    console.warn(`Timeout detectado. Tentando novamente (${retryCount}/${maxRetries})...`);
-                    await new Promise(r => setTimeout(r, 1000 * retryCount)); // Exponential backoff
-                    continue;
-                }
-                console.error('Supabase Query Error:', error);
-                throw error;
-            }
-            if (data && data.length > 0) {
-                allData = [...allData, ...data];
-                if (data.length < pageSize) {
-                    hasMore = false;
-                } else {
-                    from += pageSize;
-                    // Small delay to let DB breathe between pages
-                    await new Promise(r => setTimeout(r, 50));
-                }
-            } else {
-                hasMore = false;
-            }
-            // Reset retry count on success
-            retryCount = 0;
-        } catch (err) {
-            if (retryCount < maxRetries) {
-                retryCount++;
-                await new Promise(r => setTimeout(r, 1000 * retryCount));
-                continue;
-            }
-            throw err;
-        }
-    }
-    return allData;
-};
 
 interface HydrationScreenProps {
+  userId: string;
+  userRole: 'admin' | 'rep' | 'director';
   onComplete: () => void;
 }
 
-const steps = [
-  { label: 'Segurança', icon: ShieldCheck },
-  { label: 'Carteira', icon: Users },
-  { label: 'Pronto', icon: CheckCircle2 }
-];
-
-export const HydrationScreen: React.FC<HydrationScreenProps> = ({ onComplete }) => {
+export const HydrationScreen: React.FC<HydrationScreenProps> = ({ userId, userRole, onComplete }) => {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('Iniciando conexão...');
   const [currentStep, setCurrentStep] = useState(0);
-  const hydrationStarted = React.useRef(false);
+
+  const steps = React.useMemo(() => [
+    { label: 'Segurança', icon: ShieldCheck },
+    { label: 'Carteira', icon: Users },
+    { label: 'Faturamento', icon: BarChart3 },
+    { label: 'Objetivos', icon: Target },
+    { label: 'Pronto', icon: CheckCircle2 }
+  ], []);  const fetchCurrentMonthData = useCallback(async (role: string, uid: string) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const start = `${year}-${month.toString().padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const end = `${year}-${month.toString().padStart(2, '0')}-${lastDay}`;
+
+    const columns = 'faturamento, cnpj, usuario_id, data, qtde_faturado, produto, codigo_produto, canal_vendas, grupo, cliente_nome';
+
+    const { data, error } = await supabase
+      .from('dados_vendas')
+      .select(columns)
+      .gte('data', start)
+      .lte('data', end)
+      .eq(role !== 'admin' && role !== 'director' ? 'usuario_id' : 'dummy', role !== 'admin' && role !== 'director' ? uid : 'dummy');
+
+    if (error) throw error;
+    
+    const key = `${year}-${month.toString().padStart(2, '0')}`;
+    totalDataStore.fetchedMonths.add(key);
+    
+    return data || [];
+  }, []);
 
   const startHydration = useCallback(async () => {
     const execute = async () => {
-      let stepIdx = 0;
       try {
         totalDataStore.clear();
         
-        const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
-        const userId = session.id;
-        const userRole = session.role;
-
-        if (!userId) {
-          throw new Error('Sessão expirada. Por favor, faça login novamente.');
-        }
-
-        stepIdx = 0;
         setCurrentStep(0);
         setStatus('Validando credenciais...');
-        setProgress(20);
-        const getUsersQuery = () => supabase
+        setProgress(10);
+        
+        const { data: allUsers, error: usersError } = await supabase
           .from('usuarios')
           .select('id, nome, nivel_acesso')
-          .not('nivel_acesso', 'ilike', 'admin')
-          .not('nivel_acesso', 'ilike', 'gerente')
-          .not('nivel_acesso', 'ilike', 'director')
-          .not('nivel_acesso', 'ilike', 'diretor')
           .order('nome');
-        const users = await fetchAllRecords<User>(getUsersQuery);
-        totalDataStore.users = users || [];
-        await new Promise(r => setTimeout(r, 100));
- 
-        stepIdx = 1;
+        
+        if (usersError) throw usersError;
+
+        const excludedRoles = ['admin', 'gerente', 'director', 'diretor'];
+        totalDataStore.users = (allUsers || []).filter(u => 
+          !u.nivel_acesso || !excludedRoles.some(role => u.nivel_acesso.toLowerCase().includes(role))
+        );
+
         setCurrentStep(1);
         setStatus('Mapeando carteira...');
-        setProgress(50);
+        setProgress(30);
+        let clientQuery = supabase.from('clientes').select('*, usuarios(nome, id)');
+        if (userRole !== 'admin' && userRole !== 'director') clientQuery = clientQuery.eq('usuario_id', userId);
+        const { data: clients, error: clientsError } = await clientQuery;
         
-        let cachedClients: Client[] | null = null;
-        try {
-            cachedClients = await getFromLocal('clients_cache', userId) as Client[] | null;
-        } catch (e) {
-            console.warn('Erro ao ler cache de clientes:', e);
-        }
+        if (clientsError) throw clientsError;
+        totalDataStore.clients = clients || [];
 
-        if (cachedClients && cachedClients.length > 0) {
-            totalDataStore.clients = cachedClients;
-            setStatus('Carteira carregada do cache...');
-        } else {
-            const getClientQuery = () => {
-                let q = supabase.from('clientes').select('*, usuarios(nome, id)');
-                if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
-                return q;
-            };
-            const clients = await fetchAllRecords<Client>(getClientQuery);
-            totalDataStore.clients = clients || [];
-            await saveToLocal('clients_cache', totalDataStore.clients, userId);
-        }
-
-        // Tentar carregar visões do cache em silêncio (não bloqueante)
-        try {
-            const cachedSales = await getFromLocal('sales_cache', userId) as Sale[] | null;
-            if (cachedSales) totalDataStore.sales = cachedSales;
-
-            const cachedViews = await getFromLocal('views_cache', userId) as { 
-                vendasConsolidadas?: VendaConsolidada[], 
-                clientesUltimaCompra?: ClienteUltimaCompra[], 
-                vendasClientesMes?: VendaClienteMes[], 
-                vendasCanaisMes?: VendaCanalMes[], 
-                vendasProdutosMes?: VendaProdutoMes[] 
-            };
-            if (cachedViews) {
-                totalDataStore.vendasConsolidadas = cachedViews.vendasConsolidadas || [];
-                totalDataStore.clientesUltimaCompra = cachedViews.clientesUltimaCompra || [];
-                totalDataStore.vendasClientesMes = cachedViews.vendasClientesMes || [];
-                totalDataStore.vendasCanaisMes = cachedViews.vendasCanaisMes || [];
-                totalDataStore.vendasProdutosMes = cachedViews.vendasProdutosMes || [];
-            }
-            
-            const cachedTargets = await getFromLocal('targets_cache', userId) as Target[] | null;
-            if (cachedTargets) totalDataStore.targets = cachedTargets;
-            
-            const cachedInvs = await getFromLocal('investments_cache', userId) as Investment[] | null;
-            if (cachedInvs) totalDataStore.investments = cachedInvs;
-        } catch (e) {
-            console.warn('Erro ao ler cache de visões:', e);
-        }
-
-        setProgress(80);
-        await new Promise(r => setTimeout(r, 100));
- 
-        stepIdx = 2;
         setCurrentStep(2);
-        setStatus('Ambiente Gerencial Pronto!');
+        setStatus('Carregando dados do mês atual...');
+        setProgress(60);
+        const sales = await fetchCurrentMonthData(userRole, userId);
+        totalDataStore.sales = sales;
+
+        setCurrentStep(3);
+        setStatus('Consolidando metas...');
+        setProgress(85);
+        
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        
+        let targetQuery = supabase.from('metas_usuarios').select('*').eq('ano', currentYear);
+        if (userRole !== 'admin' && userRole !== 'director') targetQuery = targetQuery.eq('usuario_id', userId);
+        const { data: targets, error: targetsError } = await targetQuery;
+        
+        if (targetsError) throw targetsError;
+        totalDataStore.targets = targets || [];
+
+        let invQuery = supabase.from('investimentos').select('*').gte('data', `${currentYear}-01-01`).eq('status', 'approved');
+        if (userRole !== 'admin' && userRole !== 'director') invQuery = invQuery.eq('usuario_id', userId);
+        const { data: invs, error: invsError } = await invQuery;
+        
+        if (invsError) throw invsError;
+        totalDataStore.investments = invs || [];
+
         setProgress(100);
+        setCurrentStep(4);
+        setStatus('Ambiente Pronto!');
         totalDataStore.isHydrated = true;
         
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 400));
         onComplete();
- 
+
       } catch (err: unknown) {
-        console.error('Erro detalhado na hidratação:', err);
-        let errorMsg = 'Erro desconhecido';
-        let errorCode = '';
-        let errorStatus: number | undefined;
-
-        if (err instanceof Error) {
-            errorMsg = err.message;
-        } else if (err && typeof err === 'object') {
-            const e = err as SupabaseError;
-            errorMsg = e.message || e.details || JSON.stringify(err);
-            errorCode = e.code || '';
-            errorStatus = e.status;
-        }
-
-        setStatus(`Erro no passo ${stepIdx + 1} (${steps[stepIdx]?.label || 'Processamento'}): ${errorMsg.substring(0, 80)}${errorCode ? ` [${errorCode}]` : ''}`);
+        // Log detalhado com todas as propriedades do erro
+        const detailedError = err instanceof Error ? JSON.stringify(err, Object.getOwnPropertyNames(err), 2) : String(err);
+        console.error(`Erro detalhado na hidratação (Passo ${currentStep + 1}):`, detailedError);
         
-        // Stop retrying if it's an auth/permission error (401, 403)
-        const isAuthError = errorStatus === 401 || 
-                           errorStatus === 403 || 
-                           errorMsg.toLowerCase().includes('unauthorized') || 
-                           errorMsg.toLowerCase().includes('permission denied') ||
-                           errorMsg.toLowerCase().includes('invalid api key') ||
-                           errorCode === 'PGRST301';
-
-        if (!isAuthError) {
-          // Retry with backoff for other errors (network, etc)
-          setTimeout(execute, 5000);
-        } else {
-          setStatus(`Erro Crítico: Falha de Permissão/Autenticação. Verifique as chaves do Supabase. [${errorCode}]`);
-        }
+        let errorMsg = 'Erro desconhecido';
+        if (err instanceof Error) errorMsg = err.message;
+        else if (typeof err === 'object' && err !== null && 'details' in err) errorMsg = String((err as Record<string, unknown>).details);
+        else if (typeof err === 'object' && err !== null && 'hint' in err) errorMsg = String((err as Record<string, unknown>).hint);
+        else if (typeof err === 'object' && err !== null && 'code' in err) errorMsg = `Código: ${(err as Record<string, unknown>).code}`;
+        else if (typeof err === 'string') errorMsg = err;
+        else errorMsg = detailedError;
+        
+        setStatus(`Erro no passo ${currentStep + 1} (${steps[currentStep].label}): ${errorMsg.substring(0, 150)}`);
+        
+        // Retry with backoff
+        setTimeout(execute, 5000);
       }
     };
 
     await execute();
-  }, [onComplete]);
+  }, [userId, userRole, onComplete, currentStep, steps, fetchCurrentMonthData]);
 
   useEffect(() => {
-    if (!hydrationStarted.current) {
-      hydrationStarted.current = true;
-      startHydration();
-    }
+    startHydration();
   }, [startHydration]);
 
   return (

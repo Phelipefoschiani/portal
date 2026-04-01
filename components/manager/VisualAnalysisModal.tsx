@@ -317,6 +317,7 @@ export const VisualAnalysisModal: React.FC<VisualAnalysisModalProps> = ({
                                             dataKey="value" 
                                             stroke="#2563eb" 
                                             strokeWidth={4} 
+                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                             dot={(props: any) => {
                                                 const { cx, cy, payload } = props;
                                                 if (payload.isSelected) {
@@ -360,6 +361,7 @@ export const VisualAnalysisModal: React.FC<VisualAnalysisModalProps> = ({
                                                 ))}
                                             </Pie>
                                         <Tooltip 
+                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                             formatter={(v: any) => formatCurrency(Number(v))}
                                             contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
                                         />
@@ -438,6 +440,7 @@ export const VisualAnalysisModal: React.FC<VisualAnalysisModalProps> = ({
                                                 <LabelList 
                                                     dataKey="percent" 
                                                     position="top" 
+                                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                                     formatter={(v: any) => `${Number(v).toFixed(1)}%`}
                                                     style={{ fontSize: '9px', fontWeight: '900', fill: '#64748b' }}
                                                 />

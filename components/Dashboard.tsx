@@ -1,16 +1,13 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target, TrendingUp, Users, AlertCircle, Calendar, DollarSign, CheckCircle2, Award, ChevronDown, CheckSquare, Square, Filter, CalendarDays, ArrowUpRight, ArrowDownRight, LayoutDashboard } from 'lucide-react';
+import { Target as TargetIcon, TrendingUp, Users, AlertCircle, Calendar, DollarSign, CheckCircle2, Award, ChevronDown, CheckSquare, Square, Filter, CalendarDays, ArrowUpRight, ArrowDownRight, LayoutDashboard } from 'lucide-react';
 import { NonPositivizedModal } from './NonPositivizedModal';
 import { PositivizedModal } from './PositivizedModal';
 import { RepPerformanceModal } from './manager/RepPerformanceModal';
 import { totalDataStore } from '../lib/dataStore';
+import { Sale, Target, Client } from '../types';
 
-interface DashboardProps {
-  updateTrigger?: number;
-}
-
-export const Dashboard: React.FC<DashboardProps> = ({ updateTrigger = 0 }) => {
+export const Dashboard: React.FC = () => {
   const now = new Date();
   const [showNonPositivizedModal, setShowNonPositivizedModal] = useState(false);
   const [showPositivizedModal, setShowPositivizedModal] = useState(false);
@@ -43,54 +40,91 @@ export const Dashboard: React.FC<DashboardProps> = ({ updateTrigger = 0 }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const data = useMemo(() => {
-    // Satisfy linter by using updateTrigger
-    void updateTrigger;
-    const vendasConsolidadas = totalDataStore.vendasConsolidadas;
-    const vendasClientesMes = totalDataStore.vendasClientesMes;
-    const targets = totalDataStore.targets;
-    const clients = totalDataStore.clients;
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [targets, setTargets] = useState<Target[]>([]);
+  const [clients, setClients] = useState<Client[]>([]); 
+  const [isLoading, setIsLoading] = useState(true);
 
+  useEffect(() => {
+    const loadData = async () => {
+        setIsLoading(true);
+        try {
+            // Ensure userId and userRole are in the store
+            totalDataStore.userId = userId;
+            totalDataStore.userRole = userRole;
+
+            // Fetch clients if not already fetched
+            const { fetchClients, fetchSalesForMonths } = await import('../lib/dataService');
+            await fetchClients();
+            
+            // Fetch sales for current year and previous year (for comparison)
+            // We fetch only for the selected months
+            await Promise.all([
+                fetchSalesForMonths(selectedYear, selectedMonths),
+                fetchSalesForMonths(selectedYear - 1, selectedMonths)
+            ]);
+
+            // After fetching, update local state from store
+            setSales(totalDataStore.sales);
+            setTargets(totalDataStore.targets);
+            setClients(totalDataStore.clients);
+        } catch (e) {
+            console.error('Error loading dashboard data:', e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    loadData();
+
+    // Listen for data updates from other components or background sync
+    const handleUpdate = () => {
+        setSales([...totalDataStore.sales]);
+        setTargets([...totalDataStore.targets]);
+        setClients([...totalDataStore.clients]);
+    };
+    window.addEventListener('pcn_data_update', handleUpdate);
+    return () => window.removeEventListener('pcn_data_update', handleUpdate);
+  }, [selectedYear, selectedMonths, userId, userRole]);
+
+  const data = useMemo(() => {
     const totalMeta = targets
       .filter(t => t.usuario_id === userId && selectedMonths.includes(t.mes) && t.ano === selectedYear)
       .reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
 
-    const filteredVendas = vendasConsolidadas.filter(v => 
-      v.usuario_id === userId && selectedMonths.includes(v.mes) && v.ano === selectedYear
-    );
+    const filteredSales = sales.filter(s => {
+      const d = new Date(s.data + 'T00:00:00');
+      const m = d.getUTCMonth() + 1;
+      const y = d.getUTCFullYear();
+      return s.usuario_id === userId && selectedMonths.includes(m) && y === selectedYear;
+    });
 
     const portfolio = clients.filter(c => {
       if (c.usuario_id !== userId) return false;
       
-      // Regra de Carteira: Clientes ativos no final do ano anterior 
-      // OU que compraram no ano selecionado
       const lastPurchaseDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
       if (!lastPurchaseDate) return false;
 
       const lastPurchaseYear = lastPurchaseDate.getUTCFullYear();
       const lastPurchaseMonth = lastPurchaseDate.getUTCMonth() + 1;
       
-      // Se comprou no ano selecionado, está na carteira
       if (lastPurchaseYear === selectedYear) return true;
-      
-      // Se era ativo no final do ano anterior (comprou nos últimos 3 meses de Y-1)
       if (lastPurchaseYear === selectedYear - 1 && lastPurchaseMonth >= 10) return true;
       
       return false;
     });
 
-    const totalFaturado = filteredVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
-    
-    const vendasClientes = vendasClientesMes.filter(v => 
-      v.usuario_id === userId && selectedMonths.includes(v.mes) && v.ano === selectedYear
-    );
-    const salesCnpjs = new Set(vendasClientes.map(v => cleanCnpj(v.cnpj)));
+    const totalFaturado = filteredSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+    const salesCnpjs = new Set(filteredSales.map(s => cleanCnpj(s.cnpj)));
     const positivadosCount = portfolio.filter(c => salesCnpjs.has(cleanCnpj(c.cnpj))).length;
 
-    const prevYearVendas = vendasConsolidadas.filter(v => 
-      v.usuario_id === userId && selectedMonths.includes(v.mes) && v.ano === (selectedYear - 1)
-    );
-    const totalPrevFaturado = prevYearVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
+    const prevYearSales = sales.filter(s => {
+        const d = new Date(s.data + 'T00:00:00');
+        const m = d.getUTCMonth() + 1;
+        const y = d.getUTCFullYear();
+        return s.usuario_id === userId && selectedMonths.includes(m) && y === (selectedYear - 1);
+    });
+    const totalPrevFaturado = prevYearSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
     const growthPercent = totalPrevFaturado > 0 ? ((totalFaturado / totalPrevFaturado) - 1) * 100 : 0;
 
     return {
@@ -101,8 +135,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ updateTrigger = 0 }) => {
       growthPercent,
       hasPrevData: totalPrevFaturado > 0
     };
-  }, [selectedMonths, selectedYear, userId, updateTrigger]);
-
+  }, [sales, selectedMonths, selectedYear, userId, clients, targets]);
 
   const percentualAtingido = data.meta > 0 ? (data.faturado / data.meta) * 100 : 0;
   const percentualClientes = data.totalClientes > 0 ? (data.clientesPositivados / data.totalClientes) * 100 : 0;
@@ -124,6 +157,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ updateTrigger = 0 }) => {
     if (selectedMonths.length === 12) return "ANO TODO";
     return `${selectedMonths.length} MESES`;
   };
+
+  if (isLoading) {
+    return (
+      <div className="w-full h-[60vh] flex flex-col items-center justify-center gap-4">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-500 font-bold animate-pulse uppercase text-[10px] tracking-widest">Carregando dados...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto animate-fadeIn pb-20 md:pb-12">
@@ -346,7 +388,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ updateTrigger = 0 }) => {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 md:mb-10 gap-6">
             <div className="flex items-center gap-4 md:gap-5">
               <div className="p-3 md:p-4 bg-blue-600 text-white rounded-2xl md:rounded-3xl shadow-xl shadow-blue-100 shrink-0">
-                <Target className="w-6 h-6 md:w-8 md:w-8" />
+                <TargetIcon className="w-6 h-6 md:w-8 md:w-8" />
               </div>
               <div>
                 <h3 className="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em]">Objetivo do Período</h3>

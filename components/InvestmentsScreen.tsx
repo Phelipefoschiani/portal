@@ -1,8 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Wallet, PieChart, AlertTriangle, History, X, ChevronRight, DollarSign, Users, Target, CalendarDays, Info } from 'lucide-react';
 import { totalDataStore } from '../lib/dataStore';
 import { createPortal } from 'react-dom';
 import { Button } from './Button';
+import { useSalesData } from '../hooks/useSalesData';
+
+import { fetchClients } from '../lib/dataService';
 
 interface Investment {
   id: string;
@@ -28,11 +31,29 @@ interface InvestmentsScreenProps {
 export const InvestmentsScreen: React.FC<InvestmentsScreenProps> = ({ updateTrigger = 0 }) => {
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
-  const [selectedInv, setSelectedInv] = useState<Investment | null>(null);
-  const [mobileTab, setMobileTab] = useState<'extract' | 'clients'>('extract');
+  const [isLoading, setIsLoading] = useState(true);
+  const [, setForceUpdate] = useState(0);
+  
+  useSalesData(selectedYear, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], updateTrigger, () => {
+    setForceUpdate(prev => prev + 1);
+    setIsLoading(false);
+  });
 
   const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
   const userId = session.id;
+
+  useEffect(() => {
+    if (userId) {
+      // setIsLoading(true); // Removido para evitar renderização em cascata
+      fetchClients(() => {
+        setForceUpdate(prev => prev + 1);
+        setIsLoading(false);
+      });
+    }
+  }, [userId]);
+
+  const [selectedInv, setSelectedInv] = useState<Investment | null>(null);
+  const [mobileTab, setMobileTab] = useState<'extract' | 'clients'>('extract');
 
   // --- MOTOR DE INTELIGÊNCIA FINANCEIRA ---
   const financialData = useMemo(() => {
@@ -90,6 +111,15 @@ export const InvestmentsScreen: React.FC<InvestmentsScreenProps> = ({ updateTrig
   }, [userId, selectedYear, updateTrigger]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
+
+  if (isLoading) {
+    return (
+      <div className="w-full h-[60vh] flex flex-col items-center justify-center gap-4">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-500 font-black animate-pulse uppercase text-[10px] tracking-widest">Carregando investimentos...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto animate-fadeIn pb-24 md:pb-24">

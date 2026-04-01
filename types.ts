@@ -10,6 +10,8 @@ export interface User {
 
 export interface Sale {
   id?: string;
+  created_at?: string;
+  updated_at?: string;
   data: string;
   faturamento: number | string;
   qtde_faturado: number | string;

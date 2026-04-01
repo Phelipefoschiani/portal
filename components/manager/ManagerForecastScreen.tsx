@@ -69,6 +69,9 @@ export const ManagerForecastScreen: React.FC<ManagerForecastScreenProps> = ({ up
         void updateTrigger;
         setIsLoading(true);
         try {
+            const { fetchUsers } = await import('../../lib/dataService');
+            await fetchUsers();
+
             if (view === 'mensais') {
                 const { data } = await supabase
                     .from('previsoes')

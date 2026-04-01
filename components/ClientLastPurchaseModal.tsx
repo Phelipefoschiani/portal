@@ -4,6 +4,7 @@ import { X, History, CheckSquare, Square, FileSpreadsheet, Filter, Calendar, Sea
 import { Button } from './Button';
 import * as XLSX from 'xlsx';
 import { totalDataStore } from '../lib/dataStore';
+import { useSalesData } from '../hooks/useSalesData';
 
 interface Product {
   id: string;
@@ -28,6 +29,9 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>('all');
+  
+  useSalesData(selectedYear === 'all' ? 'all' : parseInt(selectedYear, 10));
+
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -91,7 +95,8 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
 
   const getDaysSince = (dateStr: string) => {
     const today = new Date();
-    const purchaseDate = new Date(dateStr + 'T00:00:00');
+    console.log('dateStr:', dateStr, typeof dateStr);
+    const purchaseDate = new Date(String(dateStr) + 'T00:00:00');
     const diffTime = Math.abs(today.getTime() - purchaseDate.getTime());
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };

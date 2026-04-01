@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
+import { useSalesData } from '../../hooks/useSalesData';
+import { LoadingOverlay } from '../LoadingOverlay';
 
 type TabType = 'team' | 'clients';
 
@@ -54,7 +56,12 @@ interface ManagerTargetsScreenProps {
 
 export const ManagerTargetsScreen: React.FC<ManagerTargetsScreenProps> = ({ updateTrigger = 0 }) => {
     const [activeTab, setActiveTab] = useState<TabType>('team');
+    const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+    const [, setForceUpdate] = useState(0);
+    
+    useSalesData(selectedYear, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], updateTrigger, () => setForceUpdate(prev => prev + 1));
+
     const [managerTotalTarget, setManagerTotalTarget] = useState<number>(0);
     const [displayTarget, setDisplayTarget] = useState('0,00');
     
@@ -89,6 +96,9 @@ export const ManagerTargetsScreen: React.FC<ManagerTargetsScreenProps> = ({ upda
     const fetchInitialData = useCallback(async () => {
         void updateTrigger;
         try {
+            const { fetchClients } = await import('../../lib/dataService');
+            await fetchClients();
+
             const { data: repsData } = await supabase.from('usuarios').select('id, nome, nivel_acesso')
                 .not('nivel_acesso', 'ilike', 'admin')
                 .not('nivel_acesso', 'ilike', 'gerente')
@@ -469,6 +479,8 @@ export const ManagerTargetsScreen: React.FC<ManagerTargetsScreenProps> = ({ upda
                 </div>,
                 document.body
             )}
+
+            {(isLoading || isLoadingClients) && <LoadingOverlay />}
         </div>
     );
 };

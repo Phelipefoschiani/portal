@@ -26,11 +26,7 @@ interface Investment {
     };
 }
 
-interface ManagerCampaignsScreenProps {
-    updateTrigger?: number;
-}
-
-export const ManagerCampaignsScreen: React.FC<ManagerCampaignsScreenProps> = ({ updateTrigger = 0 }) => {
+export const ManagerCampaignsScreen: React.FC = () => {
     const now = new Date();
     const [viewMode, setViewMode] = useState<'pending' | 'history'>('pending');
     const [subTab, setSubTab] = useState<'approved' | 'rejected'>('approved');
@@ -49,9 +45,11 @@ export const ManagerCampaignsScreen: React.FC<ManagerCampaignsScreenProps> = ({ 
     const monthsNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
     const fetchInvestments = useCallback(async () => {
-        void updateTrigger;
         setIsLoading(true);
         try {
+            const { fetchUsers, fetchTargets, fetchInvestments: fetchAllInvestments } = await import('../../lib/dataService');
+            await Promise.all([fetchUsers(), fetchTargets(filterYear), fetchAllInvestments(filterYear)]);
+
             let query = supabase
                 .from('investimentos')
                 .select('*, clientes(*), usuarios(id, nome)')
@@ -76,14 +74,13 @@ export const ManagerCampaignsScreen: React.FC<ManagerCampaignsScreenProps> = ({ 
         } finally {
             setIsLoading(false);
         }
-    }, [viewMode, subTab, filterYear, filterMonth, updateTrigger]);
+    }, [viewMode, subTab, filterYear, filterMonth]);
 
     useEffect(() => {
         fetchInvestments();
     }, [fetchInvestments]);
 
     const teamStats = useMemo(() => {
-        void updateTrigger;
         if (viewMode !== 'history') return [];
         const reps = totalDataStore.users;
         const targets = totalDataStore.targets;
@@ -99,7 +96,7 @@ export const ManagerCampaignsScreen: React.FC<ManagerCampaignsScreenProps> = ({ 
             const consumptionPct = investmentPool > 0 ? (annualSpent / investmentPool) * 100 : 0;
             return { repId: rep.id, nome: rep.nome, metaAnual: annualTarget, verbaTotal: investmentPool, gastoAnual: annualSpent, saldo: remaining, consumoPct: consumptionPct };
         }).sort((a, b) => b.metaAnual - a.metaAnual);
-    }, [viewMode, filterYear, updateTrigger]);
+    }, [viewMode, filterYear]);
 
     const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
         if (isActionLoading || !selectedDetail) return;

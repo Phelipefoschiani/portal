@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { GenericScoreCardModal } from '../GenericScoreCardModal';
+import { Sale } from '../../types';
 
 const ScoreRulesModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     return createPortal(
@@ -125,11 +126,7 @@ const ClientDetailModal: React.FC<{
     );
 };
 
-interface ManagerScoreCardScreenProps {
-    updateTrigger?: number;
-}
-
-export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ updateTrigger = 0 }) => {
+export const ManagerScoreCardScreen: React.FC = () => {
     const now = new Date();
     
     // Sessão
@@ -199,6 +196,40 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
         return `${selectedMonths.length} MESES`;
     };
     
+    const [isDataLoading, setIsDataLoading] = useState(true);
+
+    useEffect(() => {
+        const loadData = async () => {
+            setIsDataLoading(true);
+            try {
+                const { fetchClients, fetchSalesForMonths, fetchUsers } = await import('../../lib/dataService');
+                
+                // Fetch users, clients and sales for the selected year and previous year (for comparison)
+                // Scorecard needs all months for both years to calculate evolution
+                const allMonths = Array.from({ length: 12 }, (_, i) => i + 1);
+                
+                await Promise.all([
+                    fetchUsers(),
+                    fetchClients(),
+                    fetchSalesForMonths(selectedYear, allMonths),
+                    fetchSalesForMonths(selectedYear - 1, allMonths)
+                ]);
+            } catch (e) {
+                console.error('Error loading scorecard data:', e);
+            } finally {
+                setIsDataLoading(false);
+            }
+        };
+        loadData();
+
+        const handleUpdate = () => {
+            // Force re-render if needed
+            setIsDataLoading(false);
+        };
+        window.addEventListener('pcn_data_update', handleUpdate);
+        return () => window.removeEventListener('pcn_data_update', handleUpdate);
+    }, [selectedYear]);
+
     const [scoreData, setScoreData] = useState<{
         totalFaturado: number;
         totalMeta: number;
@@ -223,14 +254,12 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
     const [isCalculating, setIsCalculating] = useState(true);
 
     const dimensions = useMemo(() => {
-        const vendasCanaisMes = totalDataStore.vendasCanaisMes;
-        const vendasProdutosMes = totalDataStore.vendasProdutosMes;
-        const clients = totalDataStore.clients;
+        const sales = totalDataStore.sales as Sale[];
         return {
-            canal_vendas: Array.from(new Set(vendasCanaisMes.map(s => s.canal_vendas).filter(Boolean))).sort(),
-            grupo: Array.from(new Set(vendasProdutosMes.map(s => s.grupo).filter(Boolean))).sort(),
-            cidade: Array.from(new Set(clients.map(c => c.cidade).filter(Boolean))).sort(),
-            usuario_id: Array.from(new Set(totalDataStore.users.map(u => u.id).filter(Boolean))).map(id => ({
+            canal_vendas: Array.from(new Set(sales.map(s => s.canal_vendas).filter(Boolean))).sort(),
+            grupo: Array.from(new Set(sales.map(s => s.grupo).filter(Boolean))).sort(),
+            cidade: Array.from(new Set(sales.map(s => s.cidade).filter(Boolean))).sort(),
+            usuario_id: Array.from(new Set(sales.map(s => s.usuario_id).filter(Boolean))).map(id => ({
                 id,
                 nome: totalDataStore.users.find(u => String(u.id) === String(id))?.nome || `Vendedor ${id}`
             })).sort((a, b) => a.nome.localeCompare(b.nome))
@@ -240,34 +269,36 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
     // ... (keep existing refs and effects)
 
     useEffect(() => {
-        void updateTrigger;
         setIsCalculating(true);
         setScoreData(null); 
 
         const timer = setTimeout(() => {
             try {
-                const vendasConsolidadas = totalDataStore.vendasConsolidadas || [];
-                const vendasClientesMes = totalDataStore.vendasClientesMes || [];
-                const vendasProdutosMes = totalDataStore.vendasProdutosMes || [];
-                const vendasCanaisMes = totalDataStore.vendasCanaisMes || [];
+                const sales = totalDataStore.sales || [];
                 const targets = totalDataStore.targets || [];
                 const clients = totalDataStore.clients || [];
 
-                const filterView = (v: { ano: number; mes: number; usuario_id: string }, yearToCheck: number) => {
-                    const matchesYear = v.ano === yearToCheck;
-                    const matchesMonth = selectedMonths.includes(v.mes);
-                    const matchesRep = selectedRepId === 'all' ? true : String(v.usuario_id) === String(selectedRepId);
+                const filterSales = (s: Sale, yearToCheck: number) => {
+                    if (!s.data) return false;
+                    const d = new Date(s.data + 'T00:00:00');
+                    const m = d.getUTCMonth() + 1;
+                    const y = d.getUTCFullYear();
+                    
+                    const matchesYear = y === yearToCheck;
+                    const matchesMonth = selectedMonths.includes(m);
+                    const matchesRep = selectedRepId === 'all' ? true : String(s.usuario_id) === String(selectedRepId);
+                    
                     return matchesYear && matchesMonth && matchesRep;
                 };
                 
-                const currentVendasConsolidadas = vendasConsolidadas.filter(v => filterView(v, selectedYear));
-                const totalFaturado = currentVendasConsolidadas.reduce((acc, curr) => acc + Number(curr.faturamento_total || 0), 0);
+                const currentSales = sales.filter(s => filterSales(s, selectedYear));
+                const prevSales = sales.filter(s => filterSales(s, selectedYear - 1));
+                const totalFaturado = currentSales.reduce((acc, curr) => acc + Number(curr.faturamento || 0), 0);
                 
                 const currentTargets = targets.filter(t => t.ano === selectedYear && selectedMonths.includes(t.mes) && (selectedRepId === 'all' ? true : t.usuario_id === selectedRepId));
                 const totalMeta = currentTargets.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
 
-                const currentVendasClientes = vendasClientesMes.filter(v => filterView(v, selectedYear));
-                const activeCnpjs = new Set(currentVendasClientes.map(v => String(v.cnpj || '').replace(/\D/g, '')));
+                const activeCnpjs = new Set(currentSales.map(s => String(s.cnpj || '').replace(/\D/g, '')));
                 
                 // Regra de Carteira Dinâmica: Clientes ativos no final do ano anterior OU que compraram no ano selecionado
                 const portfolioClients = clients.filter(c => {
@@ -289,10 +320,8 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
                 const totalPortfolio = portfolioClients.length || 1; 
                 const positivacaoCount = portfolioClients.filter(c => activeCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;
                 
-                const currentVendasProdutos = vendasProdutosMes.filter(v => filterView(v, selectedYear));
-                const prevVendasProdutos = vendasProdutosMes.filter(v => filterView(v, selectedYear - 1));
-                const uniqueSkus = new Set(currentVendasProdutos.map(v => v.codigo_produto)).size;
-                const uniqueSkusPrev = new Set(prevVendasProdutos.map(v => v.codigo_produto)).size;
+                const uniqueSkus = new Set(currentSales.map(s => s.codigo_produto)).size;
+                const uniqueSkusPrev = new Set(prevSales.map(s => s.codigo_produto)).size;
                 
                 const monthsCount = selectedMonths.length || 1;
                 const mediaMensal = totalFaturado / monthsCount;
@@ -315,7 +344,11 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
                 const finalScore = Math.round(scoreFinanceiro + scoreCarteira + scoreMix);
 
                 const monthlyData = selectedMonths.sort((a,b) => a-b).map(month => {
-                    const mSales = currentVendasConsolidadas.filter(v => v.mes === month).reduce((a, b) => a + Number(b.faturamento_total || 0), 0);
+                    const mSales = currentSales.filter(s => {
+                        if (!s.data) return false;
+                        const d = new Date(s.data + 'T00:00:00');
+                        return d.getUTCMonth() + 1 === month;
+                    }).reduce((a, b) => a + Number(b.faturamento || 0), 0);
                     
                     const mTarget = currentTargets.filter(t => t.mes === month).reduce((a, b) => a + Number(b.valor || 0), 0);
                     
@@ -324,20 +357,19 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
 
                 const monthsHit = monthlyData.filter(m => m.target > 0 && m.sales >= m.target).length;
 
-                const currentVendasCanais = vendasCanaisMes.filter(v => filterView(v, selectedYear));
                 const segmentMap = new Map<string, number>();
-                currentVendasCanais.forEach(v => {
-                    const seg = v.canal_vendas || 'GERAL / OUTROS';
-                    segmentMap.set(seg, (segmentMap.get(seg) || 0) + Number(v.faturamento_total || 0));
+                currentSales.forEach(s => {
+                    const seg = s.canal_vendas || 'GERAL / OUTROS';
+                    segmentMap.set(seg, (segmentMap.get(seg) || 0) + Number(s.faturamento || 0));
                 });
                 const segmentationData = Array.from(segmentMap.entries())
                     .map(([label, value]) => ({ label, value, percent: totalFaturado > 0 ? (value / totalFaturado) * 100 : 0 }))
                     .sort((a, b) => b.value - a.value);
 
                 const productMap = new Map<string, number>();
-                currentVendasProdutos.forEach(v => {
-                    const prod = v.produto || 'PRODUTO N/I';
-                    productMap.set(prod, (productMap.get(prod) || 0) + Number(v.faturamento_total || 0));
+                currentSales.forEach(s => {
+                    const prod = s.produto || 'PRODUTO N/I';
+                    productMap.set(prod, (productMap.get(prod) || 0) + Number(s.faturamento || 0));
                 });
                 const topProducts = Array.from(productMap.entries())
                     .map(([name, value]) => ({ 
@@ -352,33 +384,32 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
                 const clientNameMap = new Map<string, string>();
                 const clientIdMap = new Map<string, string>();
                 
-                currentVendasClientes.forEach(v => {
-                    const cnpjClean = String(v.cnpj || '').replace(/\D/g, '');
+                currentSales.forEach(s => {
+                    const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
                     if (!cnpjClean) return;
 
                     if (!clientNameMap.has(cnpjClean)) {
                         const clientObj = clients.find(c => String(c.cnpj || '').replace(/\D/g,'') === cnpjClean);
-                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || v.cliente_nome || `CNPJ ${v.cnpj}`);
+                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || s.cliente_nome || `CNPJ ${s.cnpj}`);
                         if (clientObj?.id) clientIdMap.set(cnpjClean, clientObj.id);
                     }
                     const data = clientMap.get(cnpjClean) || { current: 0, prev: 0 };
-                    data.current += Number(v.faturamento_total || 0);
+                    data.current += Number(s.faturamento || 0);
                     clientMap.set(cnpjClean, data);
                 });
 
-                const prevVendasClientes = vendasClientesMes.filter(v => filterView(v, selectedYear - 1));
-                prevVendasClientes.forEach(v => {
-                    const cnpjClean = String(v.cnpj || '').replace(/\D/g, '');
+                prevSales.forEach(s => {
+                    const cnpjClean = String(s.cnpj || '').replace(/\D/g, '');
                     if (!cnpjClean) return;
                     
                     if (!clientNameMap.has(cnpjClean)) {
                         const clientObj = clients.find(c => String(c.cnpj || '').replace(/\D/g,'') === cnpjClean);
-                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || v.cliente_nome || `CNPJ ${v.cnpj}`);
+                        clientNameMap.set(cnpjClean, clientObj?.nome_fantasia || s.cliente_nome || `CNPJ ${s.cnpj}`);
                         if (clientObj?.id) clientIdMap.set(cnpjClean, clientObj.id);
                     }
 
                     const data = clientMap.get(cnpjClean) || { current: 0, prev: 0 };
-                    data.prev += Number(v.faturamento_total || 0);
+                    data.prev += Number(s.faturamento || 0);
                     clientMap.set(cnpjClean, data);
                 });
 
@@ -431,7 +462,7 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
         }, 1500);
 
         return () => clearTimeout(timer);
-    }, [selectedYear, selectedRepId, selectedMonths, updateTrigger]);
+    }, [selectedYear, selectedRepId, selectedMonths]);
 
     const getScoreLabel = (score: number) => {
         if (score >= 90) return { label: 'ELITE', color: 'text-blue-500', bg: 'bg-blue-500', border: 'border-blue-200', hex: '#3b82f6', bgHex: '#eff6ff' };
@@ -553,6 +584,15 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
         }
     };
 
+    if (isDataLoading) {
+        return (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+                <Trophy className="w-12 h-12 text-blue-600 animate-spin" />
+                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest animate-pulse">Calculando ScoreCard Estratégico...</p>
+            </div>
+        );
+    }
+
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-20 relative">
             {/* Overlay de carregamento global para o export */}
@@ -646,7 +686,7 @@ export const ManagerScoreCardScreen: React.FC<ManagerScoreCardScreenProps> = ({ 
                             {showDimensionSelector.open && showDimensionSelector.type === 'usuario_id' && (
                                 <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[160] py-2 max-h-64 overflow-y-auto custom-scrollbar">
                                     {dimensions.usuario_id.map(v => (
-                                        <button key={v.id} onClick={() => { setGenericModal({ dimension: 'usuario_id', value: String(v.id), label: v.nome || '' }); setShowDimensionSelector({ ...showDimensionSelector, open: false }); }} className="w-full text-left px-4 py-2 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50 hover:text-amber-600">{v.nome}</button>
+                                        <button key={v.id} onClick={() => { setGenericModal({ dimension: 'usuario_id', value: String(v.id), label: v.nome }); setShowDimensionSelector({ ...showDimensionSelector, open: false }); }} className="w-full text-left px-4 py-2 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50 hover:text-amber-600">{v.nome}</button>
                                     ))}
                                 </div>
                             )}

@@ -27,7 +27,10 @@ export const totalDataStore = {
         investments: false,
     },
 
+    fetchedMonths: new Set<string>(),
     isHydrated: false,
+    userId: '',
+    userRole: '',
     
     clear() {
         this.users = [];
@@ -41,6 +44,7 @@ export const totalDataStore = {
         this.vendasClientesMes = [];
         this.vendasCanaisMes = [];
         this.vendasProdutosMes = [];
+        this.fetchedMonths.clear();
         this.isHydrated = false;
     }
 };

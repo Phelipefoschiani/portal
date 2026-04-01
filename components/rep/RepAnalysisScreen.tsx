@@ -4,6 +4,7 @@ import { Target, TrendingUp, ArrowUpRight, ArrowDownRight, Loader2, Award, BarCh
 import { Button } from '../Button';
 import { createPortal } from 'react-dom';
 import { totalDataStore } from '../../lib/dataStore';
+import { useSalesData } from '../../hooks/useSalesData';
 
 // --- COMPONENTE DE DECOMPOSIÇÃO POR CANAL ---
 const MonthlyChannelBreakdown: React.FC<{
@@ -118,6 +119,8 @@ const MonthlyChannelBreakdown: React.FC<{
     );
 };
 
+import { LoadingOverlay } from '../LoadingOverlay';
+
 interface MonthlyStat {
     month: number;
     sales: number;
@@ -133,8 +136,13 @@ interface RepAnalysisScreenProps {
 export const RepAnalysisScreen: React.FC<RepAnalysisScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+    const [, setForceUpdate] = useState(0);
+    
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
+    
+    useSalesData(selectedYear, selectedMonths, updateTrigger, () => setForceUpdate(prev => prev + 1));
+
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -219,6 +227,8 @@ export const RepAnalysisScreen: React.FC<RepAnalysisScreenProps> = ({ updateTrig
             <p className="font-black text-[10px] uppercase tracking-widest text-slate-400">Processando Inteligência...</p>
         </div>
     );
+
+    const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-8 animate-fadeIn pb-20">
@@ -525,6 +535,8 @@ export const RepAnalysisScreen: React.FC<RepAnalysisScreenProps> = ({ updateTrig
                 </div>,
                 document.body
             )}
+
+            {isLoading && <LoadingOverlay />}
         </div>
     );
 };

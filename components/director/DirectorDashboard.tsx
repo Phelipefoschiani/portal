@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
     ChevronDown, CheckSquare, Square, 
     DollarSign, Target, PieChart, ArrowUpRight, ArrowDownRight,
-    Package, Layers, X, Info, Award
+    Package, Layers, X, Info, Award, Loader2
 } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import { 
@@ -70,11 +70,7 @@ const AllGroupsModal: React.FC<{ groups: GroupData[]; onClose: () => void }> = (
     );
 };
 
-interface DirectorDashboardProps {
-    updateTrigger?: number;
-}
-
-export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({ updateTrigger = 0 }) => {
+export const DirectorDashboard: React.FC = () => {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
@@ -133,27 +129,67 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({ updateTrig
         return `rgb(${r}, ${g}, ${b})`;
     };
 
+    const [isLoading, setIsLoading] = useState(true);
+
+    const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+    const userId = session.id;
+    const userRole = session.role;
+
+    useEffect(() => {
+        const loadData = async () => {
+            setIsLoading(true);
+            try {
+                totalDataStore.userId = userId;
+                totalDataStore.userRole = userRole;
+
+                const { fetchSalesForMonths } = await import('../../lib/dataService');
+                
+                // Fetch sales for current year and previous year
+                // Director dashboard usually looks at the whole year or selected months
+                // We'll fetch all months of the current year and previous year to ensure comparison works
+                const allMonths = Array.from({ length: 12 }, (_, i) => i + 1);
+                
+                await Promise.all([
+                    fetchSalesForMonths(selectedYear, allMonths),
+                    fetchSalesForMonths(selectedYear - 1, allMonths)
+                ]);
+            } catch (e) {
+                console.error('Error loading director dashboard data:', e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        loadData();
+
+        const handleUpdate = () => {
+            // Force re-render by updating a local state if needed, 
+            // but useMemo 'data' already depends on totalDataStore.sales which we'll trigger an update for
+            setIsLoading(false); // Just to trigger re-render
+        };
+        window.addEventListener('pcn_data_update', handleUpdate);
+        return () => window.removeEventListener('pcn_data_update', handleUpdate);
+    }, [selectedYear, userId, userRole]);
+
     // --- DATA PROCESSING ---
     const data = useMemo(() => {
-        void updateTrigger;
-        const vendasConsolidadas = totalDataStore.vendasConsolidadas;
-        const vendasCanaisMes = totalDataStore.vendasCanaisMes;
-        const vendasProdutosMes = totalDataStore.vendasProdutosMes;
+        const sales = totalDataStore.sales;
         const targets = totalDataStore.targets;
 
         // 1. Filter Sales for Current Period
-        const currentVendas = vendasConsolidadas.filter(v => 
-            v.ano === selectedYear && selectedMonths.includes(v.mes)
-        );
+        const currentSales = sales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            return d.getUTCFullYear() === selectedYear && selectedMonths.includes(d.getUTCMonth() + 1);
+        });
 
         // 2. Filter Sales for Previous Period
-        const prevVendas = vendasConsolidadas.filter(v => 
-            v.ano === (selectedYear - 1) && selectedMonths.includes(v.mes)
-        );
+        const prevSales = sales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            return d.getUTCFullYear() === (selectedYear - 1) && selectedMonths.includes(d.getUTCMonth() + 1);
+        });
 
         // 3. Calculate Totals (Period)
-        const totalRevenue = currentVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
-        const totalPrevRevenue = prevVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
+        const totalRevenue = currentSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+        const totalPrevRevenue = prevSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
         const revenueGrowth = totalPrevRevenue > 0 ? ((totalRevenue / totalPrevRevenue) - 1) * 100 : 0;
 
         // 4. Calculate Targets (Period)
@@ -164,10 +200,11 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({ updateTrig
         const targetAchievement = totalTarget > 0 ? (totalRevenue / totalTarget) * 100 : 0;
 
         // 5. Calculate Annual Totals (Year)
-        const annualVendas = vendasConsolidadas.filter(v => 
-            v.ano === selectedYear
-        );
-        const totalAnnualRevenue = annualVendas.reduce((acc, curr) => acc + (Number(curr.faturamento_total) || 0), 0);
+        const annualSales = sales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            return d.getUTCFullYear() === selectedYear;
+        });
+        const totalAnnualRevenue = annualSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
         
         const totalAnnualTarget = targets
             .filter(t => t.ano === selectedYear)
@@ -177,46 +214,40 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({ updateTrig
 
         // 6. Channel Analysis
         const channelMap = new Map<string, number>();
-        const currentCanais = vendasCanaisMes.filter(v => 
-            v.ano === selectedYear && selectedMonths.includes(v.mes)
-        );
-        currentCanais.forEach(v => {
-            const channel = v.canal_vendas || 'OUTROS';
-            channelMap.set(channel, (channelMap.get(channel) || 0) + Number(v.faturamento_total));
+        currentSales.forEach(s => {
+            const channel = s.canal_vendas || 'OUTROS';
+            channelMap.set(channel, (channelMap.get(channel) || 0) + Number(s.faturamento));
         });
         const channelData = Array.from(channelMap.entries())
-            .map(([name, value]) => ({ name, value, share: totalRevenue > 0 ? (value / totalRevenue) * 100 : 0 }))
+            .map(([name, value]) => ({ name, value, share: (value / totalRevenue) * 100 }))
             .sort((a, b) => b.value - a.value);
 
         // 7. Group Analysis
         const groupMap = new Map<string, number>();
-        const currentProdutos = vendasProdutosMes.filter(v => 
-            v.ano === selectedYear && selectedMonths.includes(v.mes)
-        );
-        currentProdutos.forEach(v => {
-            const group = v.grupo || 'GERAL';
-            groupMap.set(group, (groupMap.get(group) || 0) + Number(v.faturamento_total));
+        currentSales.forEach(s => {
+            const group = s.grupo || 'GERAL';
+            groupMap.set(group, (groupMap.get(group) || 0) + Number(s.faturamento));
         });
         const groupData = Array.from(groupMap.entries())
-            .map(([name, value]) => ({ name, value, share: totalRevenue > 0 ? (value / totalRevenue) * 100 : 0 }))
+            .map(([name, value]) => ({ name, value, share: (value / totalRevenue) * 100 }))
             .sort((a, b) => b.value - a.value);
 
         // 8. Product Analysis
         const productMap = new Map<string, { name: string, revenue: number, units: number, group: string }>();
-        currentProdutos.forEach(v => {
-            const key = v.codigo_produto || v.produto;
+        currentSales.forEach(s => {
+            const key = s.codigo_produto || s.produto;
             const existing = productMap.get(key) || { 
-                name: v.produto || 'Item', 
+                name: s.produto || 'Item', 
                 revenue: 0, 
                 units: 0, 
-                group: v.grupo || 'GERAL'
+                group: s.grupo || 'GERAL'
             };
-            existing.revenue += Number(v.faturamento_total);
-            existing.units += Number(v.qtde_total || 0);
+            existing.revenue += Number(s.faturamento);
+            existing.units += Number(s.qtde_faturado || s.quantidade || 0); // Fix units check
             productMap.set(key, existing);
         });
         const productData = Array.from(productMap.values())
-            .map(p => ({ ...p, share: totalRevenue > 0 ? (p.revenue / totalRevenue) * 100 : 0 }))
+            .map(p => ({ ...p, share: (p.revenue / totalRevenue) * 100 }))
             .sort((a, b) => b.revenue - a.revenue)
             .slice(0, 10); // Top 10 Products
 
@@ -233,9 +264,18 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({ updateTrig
             groupData,
             productData
         };
-    }, [selectedYear, selectedMonths, updateTrigger]);
+    }, [selectedYear, selectedMonths]);
 
     const chartGroupData = data.groupData.slice(0, 12); // Show top 12 in chart to avoid clutter
+
+    if (isLoading) {
+        return (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+                <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest animate-pulse">Carregando Dados Estratégicos...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-20">
@@ -399,7 +439,7 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({ updateTrig
                                                         paddingAngle={5}
                                                         dataKey="value"
                                                         nameKey="name"
-                                                        label={({ name, percent }) => `${name || ''} (${((percent || 0) * 100).toFixed(0)}%)`}
+                                                        label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}
                                                         labelLine={{ stroke: '#64748b', strokeWidth: 1 }}
                                                     >
                                                         {data.channelData.map((entry, index) => (

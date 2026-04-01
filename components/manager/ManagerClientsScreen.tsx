@@ -8,6 +8,8 @@ import { ClientLastPurchaseModal } from '../ClientLastPurchaseModal';
 import { ClientActionMenu } from '../ClientActionMenu';
 import { totalDataStore } from '../../lib/dataStore';
 import * as XLSX from 'xlsx';
+import { useSalesData } from '../../hooks/useSalesData';
+import { LoadingOverlay } from '../LoadingOverlay';
 
 interface Client {
     id: string;
@@ -32,9 +34,22 @@ interface ManagerClientsScreenProps {
 export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [isExporting, setIsExporting] = useState(false);
+    const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
     const [selectedRep, setSelectedRep] = useState('all');
     const [selectedChannel, setSelectedChannel] = useState('all');
     const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
+    const [, setForceUpdate] = useState(0);
+    
+    useSalesData(selectedYear, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], updateTrigger, () => setForceUpdate(prev => prev + 1));
+    
+    useEffect(() => {
+        const loadBaseData = async () => {
+            const { fetchClients, fetchUsers } = await import('../../lib/dataService');
+            await Promise.all([fetchClients(), fetchUsers()]);
+            setForceUpdate(prev => prev + 1);
+        };
+        loadBaseData();
+    }, []);
     
     // Novos estados para filtro de meses
     const [selectedMonths, setSelectedMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
@@ -594,6 +609,8 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                     onClose={() => setActiveModal('none')} 
                 />
             )}
+
+            {isLoading && <LoadingOverlay />}
         </div>
     );
 };

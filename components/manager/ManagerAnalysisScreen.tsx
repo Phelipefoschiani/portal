@@ -5,6 +5,9 @@ import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
 import { Button } from '../Button';
 import { RepPerformanceModal } from './RepPerformanceModal';
+import { useSalesData } from '../../hooks/useSalesData';
+
+import { LoadingOverlay } from '../LoadingOverlay';
 
 interface RepData {
     id: string;
@@ -363,8 +366,13 @@ interface ManagerAnalysisScreenProps {
 export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ updateTrigger = 0 }) => {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+    const [, setForceUpdate] = useState(0);
+    
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
+    
+    useSalesData(selectedYear, selectedMonths, updateTrigger, () => setForceUpdate(prev => prev + 1));
+
     const [showMonthDropdown, setShowMonthDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     
@@ -422,6 +430,37 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
         return () => clearTimeout(timer);
     }, [processAnalysisData]);
 
+    const [isDataLoading, setIsDataLoading] = useState(true);
+
+    useEffect(() => {
+        const loadData = async () => {
+            setIsDataLoading(true);
+            try {
+                const { fetchClients, fetchSalesForMonths, fetchUsers } = await import('../../lib/dataService');
+                
+                // Busca apenas os meses selecionados no filtro (sob demanda)
+                await Promise.all([
+                    fetchUsers(),
+                    fetchClients(),
+                    fetchSalesForMonths(selectedYear, selectedMonths)
+                ]);
+
+                processAnalysisData();
+            } catch (e) {
+                console.error('Error loading analysis data:', e);
+            } finally {
+                setIsDataLoading(false);
+            }
+        };
+        loadData();
+
+        const handleUpdate = () => {
+            processAnalysisData();
+        };
+        window.addEventListener('pcn_data_update', handleUpdate);
+        return () => window.removeEventListener('pcn_data_update', handleUpdate);
+    }, [selectedYear, selectedMonths, processAnalysisData]);
+
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
     const handleApplyFilter = () => {
@@ -439,6 +478,17 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
     const filteredGlobalPerformance = useMemo(() => {
         return stats.globalPerformance.filter((item: PerformanceItem) => selectedMonths.includes(item.month));
     }, [stats.globalPerformance, selectedMonths]);
+
+    const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
+
+    if (isDataLoading) {
+        return (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+                <RefreshCw className="w-12 h-12 text-blue-600 animate-spin" />
+                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest animate-pulse">Carregando Análise Estratégica...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
@@ -632,6 +682,8 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
                     onClose={() => setSelectedRepForPerformance(null)} 
                 />
             )}
+
+            {isLoading && <LoadingOverlay />}
         </div>
     );
 };

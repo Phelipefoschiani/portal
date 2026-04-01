@@ -5,6 +5,7 @@ import { X, BarChart3, Activity, ShoppingCart, AlertCircle, ArrowUpRight, ArrowD
 import { totalDataStore } from '../lib/dataStore';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, LabelList } from 'recharts';
 import { Client } from '../types';
+import { useSalesData } from '../hooks/useSalesData';
 
 interface GenericScoreCardModalProps {
     dimension: 'canal_vendas' | 'grupo' | 'cidade' | 'usuario_id';
@@ -15,6 +16,8 @@ interface GenericScoreCardModalProps {
 
 export const GenericScoreCardModal: React.FC<GenericScoreCardModalProps> = ({ dimension, value, label, onClose }) => {
     const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
+    
+    useSalesData(parseInt(selectedYear, 10));
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 

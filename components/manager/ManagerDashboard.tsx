@@ -1,20 +1,18 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Target, TrendingUp, Users, Wallet, Calendar, Loader2, DollarSign, X, ChevronDown, CheckSquare, Square, Filter, Download, User, FileText, CalendarDays, Table, FileSpreadsheet } from 'lucide-react';
+import { Target, TrendingUp, Users, Wallet, Calendar, Loader2, DollarSign, X, ChevronDown, CheckSquare, Square, Filter, Download, User, CalendarDays } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { totalDataStore } from '../../lib/dataStore';
+import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
 import { RepPerformanceModal } from './RepPerformanceModal';
-import * as XLSX from 'xlsx';
 
 type KpiDetailType = 'meta' | 'faturado' | 'positivacao' | 'verba' | null;
 
 interface TeamDetail {
     id: string;
     nome: string;
-    role?: string;
+    role: string;
     meta: number;
     annualMeta: number;
     faturado: number;
@@ -23,63 +21,51 @@ interface TeamDetail {
     totalClientes: number;
 }
 
-// --- NOVO SUB-MODAL: DETALHAMENTO DE INVESTIMENTO POR CLIENTE (DRILL-DOWN) ---
-const RepVerbaDetailModal: React.FC<{
+// --- NOVO SUB-MODAL: DETALHAMENTO DE POSITIVAÇÃO POR CLIENTE (DRILL-DOWN) ---
+const RepPositDetailModal: React.FC<{
     rep: TeamDetail;
     selectedYear: number;
+    selectedMonths: number[];
     onClose: () => void;
-    formatBRL: (v: number) => string;
-}> = ({ rep, selectedYear, onClose, formatBRL }) => {
+}> = ({ rep, selectedYear, selectedMonths, onClose }) => {
     const clientData = useMemo(() => {
-        // Busca faturamento anual do cliente para este representante
-        const sales = totalDataStore.vendasClientesMes.filter(s => {
-            return s.usuario_id === rep.id && s.ano === selectedYear;
+        const sales = totalDataStore.sales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            const m = d.getUTCMonth() + 1;
+            const y = d.getUTCFullYear();
+            return s.usuario_id === rep.id && selectedMonths.includes(m) && y === selectedYear;
         });
 
-        // Busca investimentos aprovados anuais
-        const invs = totalDataStore.investments.filter(inv => {
-            const d = new Date(inv.data + 'T00:00:00');
-            return inv.usuario_id === rep.id && inv.status === 'approved' && d.getUTCFullYear() === selectedYear;
+        const portfolio = totalDataStore.clients.filter(c => c.usuario_id === rep.id);
+        
+        // Carteira base
+        const basePortfolio = portfolio.filter(c => {
+            if (!c.lastPurchaseDate) {
+                return sales.some(s => s.cliente_id === c.id && new Date(s.data + 'T00:00:00').getUTCFullYear() === selectedYear - 1);
+            }
+            return new Date(c.lastPurchaseDate + 'T00:00:00').getUTCFullYear() === selectedYear - 1;
         });
 
-        const clientMap = new Map<string, { name: string; purchased: number; invested: number }>();
-        const clientLookup = new Map(totalDataStore.clients.map(c => [c.id, c.nome_fantasia]));
-        const clientLookupByCnpj = new Map(totalDataStore.clients.map(c => [c.cnpj.replace(/\D/g, ''), c.id]));
-
-        // Acumular faturamento por cliente
-        sales.forEach(s => {
-            const cleanCnpj = s.cnpj ? s.cnpj.replace(/\D/g, '') : '';
-            const cId = clientLookupByCnpj.get(cleanCnpj) || cleanCnpj; // fallback to cnpj if id not found
-            const current = clientMap.get(cId) || { name: s.cliente_nome || 'CLIENTE N/I', purchased: 0, invested: 0 };
-            current.purchased += Number(s.faturamento_total);
-            clientMap.set(cId, current);
-        });
-
-        // Acumular investimento por cliente
-        invs.forEach(inv => {
-            const cId = inv.cliente_id;
-            if (!cId) return;
-            const current = clientMap.get(cId) || { name: clientLookup.get(cId) || 'CLIENTE N/I', purchased: 0, invested: 0 };
-            current.invested += Number(inv.valor_total_investimento);
-            clientMap.set(cId, current);
-        });
-
-        return Array.from(clientMap.values())
-            .filter(c => c.invested > 0)
-            .sort((a, b) => b.invested - a.invested);
-    }, [rep.id, selectedYear]);
+        const activeCnpjsInPeriod = new Set(sales.map(s => String(s.cnpj || '').replace(/\D/g, '')));
+        
+        return basePortfolio.map(c => ({
+            nome: c.nome_fantasia,
+            cnpj: c.cnpj,
+            positivado: activeCnpjsInPeriod.has(String(c.cnpj || '').replace(/\D/g, ''))
+        })).sort((a, b) => (a.positivado === b.positivado ? 0 : a.positivado ? -1 : 1));
+    }, [rep.id, selectedYear, selectedMonths]);
 
     return createPortal(
         <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white w-full max-w-4xl rounded-[40px] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden border border-white/20">
+            <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden border border-white/20">
                 <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div className="flex items-center gap-4">
-                        <div className="p-3 bg-amber-100 text-amber-600 rounded-2xl">
-                            <Wallet className="w-6 h-6" />
+                        <div className="p-3 bg-purple-100 text-purple-600 rounded-2xl">
+                            <Users className="w-6 h-6" />
                         </div>
                         <div>
-                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Investimento por Cliente ({selectedYear})</h3>
-                            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Rep: {rep.nome}</p>
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Positivação: {rep.nome}</h3>
+                            <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest mt-1">Clientes da Carteira Base</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white rounded-full text-slate-400">
@@ -87,43 +73,26 @@ const RepVerbaDetailModal: React.FC<{
                     </button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                    <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
-                                <tr>
-                                    <th className="px-8 py-5">Cliente</th>
-                                    <th className="px-6 py-5 text-right">Total Comprado no Ano</th>
-                                    <th className="px-6 py-5 text-right">Total Investimento</th>
-                                    <th className="px-8 py-5 text-right">% de Ref</th>
+                    <table className="w-full text-left">
+                        <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
+                            <tr>
+                                <th className="px-8 py-5">Cliente</th>
+                                <th className="px-8 py-5 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {clientData.map((c, i) => (
+                                <tr key={i}>
+                                    <td className="px-8 py-5 text-[11px] font-bold text-slate-700">{c.nome}</td>
+                                    <td className="px-8 py-5 text-center">
+                                        <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-lg ${c.positivado ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                                            {c.positivado ? 'Positivado' : 'Não Positivado'}
+                                        </span>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {clientData.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={4} className="px-8 py-10 text-center text-slate-300 font-bold uppercase text-[10px]">Sem investimentos registrados</td>
-                                    </tr>
-                                ) : (
-                                    clientData.map((c, i) => {
-                                        const refPct = c.purchased > 0 ? (c.invested / c.purchased) * 100 : 100;
-                                        return (
-                                            <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-8 py-4">
-                                                    <span className="font-black text-slate-700 uppercase text-[11px] truncate block max-w-[300px]">{c.name}</span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right font-bold text-slate-400 text-xs tabular-nums">{formatBRL(c.purchased)}</td>
-                                                <td className="px-6 py-4 text-right font-black text-slate-900 text-xs tabular-nums">{formatBRL(c.invested)}</td>
-                                                <td className="px-8 py-4 text-right">
-                                                    <span className={`text-[11px] font-black tabular-nums ${refPct > 7 ? 'text-red-500' : 'text-blue-600'}`}>
-                                                        {refPct.toFixed(2)}%
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
                 <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
                     <Button onClick={onClose} className="rounded-2xl px-10 font-black text-[10px] uppercase">Fechar Detalhe</Button>
@@ -144,6 +113,7 @@ const KpiDetailModal: React.FC<{
     selectedYear: number;
 }> = ({ type, details, onClose, formatBRL, periodLabel, selectedYear }) => {
     const [selectedRepForVerba, setSelectedRepForVerba] = useState<TeamDetail | null>(null);
+    const [selectedRepForPosit, setSelectedRepForPosit] = useState<TeamDetail | null>(null);
 
     const titles = {
         meta: `RELATÓRIO ESTRATÉGICO DE METAS`,
@@ -156,6 +126,7 @@ const KpiDetailModal: React.FC<{
         if (type === 'meta') return b.meta - a.meta;
         if (type === 'faturado') return b.faturado - a.faturado;
         if (type === 'verba') return b.verbaAnnualUsed - a.verbaAnnualUsed;
+        if (type === 'positivacao') return b.positivacao - a.positivacao;
         return 0;
     });
 
@@ -185,6 +156,14 @@ const KpiDetailModal: React.FC<{
                                             <th className="px-6 py-4 text-right">Investimento Restante</th>
                                             <th className="px-6 py-4 text-center">% Utilizado</th>
                                         </tr>
+                                    ) : type === 'positivacao' ? (
+                                        <tr>
+                                            <th className="px-6 py-4">#</th>
+                                            <th className="px-6 py-4">Representante</th>
+                                            <th className="px-6 py-4 text-center">Positivados</th>
+                                            <th className="px-6 py-4 text-center">Total Carteira</th>
+                                            <th className="px-6 py-4 text-center">% Positivação</th>
+                                        </tr>
                                     ) : (
                                         <tr>
                                             <th className="px-6 py-4">#</th>
@@ -204,12 +183,16 @@ const KpiDetailModal: React.FC<{
                                         const budgetUsed = rep.verbaAnnualUsed || 0;
                                         const budgetRemaining = budgetTotal - budgetUsed;
                                         const budgetPct = budgetTotal > 0 ? (budgetUsed / budgetTotal) * 100 : 0;
+                                        const positPct = rep.totalClientes > 0 ? (rep.positivacao / rep.totalClientes) * 100 : 0;
 
                                         return (
                                             <tr 
                                                 key={rep.id} 
                                                 className="hover:bg-slate-50/50 transition-colors group cursor-pointer"
-                                                onClick={() => type === 'verba' && setSelectedRepForVerba(rep)}
+                                                onClick={() => {
+                                                    if (type === 'verba') setSelectedRepForVerba(rep);
+                                                    if (type === 'positivacao') setSelectedRepForPosit(rep);
+                                                }}
                                             >
                                                 {type === 'verba' ? (
                                                     <>
@@ -234,6 +217,18 @@ const KpiDetailModal: React.FC<{
                                                                     {budgetPct.toFixed(1)}%
                                                                 </span>
                                                             </div>
+                                                        </td>
+                                                    </>
+                                                ) : type === 'positivacao' ? (
+                                                    <>
+                                                        <td className="px-6 py-4 text-[10px] font-black text-slate-300">{idx + 1}</td>
+                                                        <td className="px-6 py-4 font-black text-slate-700 uppercase text-[11px]">{rep.nome}</td>
+                                                        <td className="px-6 py-4 text-center font-black text-slate-900 text-xs tabular-nums">{rep.positivacao}</td>
+                                                        <td className="px-6 py-4 text-center font-black text-slate-900 text-xs tabular-nums">{rep.totalClientes}</td>
+                                                        <td className="px-6 py-4 text-center">
+                                                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${positPct >= 50 ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                                                {positPct.toFixed(1)}%
+                                                            </span>
                                                         </td>
                                                     </>
                                                 ) : (
@@ -270,15 +265,20 @@ const KpiDetailModal: React.FC<{
                     formatBRL={formatBRL}
                 />
             )}
+            
+            {selectedRepForPosit && (
+                <RepPositDetailModal 
+                    rep={selectedRepForPosit} 
+                    selectedYear={selectedYear} 
+                    selectedMonths={selectedMonths} 
+                    onClose={() => setSelectedRepForPosit(null)} 
+                />
+            )}
         </>
     );
 };
 
-interface ManagerDashboardProps {
-    updateTrigger?: number;
-}
-
-export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigger = 0 }) => {
+export const ManagerDashboard: React.FC = () => {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
@@ -288,8 +288,11 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigge
     const [teamDetails, setTeamDetails] = useState<TeamDetail[]>([]);
     const [selectedRepId, setSelectedRepId] = useState<string>('all');
     const [selectedRepForPerformance, setSelectedRepForPerformance] = useState<TeamDetail | null>(null);
-    const [isExportingMatrix, setIsExportingMatrix] = useState(false);
-    const [isExportingPdf, setIsExportingPdf] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    
+    const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
+    const userId = session.id;
+    const userRole = session.role;
     
     // --- ESTADO ADICIONADO PARA DOWNLOAD DO RANKING ---
     const rankingRef = useRef<HTMLDivElement>(null);
@@ -299,10 +302,11 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigge
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const processConsolidatedData = useCallback(() => {
-        void updateTrigger;
-        const reps = totalDataStore.users;
-        const vendasConsolidadas = totalDataStore.vendasConsolidadas;
-        const vendasClientesMes = totalDataStore.vendasClientesMes;
+        const reps = totalDataStore.users.filter(u => {
+            const role = u.nivel_acesso?.toLowerCase() || u.role?.toLowerCase() || '';
+            return role !== 'diretor' && role !== 'gerente' && role !== 'admin';
+        });
+        const sales = totalDataStore.sales;
         const targets = totalDataStore.targets;
         const invs = totalDataStore.investments;
         const portfolio = totalDataStore.clients;
@@ -311,11 +315,14 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigge
             const repMeta = targets.filter(t => t.usuario_id === rep.id && selectedMonths.includes(t.mes) && Number(t.ano) === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             const annualMeta = targets.filter(t => t.usuario_id === rep.id && Number(t.ano) === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             
-            const repSalesList = vendasConsolidadas.filter(v => 
-                v.usuario_id === rep.id && selectedMonths.includes(v.mes) && v.ano === selectedYear
-            );
+            const repSalesList = sales.filter(s => {
+                const d = new Date(s.data + 'T00:00:00');
+                const m = d.getUTCMonth() + 1;
+                const y = d.getUTCFullYear();
+                return s.usuario_id === rep.id && selectedMonths.includes(m) && y === selectedYear;
+            });
 
-            const repSales = repSalesList.reduce((a, b) => a + Number(b.faturamento_total), 0);
+            const repSales = repSalesList.reduce((a, b) => a + Number(b.faturamento), 0);
             
             const verbaAnnualUsed = invs.filter(inv => {
                 const d = new Date(inv.data + 'T00:00:00');
@@ -325,36 +332,82 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigge
             const repClients = portfolio.filter(c => {
                 if (c.usuario_id !== rep.id) return false;
                 
-                // Regra de Carteira: Clientes ativos no final do ano anterior 
-                // OU que compraram no ano selecionado
-                const lastPurchaseDate = c.lastPurchaseDate ? new Date(c.lastPurchaseDate + 'T00:00:00') : null;
-                if (!lastPurchaseDate) return false;
+                // Regra de Carteira:
+                // Carteira base = todos os clientes que compraram no ano anterior ao selecionado
+                // Se não tem lastPurchaseDate, tentamos verificar nas vendas do ano anterior
+                if (!c.lastPurchaseDate) {
+                    const boughtLastYear = sales.some(s => s.cliente_id === c.id && new Date(s.data + 'T00:00:00').getUTCFullYear() === selectedYear - 1);
+                    return boughtLastYear;
+                }
 
+                const lastPurchaseDate = new Date(c.lastPurchaseDate + 'T00:00:00');
                 const lastPurchaseYear = lastPurchaseDate.getUTCFullYear();
-                const lastPurchaseMonth = lastPurchaseDate.getUTCMonth() + 1;
                 
-                // Se comprou no ano selecionado, está na carteira
-                if (lastPurchaseYear === selectedYear) return true;
-                
-                // Se era ativo no final do ano anterior (comprou nos últimos 3 meses de Y-1)
-                // Outubro, Novembro ou Dezembro
-                if (lastPurchaseYear === selectedYear - 1 && lastPurchaseMonth >= 10) return true;
-                
-                return false;
+                // Carteira base é composta por clientes que compraram no ano anterior
+                return lastPurchaseYear === selectedYear - 1;
             });
-            const repVendasClientes = vendasClientesMes.filter(v => 
-                v.usuario_id === rep.id && selectedMonths.includes(v.mes) && v.ano === selectedYear
-            );
-            const salesCnpjs = new Set(repVendasClientes.map(v => String(v.cnpj || '').replace(/\D/g, '')));
-            const repPosit = repClients.filter(c => salesCnpjs.has(String(c.cnpj || '').replace(/\D/g, ''))).length;
+            
+            // Para calcular a positivação, precisamos comparar os CNPJs da carteira base com os CNPJs que compraram no período do filtro
+            const basePortfolioCnpjs = new Set(repClients.map(c => String(c.cnpj || '').replace(/\D/g, '')));
+            
+            // repSalesList já contém as vendas do período filtrado para este representante
+            const activeCnpjsInPeriod = new Set(repSalesList.map(s => String(s.cnpj || '').replace(/\D/g, '')));
+            
+            // Positivação: quantos clientes da carteira base compraram no período filtrado
+            const repPosit = Array.from(basePortfolioCnpjs).filter(cnpj => activeCnpjsInPeriod.has(cnpj)).length;
 
-            return { id: rep.id, nome: rep.nome, role: rep.role, meta: repMeta, annualMeta, faturado: repSales, verbaAnnualUsed, positivacao: repPosit, totalClientes: repClients.length };
+            return { id: rep.id, nome: rep.nome, role: rep.role || '', meta: repMeta, annualMeta, faturado: repSales, verbaAnnualUsed, positivacao: repPosit, totalClientes: repClients.length };
         });
 
         setTeamDetails(details);
-    }, [selectedMonths, selectedYear, updateTrigger]);
+    }, [selectedMonths, selectedYear]);
 
-    useEffect(() => { processConsolidatedData(); }, [processConsolidatedData]);
+    const [dataUpdateToken, setDataUpdateToken] = useState(0);
+
+    useEffect(() => {
+        const loadAllData = async () => {
+            setIsLoading(true);
+            try {
+                totalDataStore.userId = userId;
+                totalDataStore.userRole = userRole;
+
+                // Busca dados da nova VIEW
+                await supabase
+                    .from('view_gerente_visao_geral')
+                    .select('*')
+                    .eq('ano', selectedYear);
+                
+                const { fetchClients, fetchSalesForMonths, fetchUsers, fetchTargets, fetchInvestments } = await import('../../lib/dataService');
+                
+                await Promise.all([
+                    fetchUsers(),
+                    fetchClients(),
+                    fetchSalesForMonths(selectedYear, selectedMonths),
+                    fetchTargets(selectedYear),
+                    fetchInvestments(selectedYear)
+                ]);
+
+                setDataUpdateToken(prev => prev + 1);
+            } catch (e) {
+                console.error('Error fetching manager data:', e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        loadAllData();
+    }, [selectedYear, selectedMonths, userId, userRole]);
+
+    useEffect(() => {
+        const handleUpdate = () => {
+            setDataUpdateToken(prev => prev + 1);
+        };
+        window.addEventListener('pcn_data_update', handleUpdate);
+        return () => window.removeEventListener('pcn_data_update', handleUpdate);
+    }, []);
+
+    useEffect(() => { 
+        processConsolidatedData(); 
+    }, [processConsolidatedData, dataUpdateToken]);
 
     const displayData = useMemo(() => {
         if (selectedRepId === 'all') {
@@ -402,159 +455,6 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigge
 
     const monthNamesArr = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-    // Cálculo da Matriz de Metas Anuais
-    const matrixData = useMemo(() => {
-        const reps = totalDataStore.users.sort((a, b) => a.nome.localeCompare(b.nome));
-        const allTargets = totalDataStore.targets.filter(t => t.ano === selectedYear);
-
-        const rows = reps.map(rep => {
-            const monthlyTargets = Array.from({ length: 12 }, (_, i) => {
-                const month = i + 1;
-                return Number(allTargets.find(t => t.usuario_id === rep.id && t.mes === month)?.valor || 0);
-            });
-            const totalRep = monthlyTargets.reduce((a, b) => a + b, 0);
-            return { rep, monthlyTargets, totalRep };
-        });
-
-        const columnTotals = Array.from({ length: 12 }, (_, i) => {
-            const month = i + 1;
-            return allTargets.filter(t => t.mes === month).reduce((a, b) => a + Number(b.valor), 0);
-        });
-
-        const grandTotal = columnTotals.reduce((a, b) => a + b, 0);
-
-        return { rows, columnTotals, grandTotal };
-    }, [selectedYear]);
-
-    const handleDownloadMatrixExcel = () => {
-        if (matrixData.rows.length === 0) return;
-        setIsExportingMatrix(true);
-        try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const XlsxLib = (XLSX as any).utils ? XLSX : (XLSX as any).default;
-            if (!XlsxLib || !XlsxLib.utils) throw new Error("XLSX lib not found");
-
-            const dataToExport = matrixData.rows.map(row => {
-                const obj: Record<string, string | number> = { "Representante": row.rep.nome };
-                monthNamesArr.forEach((m, idx) => {
-                    obj[m] = row.monthlyTargets[idx];
-                });
-                obj["Total Anual"] = row.totalRep;
-                return obj;
-            });
-
-            // Adicionar linha de totais
-            const totalsObj: Record<string, string | number> = { "Representante": "META REGIONAL TOTAL" };
-            monthNamesArr.forEach((m, idx) => {
-                totalsObj[m] = matrixData.columnTotals[idx];
-            });
-            totalsObj["Total Anual"] = matrixData.grandTotal;
-            dataToExport.push(totalsObj);
-
-            const ws = XlsxLib.utils.json_to_sheet(dataToExport);
-
-            // Formatação financeira para as colunas de valor
-            const range = XlsxLib.utils.decode_range(ws['!ref']!);
-            for (let C = 1; C <= range.e.c; ++C) {
-                for (let R = 1; R <= range.e.r; ++R) {
-                    const cell = ws[XlsxLib.utils.encode_cell({ r: R, c: C })];
-                    if (cell && typeof cell.v === 'number') {
-                        cell.t = 'n';
-                        cell.z = '"R$" #,##0.00';
-                    }
-                }
-            }
-
-            const wb = XlsxLib.utils.book_new();
-            XlsxLib.utils.book_append_sheet(wb, ws, "Cotas_Anuais");
-            XlsxLib.writeFile(wb, `Cota_Anual_Regional_${selectedYear}.xlsx`);
-        } catch (e) {
-            console.error(e);
-            alert('Falha ao exportar excel.');
-        } finally {
-            setIsExportingMatrix(false);
-        }
-    };
-
-    const handleDownloadMatrixPdf = async () => {
-        if (matrixData.rows.length === 0) return;
-        setIsExportingPdf(true);
-        try {
-            const pdf = new jsPDF({
-                orientation: 'landscape',
-                unit: 'mm',
-                format: 'a4'
-            });
-
-            // Adicionar Título (Fonte grande e nítida)
-            pdf.setFontSize(14);
-            pdf.setFont('helvetica', 'bold');
-            pdf.text(`COTA ANUAL CONSOLIDADA - EQUIPE CENTRO-NORTE - ${selectedYear}`, 14, 15);
-
-            // Cabeçalhos da tabela
-            const headers = [
-                ['REPRESENTANTE', ...monthNamesArr.map(m => m.slice(0, 3).toUpperCase()), 'TOTAL ANUAL']
-            ];
-
-            // Linhas de dados dos representantes
-            const body = matrixData.rows.map(row => [
-                row.rep.nome.toUpperCase(),
-                ...row.monthlyTargets.map(val => val > 0 ? formatBRL(Number(val)) : '-'),
-                formatBRL(Number(row.totalRep))
-            ]);
-
-            // Linha de totais regionais no rodapé
-            const footer = [
-                [
-                    'META REGIONAL TOTAL',
-                    ...matrixData.columnTotals.map(val => formatBRL(val)),
-                    formatBRL(matrixData.grandTotal)
-                ]
-            ];
-
-            autoTable(pdf, {
-                head: headers,
-                body: body,
-                foot: footer,
-                startY: 20, // Posição Y logo após o título
-                theme: 'striped',
-                styles: {
-                    font: 'helvetica',
-                    fontSize: 5.5, // Fonte levemente reduzida para garantir espaço total e não quebrar
-                    cellPadding: 0.8, // Padding reduzido para não quebrar linha
-                    overflow: 'visible' // Garante que se o texto for grande, ele não seja forçado a pular linha no layout autotable
-                },
-                headStyles: {
-                    fillColor: [15, 23, 42], // Slate-900 (Estilo PCN)
-                    textColor: [255, 255, 255],
-                    fontStyle: 'bold',
-                    halign: 'center'
-                },
-                bodyStyles: {
-                    textColor: [51, 65, 85], // Slate-700
-                    halign: 'right'
-                },
-                footStyles: {
-                    fillColor: [37, 99, 235], // Blue-600
-                    textColor: [255, 255, 255],
-                    fontStyle: 'bold',
-                    halign: 'right'
-                },
-                columnStyles: {
-                    0: { halign: 'left', fontStyle: 'bold', cellWidth: 38 }, // Coluna Rep fixa
-                },
-                margin: { left: 5, right: 5 } // Margens reduzidas para ganhar largura
-            });
-
-            pdf.save(`Cota_Anual_Regional_${selectedYear}.pdf`);
-        } catch (e) {
-            console.error('Erro ao gerar PDF:', e);
-            alert('Falha ao gerar PDF.');
-        } finally {
-            setIsExportingPdf(false);
-        }
-    };
-
     // --- FUNÇÃO DE DOWNLOAD DO RANKING ---
     const handleDownloadRanking = async () => {
         if (!rankingRef.current) return;
@@ -577,6 +477,15 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigge
             setIsExportingRanking(false);
         }
     };
+
+    if (isLoading) {
+        return (
+            <div className="w-full h-[60vh] flex flex-col items-center justify-center gap-4">
+                <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-slate-500 font-black animate-pulse uppercase text-[10px] tracking-widest">Consolidando dados da regional...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
@@ -772,83 +681,6 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ updateTrigge
                                 </div>
                             );
                         })}
-                </div>
-            </div>
-
-            {/* TABELA MATRIZ DE METAS POR EQUIPE (Cota Anual Consolidada) */}
-            <div className="bg-white p-8 md:p-12 rounded-[48px] border border-slate-200 shadow-sm mx-4 animate-slideUp">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-slate-100 text-slate-900 rounded-2xl">
-                            <Table className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em]">Cota Anual Consolidada</h3>
-                            <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Grade de objetivos mensais por representante em {selectedYear}</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-3 no-print"> 
-                        <button 
-                            onClick={handleDownloadMatrixExcel}
-                            disabled={isExportingMatrix}
-                            className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 text-[10px] font-black uppercase tracking-widest h-14"
-                        >
-                            {isExportingMatrix ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-                            Exportar Excel
-                        </button>
-                        <button 
-                            onClick={handleDownloadMatrixPdf}
-                            disabled={isExportingPdf}
-                            className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 text-[10px] font-black uppercase tracking-widest h-14"
-                        >
-                            {isExportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                            Exportar PDF
-                        </button>
-                    </div>
-                </div>
-
-                <div className="overflow-x-auto rounded-3xl border border-slate-100">
-                    <table className="w-full text-left border-collapse bg-white">
-                        <thead className="bg-slate-50 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">
-                            <tr>
-                                <th className="px-6 py-5 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Representante</th>
-                                {monthNamesArr.map(m => (
-                                    <th key={m} className="px-4 py-5 text-right">{m.slice(0, 3)}</th>
-                                ))}
-                                <th className="px-6 py-5 text-right bg-blue-50 text-blue-600 border-l border-blue-100">Total Ano</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                            {matrixData.rows.map((row, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
-                                    <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 font-black text-slate-700 uppercase text-[10px] truncate max-w-[150px]">
-                                        {row.rep.nome}
-                                    </td>
-                                    {row.monthlyTargets.map((val, midx) => (
-                                        <td key={midx} className="px-4 py-4 text-right font-bold text-slate-400 text-[10px] tabular-nums">
-                                            {val > 0 ? formatBRL(val) : '-'}
-                                        </td>
-                                    ))}
-                                    <td className="px-6 py-4 text-right bg-blue-50/20 font-black text-blue-700 text-[10px] tabular-nums border-l border-blue-50">
-                                        {formatBRL(row.totalRep)}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                        <tfoot className="bg-slate-900 text-white border-t-2 border-blue-600">
-                            <tr className="text-[10px] font-black uppercase tracking-[0.15em]">
-                                <td className="px-6 py-5 border-r border-white/5">Meta Regional</td>
-                                {matrixData.columnTotals.map((tot, idx) => (
-                                    <td key={idx} className="px-4 py-5 text-right tabular-nums text-blue-400">
-                                        {formatBRL(tot)}
-                                    </td>
-                                ))}
-                                <td className="px-6 py-5 text-right bg-blue-600 text-white tabular-nums">
-                                    {formatBRL(matrixData.grandTotal)}
-                                </td>
-                            </tr>
-                        </tfoot>
-                    </table>
                 </div>
             </div>
 
