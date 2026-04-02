@@ -31,7 +31,6 @@ const ManagerImportScreen = lazy(() => import('./components/manager/ManagerImpor
 const ManagerAnalysisScreen = lazy(() => import('./components/manager/ManagerAnalysisScreen').then(m => ({ default: m.ManagerAnalysisScreen })));
 const ManagerDetailedAnalysisScreen = lazy(() => import('./components/manager/ManagerDetailedAnalysisScreen').then(m => ({ default: m.ManagerDetailedAnalysisScreen })));
 const ManagerUsersScreen = lazy(() => import('./components/manager/ManagerUsersScreen').then(m => ({ default: m.ManagerUsersScreen })));
-const ManagerScoreCardScreen = lazy(() => import('./components/manager/ManagerScoreCardScreen').then(m => ({ default: m.ManagerScoreCardScreen })));
 
 const DirectorDashboard = lazy(() => import('./components/director/DirectorDashboard').then(m => ({ default: m.DirectorDashboard })));
 
@@ -275,7 +274,6 @@ const App: React.FC = () => {
                 {currentView === 'admin-forecast' && <ManagerForecastScreen />}
                 {currentView === 'admin-notifications' && <ManagerNotificationsScreen />}
                 {currentView === 'admin-users' && <ManagerUsersScreen />}
-                {currentView === 'admin-scorecard' && <ManagerScoreCardScreen />}
                 {currentView === 'admin-clients' && <ManagerClientsScreen />}
                 {currentView === 'admin-targets' && <ManagerTargetsScreen />}
                </>

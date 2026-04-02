@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, ShoppingCart, Activity, Package, RefreshCw, FileText, ChevronRight } from 'lucide-react';
+import { X, ShoppingCart, Activity, Package, RefreshCw, ChevronRight } from 'lucide-react';
 
 interface ClientActionMenuProps {
     client: {
@@ -10,7 +10,7 @@ interface ClientActionMenuProps {
         nome_fantasia: string;
     };
     onClose: () => void;
-    onAction: (action: 'last-purchase' | 'x-ray' | 'mix' | 'replenishment' | 'score-card') => void;
+    onAction: (action: 'last-purchase' | 'mix' | 'replenishment' | 'score-card') => void;
 }
 
 export const ClientActionMenu: React.FC<ClientActionMenuProps> = ({ client, onClose, onAction }) => {
@@ -42,22 +42,6 @@ export const ClientActionMenu: React.FC<ClientActionMenuProps> = ({ client, onCl
                             </div>
                         </div>
                         <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-600 transition-all" />
-                    </button>
-
-                    <button 
-                        onClick={() => onAction('x-ray')}
-                        className="w-full flex items-center justify-between p-5 bg-white border border-slate-100 rounded-3xl hover:bg-indigo-50 hover:border-indigo-200 transition-all group shadow-sm"
-                    >
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                                <FileText className="w-5 h-5" />
-                            </div>
-                            <div className="text-left">
-                                <p className="text-xs font-black text-slate-800 uppercase tracking-tight">Raio-X do Cliente</p>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">Análise detalhada de faturamento</p>
-                            </div>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 transition-all" />
                     </button>
 
                     <button 

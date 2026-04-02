@@ -26,7 +26,7 @@ interface ClientProductsModalProps {
 }
 
 export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client, onClose, onBack }) => {
-  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   
   useSalesData(selectedYear === 'all' ? 'all' : parseInt(selectedYear, 10));
 
@@ -115,6 +115,8 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
+  const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
+
   return createPortal(
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 md:p-4 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
       <div className="bg-white w-full max-w-6xl rounded-[40px] shadow-2xl flex flex-col max-h-[94vh] overflow-hidden border border-white/20">
@@ -131,6 +133,12 @@ export const ClientProductsModal: React.FC<ClientProductsModalProps> = ({ client
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {isLoading && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-purple-50 text-purple-600 rounded-full animate-pulse">
+                <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"></div>
+                <span className="text-[8px] font-black uppercase tracking-widest">Carregando Dados...</span>
+              </div>
+            )}
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-full">
               {onBack && (
                 <button 

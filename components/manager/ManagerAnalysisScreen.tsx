@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Users, ChevronRight, BarChart3, RefreshCw, CheckCircle2, AlertCircle, X, CheckSquare, Square, ChevronDown, Tag } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Users, ChevronRight, BarChart3, AlertCircle, X, Tag, ArrowUpRight, ArrowDownRight, Trophy } from 'lucide-react';
 import { totalDataStore } from '../../lib/dataStore';
 import { createPortal } from 'react-dom';
 import { Button } from '../Button';
 import { RepPerformanceModal } from './RepPerformanceModal';
 import { useSalesData } from '../../hooks/useSalesData';
+import { Skeleton } from './Skeleton';
 
 import { LoadingOverlay } from '../LoadingOverlay';
 
@@ -41,6 +42,11 @@ interface RepAnalysisItem {
     sales: number;
     target: number;
     pct: number;
+    yearlyHistory?: number[];
+    projection?: number;
+    totalClients?: number;
+    positivatedClients?: number;
+    yearlyPositivatedClients?: number;
 }
 
 interface Stats {
@@ -368,60 +374,111 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [, setForceUpdate] = useState(0);
     
-    const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
-    const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
+    // Agora selecionamos sempre o ano completo para a visão geral
+    const [selectedMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     
     useSalesData(selectedYear, selectedMonths, updateTrigger, () => setForceUpdate(prev => prev + 1));
 
-    const [showMonthDropdown, setShowMonthDropdown] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
-    
     const [selectedMonthForDetail, setSelectedMonthForDetail] = useState<number | null>(null);
     const [selectedRepForMonthlyDetail, setSelectedRepForMonthlyDetail] = useState<RepData | null>(null);
     const [selectedRepForPerformance, setSelectedRepForPerformance] = useState<RepData | null>(null);
+    const [sortOrder, setSortOrder] = useState<'sales' | 'gap' | 'efficiency'>('sales');
     const [stats, setStats] = useState<Stats>({ globalPerformance: [], repData: [] });
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-    const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const monthShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setShowMonthDropdown(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
 
     const processAnalysisData = useCallback(() => {
         void updateTrigger;
+        // Usar as views pré-agregadas do totalDataStore
         const vendasConsolidadas = totalDataStore.vendasConsolidadas;
         const targets = totalDataStore.targets as Target[];
-        const reps = totalDataStore.users as RepData[];
+        const reps = (totalDataStore.users as { id: string; nivel_acesso?: string; role: string; nome: string }[]).filter(u => {
+            const role = (u.nivel_acesso || u.role || '').toLowerCase();
+            // Excluir cargos de gestão/admin para sobrar apenas representantes
+            const isManagement = role.includes('diretor') || 
+                               role.includes('gerente') || 
+                               role.includes('admin') || 
+                               role.includes('director') || 
+                               role.includes('manager') ||
+                               role.includes('gestor');
+            return !isManagement && u.nome; // Garantir que tem nome
+        });
+        const clients = totalDataStore.clients as Client[];
 
+        // Performance global por mês (usando dados consolidados das views)
         const performance: PerformanceItem[] = Array.from({ length: 12 }, (_, i) => {
             const month = i + 1;
-            const monthSales = vendasConsolidadas.filter(s => {
-                return s.mes === month && s.ano === selectedYear;
-            }).reduce((a, b) => a + Number(b.faturamento_total), 0);
+            const monthSales = vendasConsolidadas
+                .filter(s => s.mes === month && s.ano === selectedYear)
+                .reduce((a, b) => a + Number(b.faturamento_total), 0);
             
-            const monthTarget = targets.filter(t => t.mes === month && t.ano === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
+            const monthTarget = targets
+                .filter(t => t.mes === month && t.ano === selectedYear)
+                .reduce((a, b) => a + Number(b.valor), 0);
+            
             return { month, sales: monthSales, target: monthTarget };
         });
 
+        // Análise por representante (usando dados consolidados das views)
         const repAnalysis: RepAnalysisItem[] = reps.map(rep => {
-            const rSales = vendasConsolidadas.filter(s => {
-                return s.usuario_id === rep.id && s.ano === selectedYear && selectedMonths.includes(s.mes);
-            }).reduce((a, b) => a + Number(b.faturamento_total), 0);
+            const rSales = vendasConsolidadas
+                .filter(s => s.usuario_id === rep.id && s.ano === selectedYear)
+                .reduce((a, b) => a + Number(b.faturamento_total), 0);
 
-            const rTarget = targets.filter(t => t.usuario_id === rep.id && t.ano === selectedYear && selectedMonths.includes(t.mes)).reduce((a, b) => a + Number(b.valor), 0);
+            const rTarget = targets
+                .filter(t => t.usuario_id === rep.id && t.ano === selectedYear)
+                .reduce((a, b) => a + Number(b.valor), 0);
+
+            // Dados anuais para o mini-gráfico
+            const yearlyHistory = Array.from({ length: 12 }, (_, i) => {
+                const m = i + 1;
+                return vendasConsolidadas
+                    .filter(s => s.usuario_id === rep.id && s.ano === selectedYear && s.mes === m)
+                    .reduce((a, b) => a + Number(b.faturamento_total), 0);
+            });
+
+            // NOVA LÓGICA DE PROJEÇÃO: Média de meses fechados
+            const currentMonth = new Date().getUTCMonth() + 1;
+            const currentYear = new Date().getUTCFullYear();
             
-            return { rep, sales: rSales, target: rTarget, pct: rTarget > 0 ? (rSales / rTarget) * 100 : 0 };
+            // Meses fechados (anteriores ao atual no ano selecionado, ou todos se ano for passado)
+            const closedMonths = Array.from({ length: 12 }, (_, i) => i + 1).filter(m => {
+                if (selectedYear < currentYear) return true;
+                if (selectedYear > currentYear) return false;
+                return m < currentMonth;
+            });
+
+            const salesInClosedMonths = vendasConsolidadas
+                .filter(s => s.usuario_id === rep.id && s.ano === selectedYear && closedMonths.includes(s.mes))
+                .reduce((a, b) => a + Number(b.faturamento_total), 0);
+            
+            const avgSalesClosed = closedMonths.length > 0 ? salesInClosedMonths / closedMonths.length : 0;
+            const projection = avgSalesClosed * 12;
+
+            // Análise de Clientes
+            const repClients = clients.filter(c => c.usuario_id === rep.id);
+            const positivatedInYear = new Set(
+                vendasConsolidadas
+                    .filter(s => s.usuario_id === rep.id && s.ano === selectedYear)
+                    .map(s => s.cnpj)
+            ).size;
+            
+            return { 
+                rep, 
+                sales: rSales, 
+                target: rTarget, 
+                pct: rTarget > 0 ? (rSales / rTarget) * 100 : 0,
+                yearlyHistory,
+                projection,
+                totalClients: repClients.length,
+                positivatedClients: positivatedInYear,
+                yearlyPositivatedClients: positivatedInYear
+            };
         });
 
         setStats({ globalPerformance: performance, repData: repAnalysis });
-    }, [selectedYear, selectedMonths, updateTrigger]);
+    }, [selectedYear, updateTrigger]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -430,15 +487,16 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
         return () => clearTimeout(timer);
     }, [processAnalysisData]);
 
-    const [isDataLoading, setIsDataLoading] = useState(true);
-
     useEffect(() => {
         const loadData = async () => {
-            setIsDataLoading(true);
+            // Se já temos dados básicos, não mostramos o loading inicial pesado
+            if (totalDataStore.users.length === 0) {
+                setIsInitialLoading(true);
+            }
+            
             try {
                 const { fetchClients, fetchSalesForMonths, fetchUsers } = await import('../../lib/dataService');
                 
-                // Busca apenas os meses selecionados no filtro (sob demanda)
                 await Promise.all([
                     fetchUsers(),
                     fetchClients(),
@@ -449,7 +507,7 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
             } catch (e) {
                 console.error('Error loading analysis data:', e);
             } finally {
-                setIsDataLoading(false);
+                setIsInitialLoading(false);
             }
         };
         loadData();
@@ -463,41 +521,17 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
-    const handleApplyFilter = () => {
-        setSelectedMonths([...tempSelectedMonths]);
-        setShowMonthDropdown(false);
-    };
-
-    const getMonthsLabel = () => {
-        if (selectedMonths.length === 0) return "Selecionar";
-        if (selectedMonths.length === 1) return monthNames[selectedMonths[0] - 1].toUpperCase();
-        if (selectedMonths.length === 12) return "ANO COMPLETO";
-        return `${selectedMonths.length} MESES`;
-    };
-
     const filteredGlobalPerformance = useMemo(() => {
         return stats.globalPerformance.filter((item: PerformanceItem) => selectedMonths.includes(item.month));
     }, [stats.globalPerformance, selectedMonths]);
 
-    const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
-
-    if (isDataLoading) {
-        return (
-            <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
-                <RefreshCw className="w-12 h-12 text-blue-600 animate-spin" />
-                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest animate-pulse">Carregando Análise Estratégica...</p>
-            </div>
-        );
-    }
+    const isDataLoading = Object.values(totalDataStore.loading).some(v => v === true) || isInitialLoading;
 
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
             <header className="flex flex-col md:flex-row justify-between items-end gap-6 px-4">
                 <div>
                     <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise Comercial</h2>
-                    <p className="text-[10px] font-black text-slate-400 uppercase mt-2 flex items-center gap-2 uppercase tracking-widest">
-                        <BarChart3 className="w-3.5 h-3.5 text-blue-500" /> Evolução de Metas Regional
-                    </p>
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -508,149 +542,293 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
                             <option value={2026}>ANO 2026</option>
                         </select>
                     </div>
-
-                    <div className="relative" ref={dropdownRef}>
-                        <button 
-                            onClick={() => {
-                                setTempSelectedMonths([...selectedMonths]);
-                                setShowMonthDropdown(!showMonthDropdown);
-                            }}
-                            className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50 min-w-[180px] justify-between transition-all"
-                        >
-                            <span>{getMonthsLabel()}</span>
-                            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
-                        </button>
-                        
-                        {showMonthDropdown && (
-                            <div className="absolute top-full right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
-                                <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-2">
-                                    <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[9px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">Todos</button>
-                                    <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[9px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg hover:bg-red-100 transition-all">Limpar</button>
-                                </div>
-                                <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto custom-scrollbar">
-                                    {monthNames.map((m, i) => (
-                                        <button 
-                                            key={i} 
-                                            onClick={() => setTempSelectedMonths(prev => prev.includes(i+1) ? prev.filter(x => x !== i+1) : [...prev, i+1])}
-                                            className={`flex items-center gap-2 p-2.5 rounded-xl text-[10px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
-                                        >
-                                            {tempSelectedMonths.includes(i + 1) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-                                            {m}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="p-3 border-t border-slate-100 bg-slate-50">
-                                    <button 
-                                        onClick={handleApplyFilter}
-                                        className="w-full bg-blue-600 text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
-                                    >
-                                        <RefreshCw className="w-3 h-3" /> Aplicar Filtro
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
                 </div>
             </header>
 
             <div className="bg-white p-8 md:p-12 rounded-[48px] border border-slate-200 shadow-sm relative overflow-hidden max-w-6xl mx-auto">
-                <div className="flex justify-between items-start mb-16">
-                    <div>
-                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Realizado vs Meta Regional</h3>
-                        <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Clique em uma barra para detalhar o mês</p>
-                    </div>
-                    <div className="flex gap-6">
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Realizado</span>
+                {isDataLoading ? (
+                    <div className="space-y-8">
+                        <div className="flex justify-between items-start">
+                            <Skeleton className="h-8 w-64" />
+                            <Skeleton className="h-8 w-48" />
                         </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-slate-100 border border-slate-200 rounded-full"></div>
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Meta</span>
+                        <div className="h-[350px] flex items-end justify-between gap-4">
+                            {Array.from({ length: 12 }).map((_, i) => (
+                                <Skeleton key={i} className="flex-1" style={{ height: `${20 + Math.random() * 60}%` }} />
+                            ))}
                         </div>
                     </div>
-                </div>
-
-                <div className="h-[350px] w-full flex items-end justify-between gap-3 md:gap-6 px-2 pt-10 border-b border-slate-100">
-                    {filteredGlobalPerformance.map((item: PerformanceItem, idx: number) => {
-                        const maxInChart = Math.max(...stats.globalPerformance.flatMap((d: PerformanceItem) => [d.sales, d.target])) * 1.2 || 1;
-                        const salesHeight = (item.sales / maxInChart) * 100;
-                        const targetHeight = (item.target / maxInChart) * 100;
-                        const achievement = item.target > 0 ? (item.sales / item.target) * 100 : 0;
-                        const isSuccess = achievement >= 100;
-
-                        return (
-                            <div 
-                                key={idx} 
-                                onClick={() => setSelectedMonthForDetail(item.month - 1)}
-                                className="flex-1 flex flex-col items-center group h-full relative cursor-pointer"
-                            >
-                                <div className="absolute top-[-30px] flex flex-col items-center opacity-0 group-hover:opacity-100 transition-all">
-                                    <span className={`text-[10px] font-black tabular-nums ${isSuccess ? 'text-blue-700' : 'text-red-700'}`}>
-                                        {achievement.toFixed(1)}%
-                                    </span>
-                                </div>
-
-                                <div className="relative w-full flex-1 flex flex-col justify-end items-center">
-                                    <div className="w-full max-w-[32px] bg-slate-50 rounded-t-xl border border-slate-100 absolute bottom-0 transition-all duration-700" style={{ height: `${Math.max(targetHeight, 2)}%` }}></div>
-                                    <div 
-                                        className={`w-full max-w-[32px] rounded-t-xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-600 shadow-red-100'}`} 
-                                        style={{ height: `${Math.max(salesHeight, 2)}%` }}
-                                    >
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent rounded-t-xl group-hover:bg-white/10 transition-all"></div>
-                                    </div>
-                                </div>
-                                <span className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-900 transition-colors">{monthShort[item.month - 1]}</span>
+                ) : (
+                    <>
+                        <div className="flex justify-between items-start mb-16">
+                            <div>
+                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Realizado vs Meta Regional</h3>
+                                <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Clique em uma barra para detalhar o mês</p>
                             </div>
-                        );
-                    })}
-                </div>
+                            <div className="flex gap-6">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Realizado</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 bg-slate-100 border border-slate-200 rounded-full"></div>
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Meta</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="h-[350px] w-full flex items-end justify-between gap-3 md:gap-6 px-2 pt-10 border-b border-slate-100">
+                            {filteredGlobalPerformance.map((item: PerformanceItem, idx: number) => {
+                                const maxInChart = Math.max(...stats.globalPerformance.flatMap((d: PerformanceItem) => [d.sales, d.target])) * 1.2 || 1;
+                                const salesHeight = (item.sales / maxInChart) * 100;
+                                const targetHeight = (item.target / maxInChart) * 100;
+                                const achievement = item.target > 0 ? (item.sales / item.target) * 100 : 0;
+                                const isSuccess = achievement >= 100;
+
+                                return (
+                                    <div 
+                                        key={idx} 
+                                        className="flex-1 flex flex-col items-center group h-full relative"
+                                    >
+                                        <div className="absolute top-[-30px] flex flex-col items-center opacity-0 group-hover:opacity-100 transition-all">
+                                            <span className={`text-[10px] font-black tabular-nums ${isSuccess ? 'text-blue-700' : 'text-red-700'}`}>
+                                                {achievement.toFixed(1)}%
+                                            </span>
+                                        </div>
+
+                                        <div className="relative w-full flex-1 flex flex-col justify-end items-center">
+                                            <div className="w-full max-w-[32px] bg-slate-50 rounded-t-xl border border-slate-100 absolute bottom-0 transition-all duration-700" style={{ height: `${Math.max(targetHeight, 2)}%` }}></div>
+                                            <div 
+                                                className={`w-full max-w-[32px] rounded-t-xl transition-all duration-1000 ease-out relative z-10 shadow-lg ${isSuccess ? 'bg-blue-600 shadow-blue-100' : 'bg-red-600 shadow-red-100'}`} 
+                                                style={{ height: `${Math.max(salesHeight, 2)}%` }}
+                                            >
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent rounded-t-xl group-hover:bg-white/10 transition-all"></div>
+                                            </div>
+                                        </div>
+                                        <span className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-900 transition-colors">{monthShort[item.month - 1]}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </>
+                )}
             </div>
 
-            <div className="space-y-4 px-4">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-5">
+            <div className="space-y-6 px-4">
+                {/* Bento Grid de Destaques */}
+                {!isDataLoading && stats.repData.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                        {/* Líder de Faturamento */}
+                        {(() => {
+                            const bestSales = [...stats.repData].sort((a, b) => b.sales - a.sales)[0];
+                            const bestPct = [...stats.repData].sort((a, b) => b.pct - a.pct)[0];
+                            return (
+                                <div className="bg-blue-600 rounded-[32px] text-white shadow-xl shadow-blue-100 overflow-hidden flex flex-col">
+                                    <div className="p-6 border-b border-white/10 flex-1">
+                                        <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Líder de Faturamento (R$)</p>
+                                        <h4 className="text-lg font-black uppercase truncate">{bestSales.rep.nome}</h4>
+                                        <p className="text-2xl font-black mt-1">{formatBRL(bestSales.sales)}</p>
+                                    </div>
+                                    <div className="p-6 bg-blue-700/50 flex-1">
+                                        <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Líder em Alcance (%)</p>
+                                        <h4 className="text-lg font-black uppercase truncate">{bestPct.rep.nome}</h4>
+                                        <p className="text-2xl font-black mt-1">{bestPct.pct.toFixed(1)}%</p>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* Menor Alcance */}
+                        {(() => {
+                            const worstSales = [...stats.repData].sort((a, b) => a.sales - b.sales)[0];
+                            const worstPct = [...stats.repData].sort((a, b) => a.pct - b.pct)[0];
+                            return (
+                                <div className="bg-white rounded-[32px] border border-red-100 shadow-sm overflow-hidden flex flex-col">
+                                    <div className="p-6 border-b border-red-50 flex-1">
+                                        <p className="text-[9px] font-black text-red-400 uppercase tracking-[0.2em] mb-2">Menor Faturamento (R$)</p>
+                                        <h4 className="text-lg font-black text-slate-900 uppercase truncate">{worstSales.rep.nome}</h4>
+                                        <p className="text-2xl font-black text-red-600 mt-1">{formatBRL(worstSales.sales)}</p>
+                                    </div>
+                                    <div className="p-6 bg-red-50/30 flex-1">
+                                        <p className="text-[9px] font-black text-red-400 uppercase tracking-[0.2em] mb-2">Menor Alcance (%)</p>
+                                        <h4 className="text-lg font-black text-slate-900 uppercase truncate">{worstPct.rep.nome}</h4>
+                                        <p className="text-2xl font-black text-red-600 mt-1">{worstPct.pct.toFixed(1)}%</p>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* Projeção Regional */}
+                                        {(() => {
+                                            const totalProjection = stats.repData.reduce((a, b) => a + (b.projection || 0), 0);
+                                            const totalTarget = stats.repData.reduce((a, b) => a + b.target, 0);
+                                            const reachPct = totalTarget > 0 ? (totalProjection / totalTarget) * 100 : 0;
+                                            
+                                            const currentMonth = new Date().getUTCMonth() + 1;
+                                            const currentYear = new Date().getUTCFullYear();
+                                            const closedMonths = Array.from({ length: 12 }, (_, i) => i + 1).filter(m => {
+                                                if (selectedYear < currentYear) return true;
+                                                if (selectedYear > currentYear) return false;
+                                                return m < currentMonth;
+                                            });
+                                            const monthsLabel = closedMonths.length > 0 
+                                                ? `Jan a ${monthShort[closedMonths[closedMonths.length - 1] - 1]} de ${selectedYear}`
+                                                : `Sem meses fechados em ${selectedYear}`;
+
+                                            return (
+                                                <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl relative group flex flex-col justify-between">
+                                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform pointer-events-none"><BarChart3 className="w-16 h-16" /></div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em]">Projeção de Fechamento Anual</p>
+                                                        </div>
+                                                        <h4 className="text-lg font-black uppercase relative z-10">Total Regional</h4>
+                                                        <p className="text-[10px] font-bold text-slate-500 uppercase mt-1 mb-2 tracking-widest">{monthsLabel}</p>
+                                                        <p className="text-3xl font-black text-blue-400 mt-2 relative z-10">{formatBRL(totalProjection)}</p>
+                                                    </div>
+                                                    <div className="mt-6 pt-6 border-t border-white/10">
+                                                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase ${reachPct >= 100 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                            {reachPct >= 100 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                                            {reachPct.toFixed(1)}% da Meta
+                                                        </div>
+                                                        <p className="text-[8px] font-black text-slate-500 uppercase mt-3 tracking-widest">Baseado na média de meses fechados</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                    </div>
+                )}
+
+                <div className="flex flex-col md:flex-row items-center justify-between border-b border-slate-200 pb-5 gap-4">
                     <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
                         <Users className="w-5 h-5 text-blue-600" /> Desempenho Regional por Representante
                     </h3>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Clique no representante para ver o Raio-X Anual</p>
+                    
+                    <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl">
+                        <div className="group relative">
+                            <button 
+                                onClick={() => setSortOrder('sales')}
+                                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${sortOrder === 'sales' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Faturamento
+                            </button>
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-32 p-2 bg-slate-900 text-white text-[7px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 text-center">
+                                Ordenar pelo maior valor vendido (R$).
+                            </div>
+                        </div>
+                        <div className="group relative">
+                            <button 
+                                onClick={() => setSortOrder('gap')}
+                                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${sortOrder === 'gap' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Menor Alcance
+                            </button>
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-32 p-2 bg-slate-900 text-white text-[7px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 text-center">
+                                Ordenar por quem está com menor % de meta batida.
+                            </div>
+                        </div>
+                        <div className="group relative">
+                            <button 
+                                onClick={() => setSortOrder('efficiency')}
+                                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${sortOrder === 'efficiency' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Eficiência
+                            </button>
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-32 p-2 bg-slate-900 text-white text-[7px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 text-center">
+                                Ordenar pela maior % de meta batida.
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
-                    {stats.repData.sort((a: RepAnalysisItem, b: RepAnalysisItem) => b.sales - a.sales).map((row: RepAnalysisItem) => (
-                        <div 
-                            key={row.rep.id} 
-                            onClick={() => setSelectedRepForPerformance(row.rep)}
-                            className="p-5 flex flex-col md:flex-row items-center justify-between hover:bg-slate-50/50 transition-all group cursor-pointer"
-                        >
-                            <div className="flex items-center gap-5 w-full md:w-1/3">
-                                <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                    {row.rep.nome.charAt(0)}
+                    {isDataLoading ? (
+                        Array.from({ length: 5 }).map((_, i) => (
+                            <div key={i} className="p-6 flex items-center gap-6">
+                                <Skeleton className="w-12 h-12 rounded-2xl" />
+                                <div className="flex-1 space-y-2">
+                                    <Skeleton className="h-4 w-1/4" />
+                                    <Skeleton className="h-3 w-1/6" />
                                 </div>
-                                <div className="min-w-0">
-                                    <h4 className="font-black text-slate-900 uppercase text-xs tracking-tight truncate">{row.rep.nome}</h4>
-                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Vendas Regional</p>
-                                </div>
+                                <Skeleton className="w-32 h-10 rounded-full" />
                             </div>
-
-                            <div className="flex-1 w-full md:w-auto mt-4 md:mt-0 flex items-center justify-between md:justify-around gap-8">
-                                <div className="text-center md:text-left">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturado</p>
-                                    <p className="text-sm font-black text-slate-900 tabular-nums">{formatBRL(row.sales)}</p>
-                                </div>
-                                <div className="text-center md:text-left">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta</p>
-                                    <p className="text-sm font-bold text-slate-600 tabular-nums">{formatBRL(row.target)}</p>
-                                </div>
-                                <div className="text-right flex items-center gap-4">
-                                    <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black border transition-all ${row.pct >= 100 ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                                        {row.pct >= 100 ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                                        {row.pct.toFixed(1)}%
-                                    </span>
-                                    <ChevronRight className="w-5 h-5 text-slate-200 group-hover:text-blue-500 transition-colors" />
-                                </div>
-                            </div>
+                        ))
+                    ) : stats.repData.length === 0 ? (
+                        <div className="p-20 text-center text-slate-400">
+                            <Users className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                            <p className="text-[10px] font-black uppercase tracking-widest">Nenhum representante encontrado para este ano.</p>
+                            <p className="text-[8px] font-bold uppercase mt-2">Verifique se os usuários estão cadastrados corretamente.</p>
                         </div>
-                    ))}
+                    ) : (
+                        stats.repData
+                            .sort((a: RepAnalysisItem, b: RepAnalysisItem) => {
+                                if (sortOrder === 'sales') return b.sales - a.sales;
+                                if (sortOrder === 'gap') return a.pct - b.pct;
+                                return b.pct - a.pct;
+                            })
+                            .map((row: RepAnalysisItem) => {
+                                const efficiency = row.target > 0 ? (row.projection! / row.target) * 100 : 0;
+                                const isSuccess = efficiency >= 100;
+                                
+                                return (
+                                    <div 
+                                        key={row.rep.id} 
+                                        onClick={() => setSelectedRepForPerformance(row.rep)}
+                                        className="p-6 flex flex-col lg:flex-row items-center gap-8 hover:bg-slate-50/50 transition-all group cursor-pointer border-b border-slate-50 last:border-0"
+                                    >
+                                        {/* Identificação */}
+                                        <div className="flex items-center gap-5 w-full lg:w-64 shrink-0">
+                                            <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
+                                                {row.rep.nome.charAt(0)}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h4 className="font-black text-slate-900 uppercase text-xs tracking-tight truncate group-hover:text-blue-600 transition-colors">{row.rep.nome}</h4>
+                                            </div>
+                                        </div>
+
+                                        {/* Métricas Principais */}
+                                        <div className="flex-1 grid grid-cols-2 md:grid-cols-6 gap-6 w-full">
+                                            <div>
+                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturado</p>
+                                                <p className="text-sm font-black text-slate-900 tabular-nums">{formatBRL(row.sales)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta Anual</p>
+                                                <p className="text-sm font-black text-slate-400 tabular-nums">{formatBRL(row.target)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Alcance Atual</p>
+                                                <p className={`text-sm font-black tabular-nums ${row.pct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                                    {row.pct.toFixed(1)}%
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Projeção</p>
+                                                <p className="text-sm font-black text-blue-600 tabular-nums">{formatBRL(row.projection || 0)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Eficiência</p>
+                                                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black border transition-all ${isSuccess ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                                    {efficiency.toFixed(1)}%
+                                                </span>
+                                            </div>
+                                            <div className="text-right flex items-center justify-end">
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedRepForPerformance(row.rep);
+                                                    }}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg"
+                                                >
+                                                    <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                                                    SCORE CARD
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                    )}
                 </div>
             </div>
 
@@ -683,7 +861,7 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
                 />
             )}
 
-            {isLoading && <LoadingOverlay />}
+            {isDataLoading && <LoadingOverlay />}
         </div>
     );
 };

@@ -76,8 +76,78 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
         
         if (sales.length === 0) return null;
 
+        const currentYearNum = selectedYear === 'all' ? new Date().getFullYear() : parseInt(selectedYear);
+        const prevYearNum = currentYearNum - 1;
+        const prevYearStr = prevYearNum.toString();
+
+        const prevYearSales = (totalDataStore.sales as Sale[]).filter(s => 
+            String(s.cnpj).replace(/\D/g, '') === String(client.cnpj).replace(/\D/g, '') && 
+            Number(s.faturamento) > 0 &&
+            s.data.startsWith(prevYearStr)
+        );
+
         const totalFaturamento = sales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
+        const totalFaturamentoPrev = prevYearSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
         const totalQuantidades = sales.reduce((acc, s) => acc + (Number(s.qtde_faturado) || 0), 0);
+
+        // 1. Frequência (30 pontos)
+        const monthsWithSales = new Set(sales.map(s => s.data.substring(5, 7))).size;
+        const totalMonthsInPeriod = selectedYear === 'all' ? 12 : (selectedYear === new Date().getFullYear().toString() ? new Date().getMonth() + 1 : 12);
+        const frequencyScore = (monthsWithSales / totalMonthsInPeriod) * 30;
+
+        // 2. Mix de Produtos por Grupo (50 pontos)
+        const currentGroups = new Map<string, Set<string>>();
+        sales.forEach(s => {
+            const group = (s.grupo || 'GERAL').trim().toUpperCase();
+            const sku = s.codigo_produto || s.produto || '';
+            if (!currentGroups.has(group)) currentGroups.set(group, new Set());
+            currentGroups.get(group)?.add(sku);
+        });
+
+        const prevGroups = new Map<string, Set<string>>();
+        prevYearSales.forEach(s => {
+            const group = (s.grupo || 'GERAL').trim().toUpperCase();
+            const sku = s.codigo_produto || s.produto || '';
+            if (!prevGroups.has(group)) prevGroups.set(group, new Set());
+            prevGroups.get(group)?.add(sku);
+        });
+
+        const allGroups = new Set([...currentGroups.keys(), ...prevGroups.keys()]);
+        const pointsPerGroup = allGroups.size > 0 ? 50 / allGroups.size : 0;
+        let mixScore = 0;
+
+        allGroups.forEach(group => {
+            const currentSkus = currentGroups.get(group) || new Set();
+            const prevSkus = prevGroups.get(group) || new Set();
+            
+            if (prevSkus.size === 0) {
+                // Novo grupo
+                mixScore += pointsPerGroup;
+            } else {
+                const repurchased = [...currentSkus].filter(sku => prevSkus.has(sku)).length;
+                const newSkus = [...currentSkus].filter(sku => !prevSkus.has(sku)).length;
+                
+                const repurchaseRate = repurchased / prevSkus.size;
+                const baseScore = repurchaseRate * pointsPerGroup;
+                const bonus = newSkus > 0 ? (newSkus / currentSkus.size) * pointsPerGroup * 0.2 : 0;
+                
+                mixScore += Math.min(pointsPerGroup, baseScore + bonus);
+            }
+        });
+
+        // 3. Performance vs Ano Anterior (20 pontos)
+        let performanceScore = 0;
+        if (totalFaturamentoPrev > 0) {
+            if (totalFaturamento >= totalFaturamentoPrev) {
+                performanceScore = 20;
+            } else {
+                performanceScore = (totalFaturamento / totalFaturamentoPrev) * 20;
+            }
+        } else if (totalFaturamento > 0) {
+            performanceScore = 20; // Novo cliente ou sem histórico
+        }
+
+        const healthScore = Math.round(frequencyScore + mixScore + performanceScore);
 
         // 1. Produtos mais comprados (Valor e Unidades)
         const productMap = new Map<string, { name: string, value: number, units: number, lastPurchase: string }>();
@@ -135,18 +205,8 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
         // 5. SKUs cadastrados
         const totalSkus = productMap.size;
 
-        // 6. Tendência (Comparando com o ano anterior se selecionado um ano específico)
-        let trend = 0;
-        if (selectedYear !== 'all') {
-            const prevYear = (parseInt(selectedYear) - 1).toString();
-            const prevYearSales = (totalDataStore.sales as Sale[]).filter(s => 
-                String(s.cnpj).replace(/\D/g, '') === String(client.cnpj).replace(/\D/g, '') && 
-                Number(s.faturamento) > 0 &&
-                s.data.startsWith(prevYear)
-            );
-            const prevYearTotal = prevYearSales.reduce((acc, s) => acc + (Number(s.faturamento) || 0), 0);
-            trend = prevYearTotal > 0 ? ((totalFaturamento / prevYearTotal) - 1) * 100 : 0;
-        }
+        // 6. Tendência
+        const trend = totalFaturamentoPrev > 0 ? ((totalFaturamento / totalFaturamentoPrev) - 1) * 100 : 0;
 
         return {
             productsByUnits: productsByUnits.slice(0, 5),
@@ -157,7 +217,11 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
             totalFaturamento,
             totalQuantidades,
             trend,
-            activeMonths
+            activeMonths,
+            healthScore,
+            frequencyScore,
+            mixScore,
+            performanceScore
         };
     }, [client.cnpj, selectedYear]);
 
@@ -248,6 +312,74 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
                         </div>
                     ) : (
                         <>
+                            {/* Health Score Card */}
+                            <div className="bg-slate-900 rounded-[40px] p-10 text-white shadow-2xl border-b-8 border-blue-600 relative overflow-hidden mb-10">
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/20 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
+                                <div className="relative z-10 flex flex-col md:flex-row items-center gap-12">
+                                    <div className="shrink-0 relative">
+                                        <div className="w-48 h-48 rounded-full border-8 border-white/10 flex items-center justify-center relative">
+                                            <svg className="w-full h-full -rotate-90">
+                                                <circle
+                                                    cx="96"
+                                                    cy="96"
+                                                    r="84"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    strokeWidth="12"
+                                                    strokeDasharray={2 * Math.PI * 84}
+                                                    strokeDashoffset={2 * Math.PI * 84 * (1 - scoreData.healthScore / 100)}
+                                                    className={`${scoreData.healthScore >= 80 ? 'text-emerald-500' : scoreData.healthScore >= 60 ? 'text-blue-500' : scoreData.healthScore >= 40 ? 'text-amber-500' : 'text-red-500'} transition-all duration-1000`}
+                                                />
+                                            </svg>
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                                <span className="text-5xl font-black">{scoreData.healthScore}</span>
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pontos</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 space-y-6">
+                                        <div>
+                                            <h4 className="text-2xl font-black uppercase tracking-tighter mb-2">Saúde do Cliente</h4>
+                                            <p className="text-slate-400 text-sm font-medium max-w-xl">
+                                                Esta pontuação reflete a vitalidade comercial do cliente baseada em frequência de compra, mix de produtos e crescimento comparativo.
+                                            </p>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Frequência</p>
+                                                <div className="flex items-end justify-between">
+                                                    <span className="text-xl font-black">{scoreData.frequencyScore.toFixed(1)}</span>
+                                                    <span className="text-[10px] font-bold text-slate-500">/ 30 pts</span>
+                                                </div>
+                                                <div className="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+                                                    <div className="h-full bg-blue-500" style={{ width: `${(scoreData.frequencyScore / 30) * 100}%` }}></div>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Mix de Produtos</p>
+                                                <div className="flex items-end justify-between">
+                                                    <span className="text-xl font-black">{scoreData.mixScore.toFixed(1)}</span>
+                                                    <span className="text-[10px] font-bold text-slate-500">/ 50 pts</span>
+                                                </div>
+                                                <div className="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+                                                    <div className="h-full bg-purple-500" style={{ width: `${(scoreData.mixScore / 50) * 100}%` }}></div>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Performance YoY</p>
+                                                <div className="flex items-end justify-between">
+                                                    <span className="text-xl font-black">{scoreData.performanceScore.toFixed(1)}</span>
+                                                    <span className="text-[10px] font-bold text-slate-500">/ 20 pts</span>
+                                                </div>
+                                                <div className="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+                                                    <div className="h-full bg-emerald-500" style={{ width: `${(scoreData.performanceScore / 20) * 100}%` }}></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Top Stats - Reordered and Updated */}
                             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                                 <div className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl border-b-4 border-blue-600">

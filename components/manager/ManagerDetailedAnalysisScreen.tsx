@@ -208,7 +208,7 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
 
     const [selectedYear, setSelectedYear] = useState<number>(initialState.selectedYear);
     const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
-    const [, setForceUpdate] = useState(0);
+    const [forceUpdate, setForceUpdate] = useState(0);
     
     const [selectedMonths, setSelectedMonths] = useState<number[]>(initialState.selectedMonths);
     const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>(initialState.selectedMonths);
@@ -255,6 +255,7 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
 
     const processedBI = useMemo(() => {
         void updateTrigger;
+        void forceUpdate;
         const sales = totalDataStore.sales;
         if (rowDimensions.length === 0) return { items: [], totals: { faturamento: 0, quantidade: 0, skus: 0, entities: 0, clients: 0 } };
 
@@ -322,8 +323,8 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
                 else if (dim === 'canal') key = canal_vendas;
                 else if (dim === 'grupo') key = sale.grupo || 'SEM GRUPO';
                 else if (dim === 'cliente') {
-                    const name = clientLookup.get(cnpjClean) || sale.cliente_nome;
-                    key = (name || `CNPJ: ${sale.cnpj}`).trim().toUpperCase();
+                    const name = (clientLookup.get(cnpjClean) || sale.cliente_nome || 'CLIENTE SEM NOME').trim().toUpperCase();
+                    key = `${name} | ${sale.cnpj}`;
                 }
                 else if (dim === 'produto') key = (sale.produto_nome || sale.produto) ? (sale.produto_nome || sale.produto).trim().toUpperCase() : 'ITEM SEM DESCRIÇÃO';
 
@@ -374,12 +375,13 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
             let sortedNodes = Array.from(nodes.values()).sort((a, b) => b.faturamento - a.faturamento);
 
             if (currentDimension === 'produto' && topBottomFilter !== 'none') {
+                const limit = Math.max(1, topBottomLimit || 10);
                 if (topBottomFilter === 'top') {
-                    sortedNodes = sortedNodes.slice(0, topBottomLimit);
+                    sortedNodes = sortedNodes.slice(0, limit);
                 } else if (topBottomFilter === 'bottom') {
                     sortedNodes = Array.from(nodes.values())
                         .sort((a, b) => a.faturamento - b.faturamento)
-                        .slice(0, topBottomLimit)
+                        .slice(0, limit)
                         .sort((a, b) => b.faturamento - a.faturamento);
                 }
                 nodes.clear();
@@ -468,7 +470,8 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
                 clients: finalTotals.clients.size
             }
         };
-    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin, topBottomFilter, topBottomLimit, updateTrigger]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedYear, selectedMonths, filterReps, filterCanais, filterGrupos, filterClients, filterProducts, rowDimensions, searchTerm, isAdmin, topBottomFilter, topBottomLimit, updateTrigger, forceUpdate, totalDataStore.sales, totalDataStore.clients]);
 
     useEffect(() => {
         const stateToSave = {
@@ -546,6 +549,7 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
                 console.error('Error loading detailed analysis data:', e);
             } finally {
                 setIsDataLoading(false);
+                setForceUpdate(prev => prev + 1);
             }
         };
         loadData();
@@ -573,7 +577,13 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
     };
 
     const filterOptions = useMemo(() => {
-        const sales = totalDataStore.sales;
+        void forceUpdate;
+        const sales = totalDataStore.sales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            const m = d.getUTCMonth() + 1;
+            const y = d.getUTCFullYear();
+            return y === selectedYear && selectedMonths.includes(m);
+        });
         const clients = totalDataStore.clients;
         const canais = new Set<string>();
         const grupos = new Set<string>();
@@ -602,7 +612,8 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
             clients: dynamicClients.sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia)),
             products: Array.from(productMap.values()).sort((a, b) => a.nome.localeCompare(b.nome))
         };
-    }, [filterReps]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filterReps, selectedYear, selectedMonths, totalDataStore.sales, totalDataStore.clients, forceUpdate]);
 
     const toggleFilter = (list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
         setList(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
@@ -919,7 +930,6 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
                                 id="clients" 
                                 label="Clientes" 
                                 icon={Building2} 
-                                disabled={isAdmin && filterReps.length === 0}
                                 options={filterOptions.clients} 
                                 selected={filterClients} 
                                 onToggle={(val) => toggleFilter(filterClients, setFilterClients, val)} 
@@ -1018,7 +1028,14 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
                                             <td className="px-8 py-4" style={{ paddingLeft: `${paddingLeft}px` }}>
                                                 <div className="flex items-center gap-3">
                                                     {isRoot ? <div className="w-1.5 h-6 bg-blue-600 rounded-full"></div> : <ChevronRight className="w-3 h-3 text-slate-300" />}
-                                                    <span className={`text-[11px] font-black uppercase tracking-tight ${isRoot ? 'text-slate-900' : 'text-slate-600'}`}>{row.label}</span>
+                                                    {rowDimensions[row.level] === 'cliente' ? (
+                                                        <div className="flex flex-col">
+                                                            <span className={`text-[11px] font-black uppercase tracking-tight ${isRoot ? 'text-slate-900' : 'text-slate-600'}`}>{row.label.split(' | ')[0]}</span>
+                                                            <span className="text-[9px] font-bold text-slate-400 tabular-nums">{row.label.split(' | ')[1]}</span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className={`text-[11px] font-black uppercase tracking-tight ${isRoot ? 'text-slate-900' : 'text-slate-600'}`}>{row.label}</span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-right tabular-nums">
@@ -1032,9 +1049,9 @@ export const ManagerDetailedAnalysisScreen: React.FC<ManagerDetailedAnalysisScre
                                                 {row.skusCount.toLocaleString()}
                                             </td>
                                             <td className="px-6 py-4 text-center tabular-nums text-xs font-black text-slate-900">
-                                                {(rowDimensions[row.level] === 'representante' || rowDimensions[row.level] === 'canal') 
+                                                {rowDimensions[row.level] !== 'cliente' 
                                                     ? row.clientSet.size.toLocaleString() 
-                                                    : '-'}
+                                                    : '1'}
                                             </td>
                                             <td className="px-6 py-4 text-center tabular-nums text-xs font-bold text-slate-500">
                                                 {row.quantidade.toLocaleString()}

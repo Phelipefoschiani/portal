@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Building2, User, Loader2, TrendingUp, Tag, Info, CalendarClock, Calendar, FileSpreadsheet, CheckSquare, Square, ChevronDown, CalendarDays, MoreHorizontal, Filter } from 'lucide-react';
+import { Search, Building2, User, Loader2, TrendingUp, Tag, Info, Calendar, FileSpreadsheet, CheckSquare, Square, ChevronDown, CalendarDays, MoreHorizontal, Filter } from 'lucide-react';
 import { ClientDetailModal } from '../ClientDetailModal';
 import { ClientLastPurchaseDetailModal } from '../ClientLastPurchaseDetailModal';
 import { ClientScoreCardModal } from '../ClientScoreCardModal';
@@ -37,7 +37,7 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
     const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
     const [selectedRep, setSelectedRep] = useState('all');
     const [selectedChannel, setSelectedChannel] = useState('all');
-    const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
+    const [selectedYear, setSelectedYear] = useState<number | 'all'>(now.getFullYear());
     const [, setForceUpdate] = useState(0);
     
     useSalesData(selectedYear, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], updateTrigger, () => setForceUpdate(prev => prev + 1));
@@ -212,20 +212,6 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
-    const checkLastPurchaseStatus = (dateStr: string | null) => {
-        if (!dateStr || dateStr === '0000-00-00') return { label: 'S/ REGISTRO', isOld: true };
-        
-        const lastDate = new Date(dateStr + 'T00:00:00');
-        const diffTime = Math.abs(now.getTime() - lastDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        return {
-            label: lastDate.toLocaleDateString('pt-BR'),
-            isOld: diffDays > 90,
-            days: diffDays
-        };
-    };
-
     const handleExportExcel = () => {
         if (processedData.ranking.length === 0) {
             alert('Não há dados para exportar.');
@@ -245,8 +231,6 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                 "REPRESENTANTE": client.repName,
                 "CLIENTE": client.nome_fantasia,
                 "CANAL": client.canal_vendas || 'GERAL',
-                "ÚLTIMA COMPRA": client.lastPurchase ? new Date(client.lastPurchase + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A',
-                "VALOR ÚLT. COMPRA": client.lastPurchaseValue,
                 "FATURAMENTO": client.totalPurchase,
                 "PARTICIPAÇÃO %": (client.participation / 100)
             }));
@@ -452,8 +436,6 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                          <thead className="bg-slate-50 border-b border-slate-200">
                             <tr className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
                                 <th className="px-8 py-5">Nome</th>
-                                <th className="px-6 py-5">Última Compra</th>
-                                <th className="px-6 py-5 text-right">Valor Últ. Compra</th>
                                 <th className="px-6 py-5">Canal</th>
                                 <th className="px-6 py-5 text-right">Faturamento No Ano</th>
                                 <th className="px-8 py-5 text-right">Participação (%)</th>
@@ -462,7 +444,6 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {processedData.ranking.map((client) => {
-                                const purchaseStatus = checkLastPurchaseStatus(client.lastPurchase);
                                 return (
                                     <tr key={client.id} className="hover:bg-slate-50 cursor-pointer group transition-all" onClick={() => setSelectedClientForMenu(client)}>
                                         <td className="px-8 py-5">
@@ -471,15 +452,6 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                                                 <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5 tracking-wider">{client.city || 'S/ CIDADE'} • {client.cnpj} • {client.repName}</p>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-5">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black border uppercase tracking-wider ${purchaseStatus.isOld ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                                    <CalendarClock className="w-3 h-3" />
-                                                    {purchaseStatus.label}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-5 text-right font-black text-slate-700 tabular-nums">{formatCurrency(client.lastPurchaseValue)}</td>
                                         <td className="px-6 py-5">
                                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{client.canal_vendas || 'GERAL'}</span>
                                         </td>
@@ -521,7 +493,6 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
             {/* Mobile View */}
             <div className="md:hidden space-y-4 px-2">
                 {processedData.ranking.map((client) => {
-                    const purchaseStatus = checkLastPurchaseStatus(client.lastPurchase);
                     return (
                         <div 
                             key={client.id} 
@@ -538,13 +509,7 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                                 </div>
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-4 pt-2">
-                                <div>
-                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Última Compra</p>
-                                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-black border uppercase ${purchaseStatus.isOld ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                        {purchaseStatus.label}
-                                    </span>
-                                </div>
+                            <div className="grid grid-cols-1 gap-4 pt-2">
                                 <div className="text-right">
                                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturamento Ano</p>
                                     <p className="text-sm font-black text-slate-900">{formatCurrency(client.totalPurchase)}</p>

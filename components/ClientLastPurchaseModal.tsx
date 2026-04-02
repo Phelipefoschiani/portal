@@ -30,7 +30,7 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
   const [isExporting, setIsExporting] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>('all');
   
-  useSalesData(selectedYear === 'all' ? 'all' : parseInt(selectedYear, 10));
+  useSalesData('all'); // Sempre busca histórico total para reposição
 
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -170,6 +170,12 @@ export const ClientLastPurchaseModal: React.FC<ClientLastPurchaseModalProps> = (
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {Object.values(totalDataStore.loading).some(v => v === true) && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-full animate-pulse">
+                <div className="w-2 h-2 bg-amber-600 rounded-full animate-bounce"></div>
+                <span className="text-[8px] font-black uppercase tracking-widest">Carregando Histórico...</span>
+              </div>
+            )}
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-full">
               {onBack && (
                 <button 

@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Package, FileSpreadsheet, PieChart } from 'lucide-react';
 import { totalDataStore } from '../lib/dataStore';
+import { useSalesData } from '../hooks/useSalesData';
 import * as XLSX from 'xlsx';
 
 interface Product {
@@ -26,23 +27,74 @@ interface ClientLastPurchaseDetailModalProps {
 export const ClientLastPurchaseDetailModal: React.FC<ClientLastPurchaseDetailModalProps> = ({ client, onClose, onBack }) => {
     const [isExporting, setIsExporting] = useState(false);
 
+    const clientUltimaCompra = useMemo(() => {
+        return totalDataStore.clientesUltimaCompra.find(c => c.cnpj === client.cnpj);
+    }, [client.cnpj]);
+
+    const lastYear = useMemo(() => {
+        if (!clientUltimaCompra?.ultima_compra) return null;
+        return new Date(clientUltimaCompra.ultima_compra + 'T00:00:00').getUTCFullYear();
+    }, [clientUltimaCompra]);
+
+    // Fetch data for the year of last purchase if needed
+    useSalesData(lastYear || 'all');
+
     const lastPurchaseData = useMemo(() => {
-        const clientUltimaCompra = totalDataStore.clientesUltimaCompra.find(c => c.cnpj === client.cnpj);
         if (!clientUltimaCompra) return null;
 
         const lastDateStr = clientUltimaCompra.ultima_compra;
         if (!lastDateStr) return null;
 
         const lastDateObj = new Date(lastDateStr + 'T00:00:00');
-        const lastYear = lastDateObj.getUTCFullYear();
+        const lYear = lastDateObj.getUTCFullYear();
         const lastMonth = lastDateObj.getUTCMonth() + 1;
 
-        const clientSalesMonth = totalDataStore.vendasProdutosMes.filter(s => 
+        interface SaleItem {
+            codigo_produto: string;
+            produto: string;
+            grupo: string;
+            qtde_total: number;
+            faturamento_total: number;
+        }
+
+        // Tentar buscar tanto na view de produtos quanto na store de sales granulares
+        let clientSalesMonth: SaleItem[] = totalDataStore.vendasProdutosMes.filter(s => 
             s.cnpj === client.cnpj && 
-            s.ano === lastYear && 
+            s.ano === lYear && 
             s.mes === lastMonth && 
             Number(s.faturamento_total) > 0
         );
+
+        // Se não achou na view, tenta nos dados granulares (pode estar lá se foi buscado recentemente)
+        if (clientSalesMonth.length === 0) {
+            const granularSales = totalDataStore.sales.filter(s => {
+                const sDate = new Date(s.data + 'T00:00:00');
+                return s.cnpj === client.cnpj && 
+                       sDate.getUTCFullYear() === lYear && 
+                       (sDate.getUTCMonth() + 1) === lastMonth;
+            });
+
+            if (granularSales.length > 0) {
+                // Agrupar por produto
+                const grouped = new Map<string, SaleItem>();
+                granularSales.forEach(s => {
+                    const key = s.codigo_produto || s.produto;
+                    const current = grouped.get(key) || { 
+                        codigo_produto: s.codigo_produto || '', 
+                        produto: s.produto || '', 
+                        grupo: s.grupo || 'SEM GRUPO', 
+                        qtde_total: 0, 
+                        faturamento_total: 0 
+                    };
+                    grouped.set(key, {
+                        ...current,
+                        qtde_total: current.qtde_total + (Number(s.quantidade) || 0),
+                        faturamento_total: current.faturamento_total + (Number(s.faturamento) || 0)
+                    });
+                });
+                clientSalesMonth = Array.from(grouped.values());
+            }
+        }
 
         if (clientSalesMonth.length === 0) return null;
 
@@ -109,7 +161,7 @@ export const ClientLastPurchaseDetailModal: React.FC<ClientLastPurchaseDetailMod
             totalUnits,
             categories
         };
-    }, [client.cnpj]);
+    }, [client.cnpj, clientUltimaCompra]);
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
@@ -138,7 +190,7 @@ export const ClientLastPurchaseDetailModal: React.FC<ClientLastPurchaseDetailMod
         }
     };
 
-    if (!lastPurchaseData) return null;
+    const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
 
     return createPortal(
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 md:p-6 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
@@ -158,8 +210,8 @@ export const ClientLastPurchaseDetailModal: React.FC<ClientLastPurchaseDetailMod
                     <div className="flex items-center gap-3">
                         <button 
                             onClick={handleExportExcel}
-                            disabled={isExporting}
-                            className="hidden sm:flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg text-[10px] font-black uppercase tracking-widest"
+                            disabled={isExporting || !lastPurchaseData}
+                            className="hidden sm:flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
                         >
                             <FileSpreadsheet className="w-3.5 h-3.5" />
                             Excel
@@ -181,101 +233,121 @@ export const ClientLastPurchaseDetailModal: React.FC<ClientLastPurchaseDetailMod
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto bg-white custom-scrollbar p-6 md:p-8 space-y-8">
-                    
-                    {/* Top Stats & Categories */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                        {/* Summary Card */}
-                        <div className="lg:col-span-1 bg-slate-900 rounded-[32px] p-6 text-white shadow-xl flex flex-col border-b-4 border-blue-600 h-fit">
-                            <div>
-                                <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.3em] mb-4">Resumo do Pedido</p>
-                                <div className="space-y-4">
-                                    <div className="flex justify-between items-end">
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase">Data</span>
-                                        <span className="text-lg font-black tabular-nums">{new Date(lastPurchaseData.date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                <div className="flex-1 overflow-y-auto bg-white custom-scrollbar p-6 md:p-8">
+                    {!lastPurchaseData ? (
+                        <div className="h-full flex flex-col items-center justify-center py-20 space-y-4">
+                            {isLoading ? (
+                                <>
+                                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest animate-pulse">Buscando detalhes da compra...</p>
+                                </>
+                            ) : (
+                                <>
+                                    <Package className="w-16 h-16 text-slate-100" />
+                                    <div className="text-center">
+                                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Nenhum detalhe encontrado</p>
+                                        <p className="text-[10px] text-slate-300 font-bold mt-1">A data da última compra é {clientUltimaCompra?.ultima_compra ? new Date(clientUltimaCompra.ultima_compra + 'T00:00:00').toLocaleDateString('pt-BR') : 'não registrada'}</p>
                                     </div>
-                                    <div className="flex justify-between items-end">
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase">Total de SKUs</span>
-                                        <span className="text-lg font-black tabular-nums">{lastPurchaseData.totalSkus}</span>
+                                </>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="space-y-8 animate-fadeIn">
+                            {/* Top Stats & Categories */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                                {/* Summary Card */}
+                                <div className="lg:col-span-1 bg-slate-900 rounded-[32px] p-6 text-white shadow-xl flex flex-col border-b-4 border-blue-600 h-fit">
+                                    <div>
+                                        <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.3em] mb-4">Resumo do Pedido</p>
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Data</span>
+                                                <span className="text-lg font-black tabular-nums">{new Date(lastPurchaseData.date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                                            </div>
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Total de SKUs</span>
+                                                <span className="text-lg font-black tabular-nums">{lastPurchaseData.totalSkus}</span>
+                                            </div>
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Unidades</span>
+                                                <span className="text-lg font-black tabular-nums">{lastPurchaseData.totalUnits}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="flex justify-between items-end">
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase">Total de Unidades</span>
-                                        <span className="text-lg font-black tabular-nums">{lastPurchaseData.totalUnits}</span>
+                                    <div className="mt-8 pt-6 border-t border-white/10">
+                                        <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.3em] mb-1">Valor Total</p>
+                                        <h4 className="text-3xl font-black">{formatCurrency(lastPurchaseData.totalValue)}</h4>
+                                    </div>
+                                </div>
+
+                                {/* Category Participation */}
+                                <div className="lg:col-span-2 bg-slate-50 rounded-[32px] p-6 border border-slate-100">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <div className="flex items-center gap-2">
+                                            <PieChart className="w-4 h-4 text-blue-600" />
+                                            <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Participação por Categoria</h4>
+                                        </div>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mix do Pedido</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {lastPurchaseData.categories.map((cat, idx) => (
+                                            <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <p className="text-[9px] font-black text-slate-800 uppercase tracking-tight truncate max-w-[70%]">{cat.name}</p>
+                                                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg">{cat.percent.toFixed(1)}%</span>
+                                                </div>
+                                                <div className="flex justify-between items-end">
+                                                    <div className="space-y-0.5">
+                                                        <p className="text-[7px] font-black text-slate-400 uppercase">Faturamento</p>
+                                                        <p className="text-[11px] font-black text-slate-900">{formatCurrency(cat.value)}</p>
+                                                    </div>
+                                                    <div className="text-right space-y-0.5">
+                                                        <p className="text-[7px] font-black text-slate-400 uppercase">Volume / Itens</p>
+                                                        <p className="text-[10px] font-bold text-slate-600">{cat.units} UN • {cat.skus} SKUs</p>
+                                                    </div>
+                                                </div>
+                                                <div className="w-full h-1.5 bg-slate-100 rounded-full mt-3 overflow-hidden">
+                                                    <div className="h-full bg-blue-600" style={{ width: `${cat.percent}%` }}></div>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
-                            <div className="mt-8 pt-6 border-t border-white/10">
-                                <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.3em] mb-1">Valor Total</p>
-                                <h4 className="text-3xl font-black">{formatCurrency(lastPurchaseData.totalValue)}</h4>
+
+                            {/* Products Table */}
+                            <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                        <tr className="border-b border-slate-200">
+                                            <th className="px-8 py-5">SKU</th>
+                                            <th className="px-6 py-5">Produto</th>
+                                            <th className="px-6 py-5">Categoria</th>
+                                            <th className="px-6 py-5 text-center">Qtd</th>
+                                            <th className="px-6 py-5 text-right">Unitário</th>
+                                            <th className="px-8 py-5 text-right">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {lastPurchaseData.products.map((p, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
+                                                <td className="px-8 py-5 text-[10px] font-bold text-slate-400 font-mono">{p.sku}</td>
+                                                <td className="px-6 py-5">
+                                                    <span className="font-black text-slate-700 uppercase text-[11px] tracking-tight group-hover:text-blue-600">{p.name}</span>
+                                                </td>
+                                                <td className="px-6 py-5">
+                                                    <span className="text-[9px] font-black text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded-md">{p.category}</span>
+                                                </td>
+                                                <td className="px-6 py-5 text-center font-black text-slate-900 tabular-nums">{p.quantity}</td>
+                                                <td className="px-6 py-5 text-right text-slate-500 font-bold tabular-nums">{formatCurrency(p.unitValue)}</td>
+                                                <td className="px-8 py-5 text-right font-black text-slate-900 tabular-nums">{formatCurrency(p.totalValue)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-
-                        {/* Category Participation */}
-                        <div className="lg:col-span-2 bg-slate-50 rounded-[32px] p-6 border border-slate-100">
-                            <div className="flex items-center justify-between mb-6">
-                                <div className="flex items-center gap-2">
-                                    <PieChart className="w-4 h-4 text-blue-600" />
-                                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Participação por Categoria</h4>
-                                </div>
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mix do Pedido</span>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {lastPurchaseData.categories.map((cat, idx) => (
-                                    <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <p className="text-[9px] font-black text-slate-800 uppercase tracking-tight truncate max-w-[70%]">{cat.name}</p>
-                                            <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg">{cat.percent.toFixed(1)}%</span>
-                                        </div>
-                                        <div className="flex justify-between items-end">
-                                            <div className="space-y-0.5">
-                                                <p className="text-[7px] font-black text-slate-400 uppercase">Faturamento</p>
-                                                <p className="text-[11px] font-black text-slate-900">{formatCurrency(cat.value)}</p>
-                                            </div>
-                                            <div className="text-right space-y-0.5">
-                                                <p className="text-[7px] font-black text-slate-400 uppercase">Volume / Itens</p>
-                                                <p className="text-[10px] font-bold text-slate-600">{cat.units} UN • {cat.skus} SKUs</p>
-                                            </div>
-                                        </div>
-                                        <div className="w-full h-1.5 bg-slate-100 rounded-full mt-3 overflow-hidden">
-                                            <div className="h-full bg-blue-600" style={{ width: `${cat.percent}%` }}></div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Products Table */}
-                    <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
-                        <table className="w-full text-left border-collapse">
-                            <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                <tr className="border-b border-slate-200">
-                                    <th className="px-8 py-5">SKU</th>
-                                    <th className="px-6 py-5">Produto</th>
-                                    <th className="px-6 py-5">Categoria</th>
-                                    <th className="px-6 py-5 text-center">Qtd</th>
-                                    <th className="px-6 py-5 text-right">Unitário</th>
-                                    <th className="px-8 py-5 text-right">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {lastPurchaseData.products.map((p, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
-                                        <td className="px-8 py-5 text-[10px] font-bold text-slate-400 font-mono">{p.sku}</td>
-                                        <td className="px-6 py-5">
-                                            <span className="font-black text-slate-700 uppercase text-[11px] tracking-tight group-hover:text-blue-600">{p.name}</span>
-                                        </td>
-                                        <td className="px-6 py-5">
-                                            <span className="text-[9px] font-black text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded-md">{p.category}</span>
-                                        </td>
-                                        <td className="px-6 py-5 text-center font-black text-slate-900 tabular-nums">{p.quantity}</td>
-                                        <td className="px-6 py-5 text-right text-slate-500 font-bold tabular-nums">{formatCurrency(p.unitValue)}</td>
-                                        <td className="px-8 py-5 text-right font-black text-slate-900 tabular-nums">{formatCurrency(p.totalValue)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                    )}
                 </div>
             </div>
         </div>,

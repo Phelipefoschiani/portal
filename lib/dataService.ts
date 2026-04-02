@@ -1,8 +1,7 @@
 
 import { supabase } from './supabase';
 import { totalDataStore } from './dataStore';
-import { Target, Investment, Sale, Client } from '../types';
-import { aggregateSales } from './aggregations';
+import { Target, Investment, Client, VendaConsolidada, VendaClienteMes, VendaCanalMes, VendaProdutoMes, ClienteUltimaCompra, Sale } from '../types';
 
 interface SupabaseError {
     message: string;
@@ -61,13 +60,16 @@ export const fetchClients = async (onUpdate?: (viewName: string) => void) => {
     const { userId, userRole } = totalDataStore;
     if (!userId) return;
 
+    const role = userRole?.toLowerCase() || '';
+    const isPrivileged = role === 'admin' || role === 'diretor' || role === 'gerente' || role === 'director' || role === 'manager';
+
     // Se já temos clientes, não busca novamente (a menos que queiramos forçar)
     if (totalDataStore.clients.length > 0) return;
 
     try {
         const data = await fetchAllRecords<Client>(() => {
             let q = supabase.from('clientes').select('*');
-            if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+            if (!isPrivileged) q = q.eq('usuario_id', userId);
             return q.order('nome_fantasia');
         });
         
@@ -83,6 +85,9 @@ export const fetchClients = async (onUpdate?: (viewName: string) => void) => {
 export const fetchSalesForMonths = async (year: number, months: number[], onUpdate?: (viewName: string) => void) => {
     const { userId, userRole } = totalDataStore;
     if (!userId) return;
+
+    const role = userRole?.toLowerCase() || '';
+    const isPrivileged = role === 'admin' || role === 'diretor' || role === 'gerente' || role === 'director' || role === 'manager';
 
     // Identificar meses que ainda não foram buscados e não estão sendo buscados agora
     const missingMonths = months.filter(m => {
@@ -103,27 +108,67 @@ export const fetchSalesForMonths = async (year: number, months: number[], onUpda
     totalDataStore.loading.vendasProdutosMes = true;
 
     try {
-        // Busca os dados de todos os meses faltando em paralelo
-        const salesResults = await Promise.all(missingMonths.map(async (month) => {
-            const start = `${year}-${month.toString().padStart(2, '0')}-01`;
-            const lastDay = new Date(year, month, 0).getDate();
-            const end = `${year}-${month.toString().padStart(2, '0')}-${lastDay}`;
+        // Busca os dados de todos os meses faltando em paralelo usando as VIEWS do Supabase
+        const results = await Promise.all(missingMonths.map(async (month) => {
+            const [vConsolidadas, vClientes, vCanais, vProdutos, vGranular] = await Promise.all([
+                fetchAllRecords<VendaConsolidada>(() => {
+                    let q = supabase.from('vw_vendas_consolidadas').select('*').eq('ano', year).eq('mes', month);
+                    if (!isPrivileged) q = q.eq('usuario_id', userId);
+                    return q;
+                }),
+                fetchAllRecords<VendaClienteMes>(() => {
+                    let q = supabase.from('vw_vendas_clientes_mes').select('*').eq('ano', year).eq('mes', month);
+                    if (!isPrivileged) q = q.eq('usuario_id', userId);
+                    return q;
+                }),
+                fetchAllRecords<VendaCanalMes>(() => {
+                    let q = supabase.from('vw_vendas_canais_mes').select('*').eq('ano', year).eq('mes', month);
+                    if (!isPrivileged) q = q.eq('usuario_id', userId);
+                    return q;
+                }),
+                fetchAllRecords<VendaProdutoMes>(() => {
+                    let q = supabase.from('vw_vendas_produtos_mes').select('*').eq('ano', year).eq('mes', month);
+                    if (!isPrivileged) q = q.eq('usuario_id', userId);
+                    return q;
+                }),
+                fetchAllRecords<Sale>(() => {
+                    const start = `${year}-${month.toString().padStart(2, '0')}-01`;
+                    const end = new Date(year, month, 0).toISOString().split('T')[0];
+                    let q = supabase.from('dados_vendas')
+                        .select('faturamento, data, cnpj, produto, codigo_produto, canal_vendas, cliente_nome, grupo, usuario_id, qtde_faturado')
+                        .gte('data', start)
+                        .lte('data', end);
+                    if (!isPrivileged) q = q.eq('usuario_id', userId);
+                    return q;
+                })
+            ]);
             
-            return await fetchAllRecords<Sale>(() => {
-                let q = supabase.from('dados_vendas').select('*').gte('data', start).lte('data', end);
-                if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
-                return q;
-            });
+            return { month, vConsolidadas, vClientes, vCanais, vProdutos, vGranular };
         }));
 
-        // Achata os resultados em um único array
-        const newSales = salesResults.flat();
-        
         // Marcar meses como buscados
         missingMonths.forEach(m => {
             const key = `${year}-${m.toString().padStart(2, '0')}`;
             totalDataStore.fetchedMonths.add(key);
             fetchingMonths.delete(key);
+        });
+
+        // Atualizar o store com os dados das views
+        results.forEach(res => {
+            totalDataStore.vendasConsolidadas = [...totalDataStore.vendasConsolidadas, ...res.vConsolidadas];
+            totalDataStore.vendasClientesMes = [...totalDataStore.vendasClientesMes, ...res.vClientes];
+            totalDataStore.vendasCanaisMes = [...totalDataStore.vendasCanaisMes, ...res.vCanais];
+            totalDataStore.vendasProdutosMes = [...totalDataStore.vendasProdutosMes, ...res.vProdutos];
+
+            // Popular totalDataStore.sales com dados granulares reais da dados_vendas
+            const granularSales: Sale[] = res.vGranular.map(s => ({
+                ...s,
+                faturamento: Number(s.faturamento) || 0,
+                quantidade: Number(s.quantidade || s.qtde_faturado) || 0,
+                grupo: s.grupo || 'SEM GRUPO',
+                canal_vendas: s.canal_vendas || 'GERAL / OUTROS'
+            }));
+            totalDataStore.sales = [...totalDataStore.sales, ...granularSales];
         });
 
         // Também buscamos metas e investimentos para o ano se ainda não tivermos nada desse ano
@@ -140,14 +185,14 @@ export const fetchSalesForMonths = async (year: number, months: number[], onUpda
             const [targets, investments] = await Promise.all([
                 !hasTargetsForYear ? fetchAllRecords<Target>(() => {
                     let q = supabase.from('metas_usuarios').select('*').eq('ano', year);
-                    if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+                    if (!isPrivileged) q = q.eq('usuario_id', userId);
                     return q;
                 }) : Promise.resolve([]),
                 !hasInvestmentsForYear ? fetchAllRecords<Investment>(() => {
                     const start = `${year}-01-01`;
                     const end = `${year}-12-31`;
                     let q = supabase.from('investimentos').select('*').gte('data', start).lte('data', end).eq('status', 'approved');
-                    if (userRole !== 'admin' && userRole !== 'director') q = q.eq('usuario_id', userId);
+                    if (!isPrivileged) q = q.eq('usuario_id', userId);
                     return q;
                 }) : Promise.resolve([])
             ]);
@@ -158,31 +203,40 @@ export const fetchSalesForMonths = async (year: number, months: number[], onUpda
             totalDataStore.loading.investments = false;
         }
 
-        if (newSales.length > 0) {
-            // Evitar duplicatas por ID
-            const existingIds = new Set(totalDataStore.sales.map(s => s.id));
-            const uniqueNewSales = newSales.filter(s => !existingIds.has(s.id));
-            totalDataStore.sales = [...totalDataStore.sales, ...uniqueNewSales];
-            
-            const aggregations = aggregateSales(totalDataStore.sales);
-            totalDataStore.vendasConsolidadas = aggregations.vendasConsolidadas;
-            totalDataStore.clientesUltimaCompra = aggregations.clientesUltimaCompra;
-            totalDataStore.vendasClientesMes = aggregations.vendasClientesMes;
-            totalDataStore.vendasCanaisMes = aggregations.vendasCanaisMes;
-            totalDataStore.vendasProdutosMes = aggregations.vendasProdutosMes;
+        if (results.some(r => r.vConsolidadas.length > 0)) {
+            // Atualizar atividade dos clientes (usando a data da última compra da view se disponível, 
+            // ou mantendo a lógica de buscar a maior data das vendas consolidadas)
+            // Como as views já são por mês, a data de última compra real precisaria de outra view ou lógica
+            // Para simplificar, vamos usar o último dia do mês da venda consolidada como referência aproximada
+            // ou apenas não atualizar aqui se a view não trouxer a data exata.
+            // O ideal é ter a view view_pcn_clientes_ultima_compra
 
-            // Atualizar atividade dos clientes
-            const ultimaCompraMap = new Map<string, string>();
-            aggregations.clientesUltimaCompra.forEach(c => {
-                if (c.cnpj) ultimaCompraMap.set(c.cnpj.replace(/\D/g, ''), c.ultima_compra);
+            // Se tivermos a view de última compra, buscamos ela também
+            const missingCucMonths = missingMonths.filter(m => {
+                const key = `cuc-${year}-${m}`;
+                return !totalDataStore.fetchedMonths.has(key);
             });
 
-            totalDataStore.clients = totalDataStore.clients.map(client => {
-                const cleanCnpj = client.cnpj.replace(/\D/g, '');
-                const lastPurchase = ultimaCompraMap.get(cleanCnpj);
-                if (!lastPurchase) return { ...client, lastPurchaseDate: undefined };
-                return { ...client, lastPurchaseDate: lastPurchase };
-            });
+            if (missingCucMonths.length > 0) {
+                const cucData = await fetchAllRecords<ClienteUltimaCompra>(() => {
+                    const q = supabase.from('vw_clientes_ultima_compra').select('*');
+                    // Esta view geralmente não é por mês, mas sim o estado atual
+                    return q;
+                });
+                totalDataStore.clientesUltimaCompra = cucData;
+                
+                const cucMap = new Map<string, string>();
+                cucData.forEach(c => {
+                    if (c.cnpj) cucMap.set(c.cnpj.replace(/\D/g, ''), c.ultima_compra);
+                });
+
+                totalDataStore.clients = totalDataStore.clients.map(client => {
+                    const cleanCnpj = client.cnpj.replace(/\D/g, '');
+                    const lastPurchase = cucMap.get(cleanCnpj);
+                    if (!lastPurchase) return client;
+                    return { ...client, lastPurchaseDate: lastPurchase };
+                });
+            }
         }
 
         if (targetsData.length > 0) {

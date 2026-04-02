@@ -5,7 +5,6 @@ import html2canvas from 'html2canvas';
 import { totalDataStore } from '../../lib/dataStore';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../Button';
-import { RepPerformanceModal } from './RepPerformanceModal';
 
 type KpiDetailType = 'meta' | 'faturado' | 'positivacao' | 'verba' | null;
 
@@ -17,8 +16,17 @@ interface TeamDetail {
     annualMeta: number;
     faturado: number;
     verbaAnnualUsed: number;
+    verbaPeriodUsed: number;
     positivacao: number;
     totalClientes: number;
+}
+
+interface PositivacaoData {
+    usuario_id: string;
+    cnpj: string;
+    cliente_nome: string;
+    ano_referencia: number;
+    meses_compra: number[];
 }
 
 // --- NOVO SUB-MODAL: DETALHAMENTO DE POSITIVAÇÃO POR CLIENTE (DRILL-DOWN) ---
@@ -27,33 +35,22 @@ const RepPositDetailModal: React.FC<{
     selectedYear: number;
     selectedMonths: number[];
     onClose: () => void;
-}> = ({ rep, selectedYear, selectedMonths, onClose }) => {
+    positivacaoData: PositivacaoData[];
+}> = ({ rep, selectedYear, selectedMonths, onClose, positivacaoData }) => {
     const clientData = useMemo(() => {
-        const sales = totalDataStore.sales.filter(s => {
-            const d = new Date(s.data + 'T00:00:00');
-            const m = d.getUTCMonth() + 1;
-            const y = d.getUTCFullYear();
-            return s.usuario_id === rep.id && selectedMonths.includes(m) && y === selectedYear;
-        });
-
-        const portfolio = totalDataStore.clients.filter(c => c.usuario_id === rep.id);
+        // Filtra os dados da VIEW para este representante e ano
+        const repData = positivacaoData.filter(d => d.usuario_id === rep.id && d.ano_referencia === selectedYear);
         
-        // Carteira base
-        const basePortfolio = portfolio.filter(c => {
-            if (!c.lastPurchaseDate) {
-                return sales.some(s => s.cliente_id === c.id && new Date(s.data + 'T00:00:00').getUTCFullYear() === selectedYear - 1);
-            }
-            return new Date(c.lastPurchaseDate + 'T00:00:00').getUTCFullYear() === selectedYear - 1;
-        });
-
-        const activeCnpjsInPeriod = new Set(sales.map(s => String(s.cnpj || '').replace(/\D/g, '')));
-        
-        return basePortfolio.map(c => ({
-            nome: c.nome_fantasia,
-            cnpj: c.cnpj,
-            positivado: activeCnpjsInPeriod.has(String(c.cnpj || '').replace(/\D/g, ''))
-        })).sort((a, b) => (a.positivado === b.positivado ? 0 : a.positivado ? -1 : 1));
-    }, [rep.id, selectedYear, selectedMonths]);
+        return repData.map(d => {
+            // Verifica se o cliente comprou em algum dos meses selecionados
+            const positivado = d.meses_compra.some(m => selectedMonths.includes(m));
+            return {
+                nome: d.cliente_nome,
+                cnpj: d.cnpj,
+                positivado
+            };
+        }).sort((a, b) => (a.positivado === b.positivado ? 0 : a.positivado ? -1 : 1));
+    }, [rep.id, selectedYear, selectedMonths, positivacaoData]);
 
     return createPortal(
         <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
@@ -103,6 +100,78 @@ const RepPositDetailModal: React.FC<{
     );
 };
 
+// --- NOVO SUB-MODAL: DETALHAMENTO DE VERBA POR REPRESENTANTE (DRILL-DOWN) ---
+const RepVerbaDetailModal: React.FC<{
+    rep: TeamDetail;
+    selectedYear: number;
+    onClose: () => void;
+    formatBRL: (v: number) => string;
+}> = ({ rep, selectedYear, onClose, formatBRL }) => {
+    const investmentData = useMemo(() => {
+        return totalDataStore.investments.filter(inv => {
+            const d = new Date(inv.data + 'T00:00:00');
+            return inv.usuario_id === rep.id && d.getUTCFullYear() === selectedYear && inv.status === 'approved';
+        }).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+    }, [rep.id, selectedYear]);
+
+    return createPortal(
+        <div className="fixed inset-0 z-[260] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white w-full max-w-3xl rounded-[40px] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden border border-white/20">
+                <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-amber-100 text-amber-600 rounded-2xl">
+                            <Wallet className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Verba Utilizada: {rep.nome}</h3>
+                            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mt-1">Investimentos Aprovados em {selectedYear}</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-white rounded-full text-slate-400">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                    {investmentData.length === 0 ? (
+                        <div className="text-center py-20">
+                            <p className="text-slate-400 font-bold text-sm uppercase tracking-widest">Nenhum investimento aprovado neste ano.</p>
+                        </div>
+                    ) : (
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
+                                <tr>
+                                    <th className="px-6 py-5">Data</th>
+                                    <th className="px-6 py-5">Descrição</th>
+                                    <th className="px-6 py-5 text-right">Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {investmentData.map((inv, i) => (
+                                    <tr key={i} className="hover:bg-slate-50/30 transition-colors">
+                                        <td className="px-6 py-5 text-[11px] font-bold text-slate-500">
+                                            {new Date(inv.data + 'T00:00:00').toLocaleDateString('pt-BR')}
+                                        </td>
+                                        <td className="px-6 py-5 text-[11px] font-bold text-slate-700 max-w-xs truncate">
+                                            {inv.observacao || 'Sem descrição'}
+                                        </td>
+                                        <td className="px-6 py-5 text-right text-[11px] font-black text-amber-600 tabular-nums">
+                                            {formatBRL(Number(inv.valor_total_investimento))}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+                <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                    <Button onClick={onClose} className="rounded-2xl px-10 font-black text-[10px] uppercase">Fechar Detalhe</Button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
+
 // --- KPI DETAIL MODAL ---
 const KpiDetailModal: React.FC<{ 
     type: KpiDetailType; 
@@ -111,7 +180,9 @@ const KpiDetailModal: React.FC<{
     formatBRL: (v: number) => string;
     periodLabel: string;
     selectedYear: number;
-}> = ({ type, details, onClose, formatBRL, periodLabel, selectedYear }) => {
+    selectedMonths: number[];
+    positivacaoData: PositivacaoData[];
+}> = ({ type, details, onClose, formatBRL, periodLabel, selectedYear, selectedMonths, positivacaoData }) => {
     const [selectedRepForVerba, setSelectedRepForVerba] = useState<TeamDetail | null>(null);
     const [selectedRepForPosit, setSelectedRepForPosit] = useState<TeamDetail | null>(null);
 
@@ -272,6 +343,7 @@ const KpiDetailModal: React.FC<{
                     selectedYear={selectedYear} 
                     selectedMonths={selectedMonths} 
                     onClose={() => setSelectedRepForPosit(null)} 
+                    positivacaoData={positivacaoData}
                 />
             )}
         </>
@@ -287,7 +359,6 @@ export const ManagerDashboard: React.FC = () => {
     const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailType>(null);
     const [teamDetails, setTeamDetails] = useState<TeamDetail[]>([]);
     const [selectedRepId, setSelectedRepId] = useState<string>('all');
-    const [selectedRepForPerformance, setSelectedRepForPerformance] = useState<TeamDetail | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     
     const session = JSON.parse(sessionStorage.getItem('pcn_session') || '{}');
@@ -297,70 +368,54 @@ export const ManagerDashboard: React.FC = () => {
     // --- ESTADO ADICIONADO PARA DOWNLOAD DO RANKING ---
     const rankingRef = useRef<HTMLDivElement>(null);
     const [isExportingRanking, setIsExportingRanking] = useState(false);
+    const [positivacaoData, setPositivacaoData] = useState<PositivacaoData[]>([]);
     // ---------------------------------------------------
 
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const processConsolidatedData = useCallback(() => {
+    const processConsolidatedData = useCallback((pDataOverride?: PositivacaoData[]) => {
         const reps = totalDataStore.users.filter(u => {
             const role = u.nivel_acesso?.toLowerCase() || u.role?.toLowerCase() || '';
             return role !== 'diretor' && role !== 'gerente' && role !== 'admin';
         });
-        const sales = totalDataStore.sales;
+        const salesConsolidated = totalDataStore.vendasConsolidadas;
         const targets = totalDataStore.targets;
         const invs = totalDataStore.investments;
-        const portfolio = totalDataStore.clients;
+        const pData = pDataOverride || positivacaoData;
 
         const details = reps.map(rep => {
             const repMeta = targets.filter(t => t.usuario_id === rep.id && selectedMonths.includes(t.mes) && Number(t.ano) === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             const annualMeta = targets.filter(t => t.usuario_id === rep.id && Number(t.ano) === selectedYear).reduce((a, b) => a + Number(b.valor), 0);
             
-            const repSalesList = sales.filter(s => {
-                const d = new Date(s.data + 'T00:00:00');
-                const m = d.getUTCMonth() + 1;
-                const y = d.getUTCFullYear();
-                return s.usuario_id === rep.id && selectedMonths.includes(m) && y === selectedYear;
-            });
-
-            const repSales = repSalesList.reduce((a, b) => a + Number(b.faturamento), 0);
+            const repSales = salesConsolidated
+                .filter(s => s.usuario_id === rep.id && selectedMonths.includes(s.mes) && s.ano === selectedYear)
+                .reduce((a, b) => a + Number(b.faturamento_total), 0);
             
             const verbaAnnualUsed = invs.filter(inv => {
                 const d = new Date(inv.data + 'T00:00:00');
                 return inv.usuario_id === rep.id && d.getUTCFullYear() === selectedYear && inv.status === 'approved';
             }).reduce((a, b) => a + Number(b.valor_total_investimento), 0);
 
-            const repClients = portfolio.filter(c => {
-                if (c.usuario_id !== rep.id) return false;
-                
-                // Regra de Carteira:
-                // Carteira base = todos os clientes que compraram no ano anterior ao selecionado
-                // Se não tem lastPurchaseDate, tentamos verificar nas vendas do ano anterior
-                if (!c.lastPurchaseDate) {
-                    const boughtLastYear = sales.some(s => s.cliente_id === c.id && new Date(s.data + 'T00:00:00').getUTCFullYear() === selectedYear - 1);
-                    return boughtLastYear;
-                }
+            const verbaPeriodUsed = invs.filter(inv => {
+                const d = new Date(inv.data + 'T00:00:00');
+                const m = d.getUTCMonth() + 1;
+                const y = d.getUTCFullYear();
+                return inv.usuario_id === rep.id && y === selectedYear && selectedMonths.includes(m) && inv.status === 'approved';
+            }).reduce((a, b) => a + Number(b.valor_total_investimento), 0);
 
-                const lastPurchaseDate = new Date(c.lastPurchaseDate + 'T00:00:00');
-                const lastPurchaseYear = lastPurchaseDate.getUTCFullYear();
-                
-                // Carteira base é composta por clientes que compraram no ano anterior
-                return lastPurchaseYear === selectedYear - 1;
-            });
-            
-            // Para calcular a positivação, precisamos comparar os CNPJs da carteira base com os CNPJs que compraram no período do filtro
-            const basePortfolioCnpjs = new Set(repClients.map(c => String(c.cnpj || '').replace(/\D/g, '')));
-            
-            // repSalesList já contém as vendas do período filtrado para este representante
-            const activeCnpjsInPeriod = new Set(repSalesList.map(s => String(s.cnpj || '').replace(/\D/g, '')));
+            // Regra de Carteira usando a nova VIEW:
+            // Carteira base = todos os clientes que compraram no ano anterior ao selecionado
+            const repBaseData = pData.filter(d => d.usuario_id === rep.id && d.ano_referencia === selectedYear);
+            const totalClientes = repBaseData.length;
             
             // Positivação: quantos clientes da carteira base compraram no período filtrado
-            const repPosit = Array.from(basePortfolioCnpjs).filter(cnpj => activeCnpjsInPeriod.has(cnpj)).length;
+            const repPosit = repBaseData.filter(d => d.meses_compra.some(m => selectedMonths.includes(m))).length;
 
-            return { id: rep.id, nome: rep.nome, role: rep.role || '', meta: repMeta, annualMeta, faturado: repSales, verbaAnnualUsed, positivacao: repPosit, totalClientes: repClients.length };
+            return { id: rep.id, nome: rep.nome, role: rep.role || '', meta: repMeta, annualMeta, faturado: repSales, verbaAnnualUsed, verbaPeriodUsed, positivacao: repPosit, totalClientes };
         });
 
         setTeamDetails(details);
-    }, [selectedMonths, selectedYear]);
+    }, [selectedMonths, selectedYear, positivacaoData]);
 
     const [dataUpdateToken, setDataUpdateToken] = useState(0);
 
@@ -371,7 +426,16 @@ export const ManagerDashboard: React.FC = () => {
                 totalDataStore.userId = userId;
                 totalDataStore.userRole = userRole;
 
-                // Busca dados da nova VIEW
+                // Busca dados da nova VIEW de Positivação (sem limite de 1000 linhas, pois já vem resumido)
+                const { data: positData } = await supabase
+                    .from('view_pcn_positivacao_gerencial')
+                    .select('*')
+                    .eq('ano_referencia', selectedYear);
+                
+                const pData = positData || [];
+                setPositivacaoData(pData);
+
+                // Busca dados da VIEW de Visão Geral
                 await supabase
                     .from('view_gerente_visao_geral')
                     .select('*')
@@ -387,6 +451,8 @@ export const ManagerDashboard: React.FC = () => {
                     fetchInvestments(selectedYear)
                 ]);
 
+                // Processa os dados imediatamente antes de tirar o loading
+                processConsolidatedData(pData);
                 setDataUpdateToken(prev => prev + 1);
             } catch (e) {
                 console.error('Error fetching manager data:', e);
@@ -395,7 +461,7 @@ export const ManagerDashboard: React.FC = () => {
             }
         };
         loadAllData();
-    }, [selectedYear, selectedMonths, userId, userRole]);
+    }, [selectedYear, selectedMonths, userId, userRole]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         const handleUpdate = () => {
@@ -416,17 +482,19 @@ export const ManagerDashboard: React.FC = () => {
                 totalFaturado: acc.totalFaturado + curr.faturado,
                 totalClientes: acc.totalClientes + curr.totalClientes,
                 clientesPositivados: acc.clientesPositivados + curr.positivacao,
-                investimentoAno: acc.investimentoAno + curr.verbaAnnualUsed
-            }), { totalMeta: 0, totalFaturado: 0, totalClientes: 0, clientesPositivados: 0, investimentoAno: 0 });
+                investimentoAno: acc.investimentoAno + curr.verbaAnnualUsed,
+                investimentoPeriodo: acc.investimentoPeriodo + curr.verbaPeriodUsed
+            }), { totalMeta: 0, totalFaturado: 0, totalClientes: 0, clientesPositivados: 0, investimentoAno: 0, investimentoPeriodo: 0 });
         } else {
             const rep = teamDetails.find(r => r.id === selectedRepId);
-            if (!rep) return { totalMeta: 0, totalFaturado: 0, totalClientes: 0, clientesPositivados: 0, investimentoAno: 0 };
+            if (!rep) return { totalMeta: 0, totalFaturado: 0, totalClientes: 0, clientesPositivados: 0, investimentoAno: 0, investimentoPeriodo: 0 };
             return {
                 totalMeta: rep.meta,
                 totalFaturado: rep.faturado,
                 totalClientes: rep.totalClientes,
                 clientesPositivados: rep.positivacao,
-                investimentoAno: rep.verbaAnnualUsed
+                investimentoAno: rep.verbaAnnualUsed,
+                investimentoPeriodo: rep.verbaPeriodUsed
             };
         }
     }, [teamDetails, selectedRepId]);
@@ -604,10 +672,18 @@ export const ManagerDashboard: React.FC = () => {
                     </div>
                 </div>
 
-                <div onClick={() => setActiveKpiDetail('verba')} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group cursor-pointer hover:border-amber-500 transition-all active:scale-95">
+                <div onClick={() => setActiveKpiDetail('verba')} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group cursor-pointer hover:border-amber-500 transition-all active:scale-95 flex flex-col justify-center">
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Wallet className="w-20 h-20 text-amber-600" /></div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Verba Utilizada (Ano)</p>
-                    <h3 className="text-2xl font-black text-amber-600">{formatBRL(displayData.investimentoAno)}</h3>
+                    
+                    <div className="border-b border-slate-100 pb-2 mb-2">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Verba (Mês)</p>
+                        <h3 className="text-lg font-black text-amber-600 leading-none">{formatBRL(displayData.investimentoPeriodo)}</h3>
+                    </div>
+
+                    <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Verba (Ano)</p>
+                        <h3 className="text-lg font-black text-amber-600/60 leading-none">{formatBRL(displayData.investimentoAno)}</h3>
+                    </div>
                 </div>
             </div>
 
@@ -628,17 +704,16 @@ export const ManagerDashboard: React.FC = () => {
                     <div>
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em]">Ranking de Eficiência Regional</h3>
                         <p className="text-[10px] font-black text-slate-400 uppercase mt-1">Ordenado do maior superávit percentual para o menor</p>
-                        <p className="text-[8px] font-black text-blue-600 uppercase mt-2">Clique na barra para ver o detalhamento mensal</p>
                     </div>
                     <div className="flex items-center gap-6">
                         <div className="flex flex-col items-end gap-2 border-r border-slate-100 pr-6">
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Meta OK ({`&gt;=`} 100%)</span>
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Acima ({'>'} 100%)</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 bg-red-600 rounded-full"></div>
-                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Abaixo (&lt; 100%)</span>
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">Abaixo ({'<='} 100%)</span>
                             </div>
                         </div>
                         <button 
@@ -665,8 +740,7 @@ export const ManagerDashboard: React.FC = () => {
                             return (
                                 <div 
                                     key={rep.id} 
-                                    onClick={() => setSelectedRepForPerformance(rep)}
-                                    className="flex-1 flex flex-col items-center group h-full min-w-[70px] cursor-pointer hover:opacity-80 transition-all"
+                                    className="flex-1 flex flex-col items-center group h-full min-w-[70px] transition-all"
                                 >
                                     <div className="relative w-full flex-1 flex flex-col justify-end items-center">
                                         <div className="absolute -top-12 flex flex-col items-center">
@@ -690,19 +764,12 @@ export const ManagerDashboard: React.FC = () => {
                     details={teamDetails} 
                     selectedYear={selectedYear}
                     periodLabel={getMonthsLabel()}
+                    selectedMonths={selectedMonths}
                     onClose={() => setActiveKpiDetail(null)} 
                     formatBRL={formatBRL}
+                    positivacaoData={positivacaoData}
                 />,
                 document.body
-            )}
-
-            {selectedRepForPerformance && (
-                <RepPerformanceModal 
-                    rep={selectedRepForPerformance} 
-                    year={selectedYear} 
-                    selectedMonths={selectedMonths}
-                    onClose={() => setSelectedRepForPerformance(null)} 
-                />
             )}
         </div>
     );

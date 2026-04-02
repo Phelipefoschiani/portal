@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Table2, Trophy } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, TrendingUp, Bell, Wallet, Megaphone, UserCircle, ShieldCheck, Target, FileUp, LucideIcon, AlertCircle, BarChart3, Lock, Key, Eye, EyeOff, CheckCircle2, X, Table2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { createPortal } from 'react-dom';
 import { Button } from './Button';
@@ -119,7 +119,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-clients', label: 'Carteira Total', icon: Users },
     { id: 'admin-campaigns', label: 'Análise Campanhas', icon: ShieldCheck, alertType: investmentAlert },
     { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, alertType: forecastAlert },
-    { id: 'admin-scorecard', label: 'Score Card RCA', icon: Trophy },
   ];
 
   const adminConfigItems: MenuItem[] = [
