@@ -10,7 +10,6 @@ import { Menu, AlertTriangle, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
-const ClientsScreen = lazy(() => import('./components/ClientsScreen').then(m => ({ default: m.ClientsScreen })));
 const ForecastScreen = lazy(() => import('./components/ForecastScreen').then(m => ({ default: m.ForecastScreen })));
 const NotificationsScreen = lazy(() => import('./components/NotificationsScreen').then(m => ({ default: m.NotificationsScreen })));
 const InvestmentsScreen = lazy(() => import('./components/InvestmentsScreen').then(m => ({ default: m.InvestmentsScreen })));
@@ -31,6 +30,7 @@ const ManagerImportScreen = lazy(() => import('./components/manager/ManagerImpor
 const ManagerAnalysisScreen = lazy(() => import('./components/manager/ManagerAnalysisScreen').then(m => ({ default: m.ManagerAnalysisScreen })));
 const ManagerDetailedAnalysisScreen = lazy(() => import('./components/manager/ManagerDetailedAnalysisScreen').then(m => ({ default: m.ManagerDetailedAnalysisScreen })));
 const ManagerUsersScreen = lazy(() => import('./components/manager/ManagerUsersScreen').then(m => ({ default: m.ManagerUsersScreen })));
+const ManagerScoreCardScreen = lazy(() => import('./components/manager/ManagerScoreCardScreen').then(m => ({ default: m.ManagerScoreCardScreen })));
 
 const DirectorDashboard = lazy(() => import('./components/director/DirectorDashboard').then(m => ({ default: m.DirectorDashboard })));
 
@@ -257,7 +257,7 @@ const App: React.FC = () => {
                 {currentView === 'dashboard' && <Dashboard />}
                 {currentView === 'rep-analysis' && <RepAnalysisScreen />}
                 {currentView === 'rep-bi-builder' && <ManagerDetailedAnalysisScreen />}
-                {currentView === 'clients' && <ClientsScreen />}
+                {currentView === 'clients' && <ManagerClientsScreen repId={userId || undefined} />}
                 {currentView === 'campaigns' && <CampaignsScreen onNavigateToInvestments={() => setCurrentView('investments')} />}
                 {currentView === 'forecast' && <ForecastScreen />}
                 {currentView === 'investments' && <InvestmentsScreen />}
@@ -276,6 +276,7 @@ const App: React.FC = () => {
                 {currentView === 'admin-users' && <ManagerUsersScreen />}
                 {currentView === 'admin-clients' && <ManagerClientsScreen />}
                 {currentView === 'admin-targets' && <ManagerTargetsScreen />}
+                {currentView === 'admin-scorecard' && <ManagerScoreCardScreen />}
                </>
            )}
            {userRole === 'director' && (

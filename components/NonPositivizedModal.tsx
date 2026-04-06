@@ -21,10 +21,10 @@ export const NonPositivizedModal: React.FC<NonPositivizedModalProps> = ({ onClos
   };
 
   const pendingClients = useMemo(() => {
-    if (!totalDataStore.isHydrated) return [];
-
     const allSales = totalDataStore.vendasClientesMes;
     const myClients = totalDataStore.clients;
+
+    if (allSales.length === 0 && myClients.length === 0 && !totalDataStore.isHydrated) return [];
 
     const lastPurchaseMap = new Map<string, string>();
     totalDataStore.clientesUltimaCompra.forEach(s => {
@@ -94,7 +94,7 @@ export const NonPositivizedModal: React.FC<NonPositivizedModalProps> = ({ onClos
         </div>
 
         <div className="overflow-y-auto flex-1 bg-white p-2 md:p-4 custom-scrollbar">
-          {!totalDataStore.isHydrated ? (
+          {totalDataStore.loading.vendasClientesMes && pendingClients.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
               <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-600" />
               <p className="text-[10px] font-black uppercase tracking-widest animate-pulse">Sincronizando...</p>

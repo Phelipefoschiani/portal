@@ -46,7 +46,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       const { data, error: queryError } = await supabase
         .from('usuarios')
         .select('id, nome, nivel_acesso, ativo')
-        .eq('nome', login.trim())
+        .eq('nome', login.trim().toLowerCase())
         .eq('senha_hash', password)
         .maybeSingle();
 

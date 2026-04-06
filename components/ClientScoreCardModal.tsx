@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, BarChart3, PieChart, Activity, ShoppingCart, AlertCircle, ArrowUpRight, ArrowDownRight, Calendar, Download } from 'lucide-react';
+import { X, BarChart3, PieChart, Activity, ShoppingCart, AlertCircle, ArrowUpRight, ArrowDownRight, Calendar, Download, HelpCircle, Search } from 'lucide-react';
 import { totalDataStore } from '../lib/dataStore';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, LabelList, PieChart as RePieChart, Pie, Legend } from 'recharts';
 import { Sale } from '../types';
@@ -16,6 +16,7 @@ interface ClientScoreCardModalProps {
 export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ client, onClose, onBack }) => {
     const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showLostSkus, setShowLostSkus] = useState(false);
     const contentRef = useRef<HTMLDivElement>(null);
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
@@ -30,18 +31,27 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
             element.style.height = 'auto'; // Force natural height
             
             const canvas = await html2canvas(element, {
-                scale: 2,
+                scale: 3, // Higher scale for better quality
                 useCORS: true,
                 backgroundColor: '#ffffff',
                 logging: false,
-                windowWidth: 1200, // Fixed width for consistent capture
+                windowWidth: 1400,
                 onclone: (clonedDoc) => {
                     const clonedElement = clonedDoc.getElementById('scorecard-content');
                     if (clonedElement) {
                         clonedElement.style.height = 'auto';
                         clonedElement.style.overflow = 'visible';
-                        clonedElement.style.width = '1200px';
-                        clonedElement.style.padding = '40px';
+                        clonedElement.style.width = '1400px';
+                        clonedElement.style.padding = '60px';
+                        clonedElement.style.borderRadius = '0';
+                        
+                        // Ensure all charts are rendered
+                        const charts = clonedElement.querySelectorAll('.recharts-responsive-container');
+                        charts.forEach((chart) => {
+                            const htmlChart = chart as HTMLElement;
+                            htmlChart.style.width = '100%';
+                            htmlChart.style.height = '100%';
+                        });
                     }
                 }
             });
@@ -92,8 +102,20 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
 
         // 1. Frequência (30 pontos)
         const monthsWithSales = new Set(sales.map(s => s.data.substring(5, 7))).size;
-        const totalMonthsInPeriod = selectedYear === 'all' ? 12 : (selectedYear === new Date().getFullYear().toString() ? new Date().getMonth() + 1 : 12);
-        const frequencyScore = (monthsWithSales / totalMonthsInPeriod) * 30;
+        const currentYearStr = new Date().getFullYear().toString();
+        let totalMonthsInPeriod = 12;
+        
+        if (selectedYear === 'all') {
+            totalMonthsInPeriod = 12;
+        } else if (selectedYear === currentYearStr) {
+            // Meses fechados (se estamos em Abril, meses fechados = 3: Jan, Fev, Mar)
+            totalMonthsInPeriod = new Date().getMonth();
+            if (totalMonthsInPeriod === 0) totalMonthsInPeriod = 1; // Janeiro ainda não fechou, mas usamos 1 para base
+        } else {
+            totalMonthsInPeriod = 12;
+        }
+        
+        const frequencyScore = Math.min(30, (monthsWithSales / totalMonthsInPeriod) * 30);
 
         // 2. Mix de Produtos por Grupo (50 pontos)
         const currentGroups = new Map<string, Set<string>>();
@@ -202,8 +224,34 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
         const activeMonths = monthsMap.size;
         const avgMonthly = activeMonths > 0 ? totalFaturamento / activeMonths : 0;
 
-        // 5. SKUs cadastrados
+        // 5. SKUs cadastrados e perdidos
         const totalSkus = productMap.size;
+        
+        // Identificar SKUs perdidos (compraram no ano anterior mas não no período atual)
+        const lostSkusList: { name: string, lastPurchase: string, units: number, value: number }[] = [];
+        prevYearSales.forEach(ps => {
+            const prodName = ps.produto || 'Produto sem nome';
+            if (!productMap.has(prodName)) {
+                // Verificar se já adicionamos
+                const existing = lostSkusList.find(ls => ls.name === prodName);
+                if (!existing) {
+                    // Buscar última compra real desse produto para esse cliente (mesmo fora do prevYear)
+                    const allClientSales = (totalDataStore.sales as Sale[]).filter(s => 
+                        String(s.cnpj).replace(/\D/g, '') === String(client.cnpj).replace(/\D/g, '') && 
+                        (s.produto === prodName || s.codigo_produto === ps.codigo_produto)
+                    );
+                    const lastDate = allClientSales.reduce((max, s) => s.data > max ? s.data : max, '0000-00-00');
+                    const lastSale = allClientSales.find(s => s.data === lastDate);
+
+                    lostSkusList.push({
+                        name: prodName,
+                        lastPurchase: lastDate,
+                        units: Number(lastSale?.qtde_faturado) || 0,
+                        value: Number(lastSale?.faturamento) || 0
+                    });
+                }
+            }
+        });
 
         // 6. Tendência
         const trend = totalFaturamentoPrev > 0 ? ((totalFaturamento / totalFaturamentoPrev) - 1) * 100 : 0;
@@ -221,7 +269,8 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
             healthScore,
             frequencyScore,
             mixScore,
-            performanceScore
+            performanceScore,
+            lostSkus: lostSkusList.sort((a, b) => b.value - a.value)
         };
     }, [client.cnpj, selectedYear]);
 
@@ -229,7 +278,7 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
 
     return createPortal(
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 md:p-6 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
-            <div className="bg-white w-full max-w-6xl rounded-[40px] shadow-2xl overflow-hidden animate-slideUp border border-white/20 flex flex-col max-h-[92vh]">
+            <div className="bg-white w-full max-w-7xl rounded-[40px] shadow-2xl overflow-hidden animate-slideUp border border-white/20 flex flex-col max-h-[92vh]">
                 
                 {/* Header */}
                 <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
@@ -281,27 +330,31 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto bg-white custom-scrollbar">
-                    <div ref={contentRef} id="scorecard-content" className="p-10 space-y-10 bg-white min-w-[1000px]">
+                    <div ref={contentRef} id="scorecard-content" className="p-10 space-y-10 bg-white min-w-[1200px]">
                         {/* Header for PNG Capture */}
-                        <div className="border-b-8 border-blue-600 pb-10 mb-10 flex justify-between items-end">
-                            <div className="space-y-2">
-                                <p className="text-blue-600 font-black text-xs uppercase tracking-[0.4em]">Relatório de Performance</p>
-                                    <h1 className="text-5xl font-black text-slate-900 uppercase tracking-tighter">
+                        <div className="border-b-[12px] border-blue-600 pb-12 mb-12 flex justify-between items-start">
+                            <div className="space-y-4">
+                                <div className="space-y-1">
+                                    <p className="text-blue-600 font-black text-sm uppercase tracking-[0.5em]">Relatório de Performance</p>
+                                    <h1 className="text-6xl font-black text-slate-900 uppercase tracking-tighter leading-tight">
                                         Score Card - {client.nome_fantasia}
                                     </h1>
-                                    <div className="flex items-center gap-3 mt-4">
-                                        <div className="px-6 py-2 bg-slate-900 text-white rounded-full text-xs font-black uppercase tracking-widest shadow-lg">
-                                            Período: {selectedYear === 'all' ? 'Histórico Completo' : `Ano ${selectedYear}`}
-                                        </div>
-                                        <div className="px-6 py-2 bg-blue-50 text-blue-600 rounded-full text-xs font-black uppercase tracking-widest border border-blue-100">
-                                            CNPJ: {client.cnpj}
-                                        </div>
+                                </div>
+                                <div className="flex items-center gap-4 mt-6">
+                                    <div className="px-8 py-3 bg-slate-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl">
+                                        Período: {selectedYear === 'all' ? 'Histórico Completo' : `Ano ${selectedYear}`}
                                     </div>
+                                    <div className="px-8 py-3 bg-blue-50 text-blue-600 rounded-2xl text-sm font-black uppercase tracking-widest border border-blue-100">
+                                        CNPJ: {client.cnpj}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="text-right">
-                                <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl mb-4 ml-auto shadow-xl">CN</div>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Inteligência de Vendas</p>
-                                <p className="text-sm font-black text-slate-900 uppercase">Portal Centro-Norte</p>
+                            <div className="flex flex-col items-end gap-4">
+                                <div className="w-20 h-20 bg-blue-600 rounded-[24px] flex items-center justify-center text-white font-black text-3xl shadow-2xl">CN</div>
+                                <div className="text-right">
+                                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Inteligência de Vendas</p>
+                                    <p className="text-lg font-black text-slate-900 uppercase tracking-tight">Portal Centro-Norte</p>
+                                </div>
                             </div>
                         </div>
                         
@@ -318,7 +371,15 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
                                 <div className="relative z-10 flex flex-col md:flex-row items-center gap-12">
                                     <div className="shrink-0 relative">
                                         <div className="w-48 h-48 rounded-full border-8 border-white/10 flex items-center justify-center relative">
-                                            <svg className="w-full h-full -rotate-90">
+                                            <svg className="w-full h-full -rotate-90" viewBox="0 0 192 192">
+                                                <circle
+                                                    cx="96"
+                                                    cy="96"
+                                                    r="84"
+                                                    fill="none"
+                                                    stroke="rgba(255,255,255,0.1)"
+                                                    strokeWidth="12"
+                                                />
                                                 <circle
                                                     cx="96"
                                                     cy="96"
@@ -328,6 +389,7 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
                                                     strokeWidth="12"
                                                     strokeDasharray={2 * Math.PI * 84}
                                                     strokeDashoffset={2 * Math.PI * 84 * (1 - scoreData.healthScore / 100)}
+                                                    strokeLinecap="round"
                                                     className={`${scoreData.healthScore >= 80 ? 'text-emerald-500' : scoreData.healthScore >= 60 ? 'text-blue-500' : scoreData.healthScore >= 40 ? 'text-amber-500' : 'text-red-500'} transition-all duration-1000`}
                                                 />
                                             </svg>
@@ -339,14 +401,22 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
                                     </div>
                                     <div className="flex-1 space-y-6">
                                         <div>
-                                            <h4 className="text-2xl font-black uppercase tracking-tighter mb-2">Saúde do Cliente</h4>
+                                            <h4 className="text-2xl font-black uppercase tracking-tighter mb-2">Score Card do Cliente</h4>
                                             <p className="text-slate-400 text-sm font-medium max-w-xl">
                                                 Esta pontuação reflete a vitalidade comercial do cliente baseada em frequência de compra, mix de produtos e crescimento comparativo.
                                             </p>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Frequência</p>
+                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10 group relative">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Frequência</p>
+                                                    <div className="relative group/info">
+                                                        <HelpCircle className="w-3 h-3 text-slate-500 cursor-help" />
+                                                        <div className="absolute bottom-full right-0 mb-2 w-48 p-3 bg-slate-800 text-[10px] text-slate-200 rounded-xl shadow-2xl opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all z-50 border border-white/10">
+                                                            Pontuação baseada na regularidade de compras. 30 pontos se comprou em todos os meses do período filtrado.
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div className="flex items-end justify-between">
                                                     <span className="text-xl font-black">{scoreData.frequencyScore.toFixed(1)}</span>
                                                     <span className="text-[10px] font-bold text-slate-500">/ 30 pts</span>
@@ -355,8 +425,25 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
                                                     <div className="h-full bg-blue-500" style={{ width: `${(scoreData.frequencyScore / 30) * 100}%` }}></div>
                                                 </div>
                                             </div>
-                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Mix de Produtos</p>
+                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10 group relative">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mix de Produtos</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <button 
+                                                            onClick={() => setShowLostSkus(true)}
+                                                            className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white"
+                                                            title="Ver SKUs perdidos"
+                                                        >
+                                                            <Search className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <div className="relative group/info">
+                                                            <HelpCircle className="w-3 h-3 text-slate-500 cursor-help" />
+                                                            <div className="absolute bottom-full right-0 mb-2 w-48 p-3 bg-slate-800 text-[10px] text-slate-200 rounded-xl shadow-2xl opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all z-50 border border-white/10">
+                                                                Avalia a variedade de SKUs comprados por grupo. Pontua a recompra de itens do ano anterior com bônus para novos SKUs.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div className="flex items-end justify-between">
                                                     <span className="text-xl font-black">{scoreData.mixScore.toFixed(1)}</span>
                                                     <span className="text-[10px] font-bold text-slate-500">/ 50 pts</span>
@@ -365,8 +452,16 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
                                                     <div className="h-full bg-purple-500" style={{ width: `${(scoreData.mixScore / 50) * 100}%` }}></div>
                                                 </div>
                                             </div>
-                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Performance YoY</p>
+                                            <div className="bg-white/5 p-4 rounded-3xl border border-white/10 group relative">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Performance YoY</p>
+                                                    <div className="relative group/info">
+                                                        <HelpCircle className="w-3 h-3 text-slate-500 cursor-help" />
+                                                        <div className="absolute bottom-full right-0 mb-2 w-48 p-3 bg-slate-800 text-[10px] text-slate-200 rounded-xl shadow-2xl opacity-0 invisible group-hover/info:opacity-100 group-hover/info:visible transition-all z-50 border border-white/10">
+                                                            Comparativo de faturamento com o mesmo período do ano anterior. 20 pontos se o faturamento for igual ou superior.
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div className="flex items-end justify-between">
                                                     <span className="text-xl font-black">{scoreData.performanceScore.toFixed(1)}</span>
                                                     <span className="text-[10px] font-bold text-slate-500">/ 20 pts</span>
@@ -521,13 +616,31 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
                                                         data={scoreData.productsByUnits}
                                                         cx="50%"
                                                         cy="50%"
-                                                        innerRadius={60}
+                                                        innerRadius={70}
                                                         outerRadius={100}
                                                         paddingAngle={5}
                                                         dataKey="units"
                                                         nameKey="name"
-                                                        label={({ name, percent }) => `${(name || '').substring(0, 20)}${(name || '').length > 20 ? '..' : ''} (${((percent || 0) * 100).toFixed(0)}%)`}
-                                                        labelLine={{ stroke: '#64748b', strokeWidth: 1 }}
+                                                        label={({ cx = 0, cy = 0, midAngle = 0, outerRadius = 0, percent = 0, name = '' }) => {
+                                                            const RADIAN = Math.PI / 180;
+                                                            const radius = outerRadius + 25;
+                                                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                                                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                                                            const truncatedName = (name || '').substring(0, 12) + ((name || '').length > 12 ? '..' : '');
+                                                            return (
+                                                                <text 
+                                                                    x={x} 
+                                                                    y={y} 
+                                                                    fill="#64748b" 
+                                                                    textAnchor={x > cx ? 'start' : 'end'} 
+                                                                    dominantBaseline="central" 
+                                                                    style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' }}
+                                                                >
+                                                                    {`${truncatedName} (${((percent || 0) * 100).toFixed(0)}%)`}
+                                                                </text>
+                                                            );
+                                                        }}
+                                                        labelLine={{ stroke: '#cbd5e1', strokeWidth: 1 }}
                                                     >
                                                         {scoreData.productsByUnits.map((_, index) => (
                                                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -615,6 +728,69 @@ export const ClientScoreCardModal: React.FC<ClientScoreCardModalProps> = ({ clie
                     </div>
                 </div>
             </div>
+
+            {/* Lost SKUs Modal */}
+            {showLostSkus && scoreData && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white w-full max-w-3xl rounded-[32px] shadow-2xl overflow-hidden animate-slideUp border border-slate-200 flex flex-col max-h-[80vh]">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-amber-100 text-amber-600 rounded-xl">
+                                    <AlertCircle className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">SKUs Perdidos (Mix de Produtos)</h4>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Itens comprados no ano anterior mas não no período atual</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowLostSkus(false)} className="p-2 hover:bg-white rounded-full transition-colors">
+                                <X className="w-5 h-5 text-slate-400" />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                            {scoreData.lostSkus.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Nenhum SKU perdido identificado</p>
+                                </div>
+                            ) : (
+                                <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                            <tr>
+                                                <th className="px-4 py-3">Produto</th>
+                                                <th className="px-4 py-3 text-center">Última Compra</th>
+                                                <th className="px-4 py-3 text-right">Qtd</th>
+                                                <th className="px-4 py-3 text-right">Faturamento</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {scoreData.lostSkus.map((sku, idx) => (
+                                                <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                    <td className="px-4 py-4">
+                                                        <p className="text-[11px] font-black text-slate-700 uppercase leading-tight">{sku.name}</p>
+                                                    </td>
+                                                    <td className="px-4 py-4 text-center text-[10px] font-bold text-slate-400 tabular-nums">
+                                                        {sku.lastPurchase !== '0000-00-00' ? new Date(sku.lastPurchase + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-4 text-right font-black text-slate-900 text-[10px] tabular-nums">
+                                                        {sku.units.toLocaleString('pt-BR')}
+                                                    </td>
+                                                    <td className="px-4 py-4 text-right font-black text-amber-600 text-[10px] tabular-nums">
+                                                        {formatCurrency(sku.value)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total de {scoreData.lostSkus.length} SKUs não recomprados</p>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>,
         document.body
     );

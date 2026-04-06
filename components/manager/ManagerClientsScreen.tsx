@@ -29,13 +29,14 @@ interface Client {
 
 interface ManagerClientsScreenProps {
     updateTrigger?: number;
+    repId?: string;
 }
 
-export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ updateTrigger = 0 }) => {
+export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ updateTrigger = 0, repId }) => {
     const now = new Date();
     const [isExporting, setIsExporting] = useState(false);
     const isLoading = Object.values(totalDataStore.loading).some(v => v === true);
-    const [selectedRep, setSelectedRep] = useState('all');
+    const [selectedRep, setSelectedRep] = useState(repId || 'all');
     const [selectedChannel, setSelectedChannel] = useState('all');
     const [selectedYear, setSelectedYear] = useState<number | 'all'>(now.getFullYear());
     const [, setForceUpdate] = useState(0);
@@ -212,6 +213,18 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
 
+    const checkLastPurchaseStatus = (dateStr: string | null) => {
+        if (!dateStr || dateStr === '0000-00-00') return { label: 'S/ REGISTRO', isOld: true };
+        const lastDate = new Date(dateStr + 'T00:00:00');
+        const diffTime = Math.abs(now.getTime() - lastDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return {
+            label: lastDate.toLocaleDateString('pt-BR'),
+            isOld: diffDays > 90,
+            days: diffDays
+        };
+    };
+
     const handleExportExcel = () => {
         if (processedData.ranking.length === 0) {
             alert('Não há dados para exportar.');
@@ -260,8 +273,10 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
             }
 
             const wb = X.utils.book_new();
-            X.utils.book_append_sheet(wb, ws, "Carteira_Total");
-            X.writeFile(wb, `Carteira_Total_CentroNorte_${new Date().getTime()}.xlsx`);
+            const sheetName = repId ? "Meus_Clientes" : "Carteira_Total";
+            const fileName = repId ? `Meus_Clientes_${new Date().getTime()}.xlsx` : `Carteira_Total_CentroNorte_${new Date().getTime()}.xlsx`;
+            X.utils.book_append_sheet(wb, ws, sheetName);
+            X.writeFile(wb, fileName);
         } catch (e) {
             console.error('Erro Exportação Excel:', e);
             alert('Falha ao gerar arquivo Excel.');
@@ -297,10 +312,10 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
         <div className="w-full max-w-7xl mx-auto space-y-6 animate-fadeIn pb-12">
             <div className="flex flex-col lg:flex-row justify-between items-end gap-4">
                 <div className="w-full lg:w-auto">
-                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Carteira Total</h2>
+                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Clientes</h2>
                     <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1 flex items-center gap-2">
                         <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
-                        {selectedChannel === 'all' ? 'Ranking Geral Regional' : `Análise de Participação: ${selectedChannel}`}
+                        {selectedChannel === 'all' ? (repId ? 'Ranking de Faturamento' : 'Ranking Geral Regional') : `Análise de Participação: ${selectedChannel}`}
                     </p>
                 </div>
                 
@@ -316,17 +331,19 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                     </button>
 
                     {/* Filtro Rep */}
-                    <div className="relative flex-1 lg:flex-none">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                        <select 
-                            value={selectedRep}
-                            onChange={(e) => setSelectedRep(e.target.value)}
-                            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer h-[42px]"
-                        >
-                            <option value="all">TODOS REPRESENTANTES</option>
-                            {totalDataStore.users.map(r => <option key={r.id} value={r.id}>{r.nome.toUpperCase()}</option>)}
-                        </select>
-                    </div>
+                    {!repId && (
+                        <div className="relative flex-1 lg:flex-none">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                            <select 
+                                value={selectedRep}
+                                onChange={(e) => setSelectedRep(e.target.value)}
+                                className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer h-[42px]"
+                            >
+                                <option value="all">TODOS REPRESENTANTES</option>
+                                {totalDataStore.users.map(r => <option key={r.id} value={r.id}>{r.nome.toUpperCase()}</option>)}
+                            </select>
+                        </div>
+                    )}
 
                     {/* Filtro Canal */}
                     <div className="relative flex-1 lg:flex-none">
@@ -436,6 +453,8 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                          <thead className="bg-slate-50 border-b border-slate-200">
                             <tr className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
                                 <th className="px-8 py-5">Nome</th>
+                                <th className="px-6 py-5 text-center">Última Compra</th>
+                                <th className="px-6 py-5 text-right">Valor Últ. Compra</th>
                                 <th className="px-6 py-5">Canal</th>
                                 <th className="px-6 py-5 text-right">Faturamento No Ano</th>
                                 <th className="px-8 py-5 text-right">Participação (%)</th>
@@ -452,6 +471,13 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                                                 <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5 tracking-wider">{client.city || 'S/ CIDADE'} • {client.cnpj} • {client.repName}</p>
                                             </div>
                                         </td>
+                                        <td className="px-6 py-5 text-center">
+                                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black border uppercase tracking-wider ${checkLastPurchaseStatus(client.lastPurchase).isOld ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                                <CalendarDays className="w-3 h-3" />
+                                                {checkLastPurchaseStatus(client.lastPurchase).label}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-5 text-right font-black text-slate-700 tabular-nums">{formatCurrency(client.lastPurchaseValue)}</td>
                                         <td className="px-6 py-5">
                                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{client.canal_vendas || 'GERAL'}</span>
                                         </td>
@@ -509,10 +535,16 @@ export const ManagerClientsScreen: React.FC<ManagerClientsScreenProps> = ({ upda
                                 </div>
                             </div>
                             
-                            <div className="grid grid-cols-1 gap-4 pt-2">
-                                <div className="text-right">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturamento Ano</p>
-                                    <p className="text-sm font-black text-slate-900">{formatCurrency(client.totalPurchase)}</p>
+                            <div className="grid grid-cols-2 gap-4 pt-2">
+                                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Faturamento Ano</p>
+                                    <p className="text-[11px] font-black text-slate-700">{formatCurrency(client.totalPurchase)}</p>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Última Compra</p>
+                                    <p className="text-[11px] font-black text-slate-700">
+                                        {checkLastPurchaseStatus(client.lastPurchase).label}
+                                    </p>
                                 </div>
                             </div>
 

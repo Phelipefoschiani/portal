@@ -103,9 +103,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const repMenuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-    { id: 'rep-analysis', label: 'Análise de Metas', icon: BarChart3 },
+    { id: 'rep-analysis', label: 'Análises', icon: BarChart3 },
     { id: 'rep-bi-builder', label: 'Construtor de BI', icon: Table2 },
-    { id: 'clients', label: 'Meus Clientes', icon: Users },
+    { id: 'clients', label: 'Clientes', icon: Users },
     { id: 'campaigns', label: 'Campanhas', icon: Megaphone },
     { id: 'forecast', label: 'Previsão', icon: TrendingUp, alertType: forecastAlert },
     { id: 'investments', label: 'Investimentos', icon: Wallet, alertType: investmentAlert },
@@ -116,7 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-dashboard', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'admin-analysis', label: 'Análise Performance', icon: BarChart3 },
     { id: 'admin-detailed-analysis', label: 'Construtor de BI', icon: Table2 },
-    { id: 'admin-clients', label: 'Carteira Total', icon: Users },
+    { id: 'admin-clients', label: 'Clientes', icon: Users },
     { id: 'admin-campaigns', label: 'Análise Campanhas', icon: ShieldCheck, alertType: investmentAlert },
     { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, alertType: forecastAlert },
   ];

@@ -139,10 +139,7 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
   const cleanCnpj = (val: string | number | null | undefined) => String(val || '').replace(/\D/g, '');
   const normalizeRepName = (name: string) => name ? name.split('(')[0].trim().toUpperCase() : "";
 
-  const getVal = (row: Record<string, unknown>, keys: string[]) => {
-    const foundKey = Object.keys(row).find(k => keys.some(key => k.toLowerCase().trim() === key.toLowerCase().trim()));
-    return foundKey ? row[foundKey] : null;
-  };
+  const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -153,7 +150,6 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
   };
 
   const processImport = async () => {
-    console.log('Iniciando processImport...');
     if (!file) return;
     setIsProcessing(true);
     setProgress(0);
@@ -161,168 +157,217 @@ export const ManagerImportScreen: React.FC<ManagerImportScreenProps> = ({ update
     setStats({ totalRows: 0, newClientsInserted: 0, processedRows: 0, ignoredRows: 0 });
 
     try {
-      console.log('Lendo arquivo...');
+      setCurrentAction('Lendo arquivo Excel...');
+      await yieldToMain();
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const X = (XLSX as any).utils ? XLSX : (XLSX as any).default;
       const data = await file.arrayBuffer();
-      const workbook = X.read(data);
+      
+      // Otimização de leitura: desativar formatação pesada
+      const workbook = X.read(data, { 
+        type: 'array', 
+        cellDates: true, 
+        cellNF: false, 
+        cellText: false 
+      });
+      
+      setCurrentAction('Convertendo dados...');
+      await yieldToMain();
       const jsonData: Record<string, unknown>[] = X.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
-      console.log('Arquivo lido, linhas:', jsonData.length);
       if (jsonData.length === 0) throw new Error('A planilha está vazia.');
+      setStats(prev => ({ ...prev, totalRows: jsonData.length }));
+      await yieldToMain();
+
+      // 1. Mapeamento de Colunas Otimizado (evita Object.keys repetidos)
+      const columnMap = new Map<string, string>();
+      const firstRow = jsonData[0];
+      const allKeys = Object.keys(firstRow);
+      const fieldConfigs = [
+          { name: 'rep', keys: ['Representante', 'Vendedor', 'RCA'] },
+          { name: 'date', keys: ['Data', 'Emissão', 'Data Faturamento'] },
+          { name: 'cnpj', keys: ['CNPJ', 'C.N.P.J', 'CGC'] },
+          { name: 'client', keys: ['Cliente', 'Razão Social', 'Nome Fantasia'] },
+          { name: 'order', keys: ['Pedido', 'Nr. Pedido'] },
+          { name: 'invoice', keys: ['Nota Fiscal', 'NF', 'Danfe'] },
+          { name: 'sku', keys: ['Codigo Produto', 'Cod. Prod', 'SKU'] },
+          { name: 'product', keys: ['Produto', 'Descrição', 'Item'] },
+          { name: 'billing', keys: ['Faturamento', 'Valor Total', 'Venda Liquida'] },
+          { name: 'qty', keys: ['Qtde faturado', 'Quantidade', 'Qtd'] },
+          { name: 'channel', keys: ['Canal Vendas', 'Canal', 'Canal de Vendas'] },
+          { name: 'group', keys: ['Grupo', 'Grupo Econômico', 'Rede'] }
+      ];
+      fieldConfigs.forEach(f => {
+          const found = allKeys.find(k => f.keys.some(key => k.toLowerCase().trim() === key.toLowerCase().trim()));
+          if (found) columnMap.set(f.name, found);
+      });
 
       const repNameToIdMap = new Map<string, string>();
       reps.forEach(r => repNameToIdMap.set(normalizeRepName(r.nome), r.id));
 
-      setCurrentAction('Mapeando estrutura do arquivo...');
+      // 2. Normalização e Agrupamento
+      setCurrentAction('Mapeando representantes...');
       const dataByRep = new Map<string, Record<string, unknown>[]>();
+      const allRelevantMonths = new Set<string>();
+      const allRelevantRepIds = new Set<string>();
 
-      jsonData.forEach(row => {
-        const rawRepName = String(getVal(row, ['Representante', 'Vendedor', 'RCA']) || '');
-        const repId = repNameToIdMap.get(normalizeRepName(rawRepName));
+      for (let i = 0; i < jsonData.length; i += 1000) {
+        const chunk = jsonData.slice(i, i + 1000);
+        chunk.forEach(row => {
+          const rawRepName = String(row[columnMap.get('rep') || ''] || '');
+          const repId = repNameToIdMap.get(normalizeRepName(rawRepName));
+          if (!repId) return;
 
-        if (repId) {
-          const rawDate = getVal(row, ['Data', 'Emissão', 'Data Faturamento']);
-          const formattedDate = typeof rawDate === 'number' 
-            ? new Date(Math.round((rawDate - 25569) * 86400 * 1000)).toISOString().split('T')[0]
-            : new Date(rawDate as string | number | Date).toISOString().split('T')[0];
+          const rawDate = row[columnMap.get('date') || ''];
+          let formattedDate = '';
+          try {
+              if (rawDate instanceof Date) {
+                  formattedDate = rawDate.toISOString().split('T')[0];
+              } else if (typeof rawDate === 'number') {
+                  formattedDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000)).toISOString().split('T')[0];
+              } else if (rawDate) {
+                  formattedDate = new Date(String(rawDate)).toISOString().split('T')[0];
+              }
+          } catch { return; }
+          if (!formattedDate || formattedDate === 'NaN-NaN-NaN') return;
 
-          const normalizedRow = {
+          const d = new Date(formattedDate + 'T00:00:00');
+          allRelevantMonths.add(`${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`);
+          allRelevantRepIds.add(repId);
+
+          const normalized: Record<string, unknown> = {
             usuario_id: repId,
-            cnpj: cleanCnpj(getVal(row, ['CNPJ', 'C.N.P.J', 'CGC']) as string | number),
-            cliente_nome: String(getVal(row, ['Cliente', 'Razão Social', 'Nome Fantasia']) || '').trim(),
+            cnpj: cleanCnpj(row[columnMap.get('cnpj') || ''] as string | number),
+            cliente_nome: String(row[columnMap.get('client') || ''] || '').trim(),
             data: formattedDate,
-            pedido: String(getVal(row, ['Pedido', 'Nr. Pedido']) || '').trim(),
-            nota_fiscal: String(getVal(row, ['Nota Fiscal', 'NF', 'Danfe']) || '').trim(),
-            codigo_produto: String(getVal(row, ['Codigo Produto', 'Cod. Prod', 'SKU']) || '').trim(),
-            produto: String(getVal(row, ['Produto', 'Descrição', 'Item']) || '').trim(),
-            faturamento: parseFloat(String(getVal(row, ['Faturamento', 'Valor Total', 'Venda Liquida']) || '0').replace(',', '.')),
-            qtde_faturado: parseFloat(String(getVal(row, ['Qtde faturado', 'Quantidade', 'Qtd']) || '0').replace(',', '.')),
-            canal_vendas: String(getVal(row, ['Canal Vendas', 'Canal', 'Canal de Vendas']) || '').trim(),
-            grupo: String(getVal(row, ['Grupo', 'Grupo Econômico', 'Rede']) || '').trim()
+            pedido: String(row[columnMap.get('order') || ''] || '').trim(),
+            nota_fiscal: String(row[columnMap.get('invoice') || ''] || '').trim(),
+            codigo_produto: String(row[columnMap.get('sku') || ''] || '').trim(),
+            produto: String(row[columnMap.get('product') || ''] || '').trim(),
+            faturamento: parseFloat(String(row[columnMap.get('billing') || ''] || '0').replace(',', '.')),
+            qtde_faturado: parseFloat(String(row[columnMap.get('qty') || ''] || '0').replace(',', '.')),
+            canal_vendas: String(row[columnMap.get('channel') || ''] || '').trim(),
+            grupo: String(row[columnMap.get('group') || ''] || '').trim()
           };
-
           if (!dataByRep.has(repId)) dataByRep.set(repId, []);
-          dataByRep.get(repId)?.push(normalizedRow);
-        }
-      });
-
-      console.log('Dados mapeados por representante:', dataByRep.size);
-      setStats(prev => ({ ...prev, totalRows: jsonData.length }));
-      const repIdsToProcess = Array.from(dataByRep.keys());
-      let totalNewSales = 0, totalIgnored = 0, totalNewClients = 0;
-
-      for (let i = 0; i < repIdsToProcess.length; i++) {
-        const repId = repIdsToProcess[i];
-        const repRows = dataByRep.get(repId) || [];
-        const repName = reps.find(r => r.id === repId)?.nome || 'Vendedor';
-
-        console.log(`Processando vendedor ${repName} (${repId}), linhas: ${repRows.length}`);
-        setCurrentAction(`Processando Vendedor...`);
-        setCurrentItemName(repName.toUpperCase());
-
-        // A. Sincronizar Clientes
-        const uniqueClients = new Map();
-        repRows.forEach(r => {
-          if (r.cnpj) uniqueClients.set(r.cnpj, { 
-            usuario_id: repId, nome_fantasia: r.cliente_nome, cnpj: r.cnpj, 
-            ativo: true, canal_vendas: r.canal_vendas !== 'null' ? r.canal_vendas : null, 
-            grupo: r.grupo !== 'null' ? r.grupo : null 
-          });
+          dataByRep.get(repId)?.push(normalized);
         });
-
-        const { data: existingClients } = await supabase.from('clientes').select('cnpj').eq('usuario_id', repId);
-        const existingCnpjs = new Set(existingClients?.map(c => cleanCnpj(c.cnpj)) || []);
-        const newClients = Array.from(uniqueClients.values()).filter(c => !existingCnpjs.has(c.cnpj));
-        if (newClients.length > 0) { await supabase.from('clientes').insert(newClients); totalNewClients += newClients.length; }
-
-        // B. Anti-Duplicidade (Fingerprint Matching)
-        // Identifica todos os meses/anos presentes nos dados importados
-        const monthsToFetch = Array.from(new Set(repRows.map(r => {
-            const date = new Date(r.data as string);
-            return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
-        })));
-        
-        let existingSales: Record<string, unknown>[] = [];
-        
-        // Busca todas as vendas para cada mês identificado
-        for (const { year, month } of monthsToFetch) {
-            const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-            const endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Último dia do mês
-            
-            const { data, error } = await supabase.from('dados_vendas')
-                .select('cnpj, data, pedido, nota_fiscal, codigo_produto, faturamento, qtde_faturado')
-                .eq('usuario_id', repId)
-                .gte('data', startDate)
-                .lte('data', endDate);
-                
-            if (error) {
-                console.error('Erro ao buscar vendas existentes:', error);
-            }
-            if (data) existingSales = existingSales.concat(data);
-        }
-
-        // FINGERPRINT BLINDADO: Focado nos critérios do usuário + Cliente
-        const generateRowFingerprint = (row: Record<string, unknown>) => {
-            const cnpj = cleanCnpj(String(row.cnpj || ''));
-            const date = String(row.data || '').split('T')[0];
-            const sku = String(row.codigo_produto || '').trim().toUpperCase();
-            const qtd = Number(row.qtde_faturado || 0).toFixed(2);
-            const vlr = Number(row.faturamento || 0).toFixed(2);
-            // Incluindo valor para maior precisão
-            return `${cnpj}|${date}|${sku}|${qtd}|${vlr}`;
-        };
-
-        const existingFingerprints = new Set(existingSales.map(s => generateRowFingerprint(s)));
-
-        const toInsert = repRows.filter(row => {
-          const fingerprint = generateRowFingerprint(row);
-          if (existingFingerprints.has(fingerprint)) { totalIgnored++; return false; }
-          existingFingerprints.add(fingerprint); // Adiciona para evitar duplicatas dentro do próprio arquivo Excel
-          return true;
-        }).map(row => ({
-          data: row.data as string, 
-          pedido: row.pedido as string, 
-          nota_fiscal: row.nota_fiscal as string, 
-          usuario_id: row.usuario_id as string,
-          cnpj: row.cnpj as string, 
-          cliente_nome: row.cliente_nome as string, 
-          canal_vendas: row.canal_vendas !== 'null' ? row.canal_vendas as string : null,
-          grupo: row.grupo !== 'null' ? row.grupo as string : null, 
-          codigo_produto: row.codigo_produto as string,
-          produto: row.produto as string, 
-          faturamento: row.faturamento as number, 
-          qtde_faturado: row.qtde_faturado as number
-        }));
-
-        if (toInsert.length > 0) {
-          const insertChunkSize = 500;
-          for (let j = 0; j < toInsert.length; j += insertChunkSize) {
-              const chunk = toInsert.slice(j, j + insertChunkSize);
-              const { error } = await supabase.from('dados_vendas').insert(chunk);
-              if (error) throw error;
-          }
-          totalNewSales += toInsert.length;
-        }
-
-        setStats(prev => ({ ...prev, processedRows: totalNewSales, ignoredRows: totalIgnored, newClientsInserted: totalNewClients }));
-        setProgress(Math.round(((i + 1) / repIdsToProcess.length) * 100));
+        setProgress(Math.round((i / jsonData.length) * 10));
+        await yieldToMain();
       }
 
-      setStatus({ type: 'success', message: `Concluído! ${totalNewSales} novas vendas importadas. ${totalIgnored} já existiam. Os dados foram atualizados no portal.` });
+      // 3. Verificação de Duplicidades (Batch por Mês e Reps)
+      setCurrentAction('Verificando duplicidades...');
+      const existingFingerprints = new Set<string>();
+      const monthPairs = Array.from(allRelevantMonths).map(m => {
+          const [y, mon] = m.split('-').map(Number);
+          return { year: y, month: mon };
+      });
+      const repIdsList = Array.from(allRelevantRepIds);
+
+      for (let mIdx = 0; mIdx < monthPairs.length; mIdx++) {
+          const { year, month } = monthPairs[mIdx];
+          const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+          const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+          
+          // Buscar em blocos de representantes para não estourar a URL da query
+          for (let k = 0; k < repIdsList.length; k += 15) {
+              const currentReps = repIdsList.slice(k, k + 15);
+              const { data: monthData, error } = await supabase.from('dados_vendas')
+                  .select('cnpj, data, pedido, nota_fiscal, codigo_produto, faturamento, qtde_faturado')
+                  .in('usuario_id', currentReps)
+                  .gte('data', startDate)
+                  .lte('data', endDate);
+              
+              if (error) console.error('Erro ao buscar vendas:', error);
+              monthData?.forEach(s => {
+                  const f = `${cleanCnpj(s.cnpj)}|${String(s.data).split('T')[0]}|${String(s.codigo_produto || '').trim().toUpperCase()}|${Number(s.qtde_faturado || 0).toFixed(2)}|${Number(s.faturamento || 0).toFixed(2)}`;
+                  existingFingerprints.add(f);
+              });
+              await yieldToMain();
+          }
+          setProgress(10 + Math.round(((mIdx + 1) / monthPairs.length) * 20));
+      }
+
+      // 4. Sincronização de Clientes (Batch)
+      setCurrentAction('Sincronizando clientes...');
+      const existingClientsSet = new Set<string>();
+      for (let k = 0; k < repIdsList.length; k += 20) {
+          const { data: cData } = await supabase.from('clientes').select('cnpj, usuario_id').in('usuario_id', repIdsList.slice(k, k + 20));
+          cData?.forEach(c => existingClientsSet.add(`${c.usuario_id}|${cleanCnpj(c.cnpj)}`));
+          await yieldToMain();
+      }
+
+      const newClientsToInsert: Record<string, unknown>[] = [];
+      dataByRep.forEach((rows, repId) => {
+          const uniqueInFile = new Map();
+          rows.forEach(r => {
+              if (r.cnpj && !existingClientsSet.has(`${repId}|${r.cnpj}`)) {
+                  uniqueInFile.set(r.cnpj, { 
+                      usuario_id: repId, nome_fantasia: r.cliente_nome, cnpj: r.cnpj, 
+                      ativo: true, canal_vendas: r.canal_vendas !== 'null' ? r.canal_vendas : null, 
+                      grupo: r.grupo !== 'null' ? r.grupo : null 
+                  });
+              }
+          });
+          uniqueInFile.forEach(c => {
+              newClientsToInsert.push(c);
+              existingClientsSet.add(`${repId}|${c.cnpj}`); // Evitar duplicatas no mesmo insert
+          });
+      });
+
+      if (newClientsToInsert.length > 0) {
+          for (let k = 0; k < newClientsToInsert.length; k += 100) {
+              await supabase.from('clientes').insert(newClientsToInsert.slice(k, k + 100));
+              await yieldToMain();
+          }
+          setStats(prev => ({ ...prev, newClientsInserted: newClientsToInsert.length }));
+      }
+      setProgress(40);
+
+      // 5. Inserção de Vendas Otimizada
+      setCurrentAction('Importando vendas...');
+      let totalNewSales = 0;
+      let totalIgnored = 0;
+      const allToInsert: Record<string, unknown>[] = [];
+
+      dataByRep.forEach((rows) => {
+          rows.forEach(row => {
+              const f = `${row.cnpj}|${row.data}|${String(row.codigo_produto || '').trim().toUpperCase()}|${Number(row.qtde_faturado || 0).toFixed(2)}|${Number(row.faturamento || 0).toFixed(2)}`;
+              if (existingFingerprints.has(f)) {
+                  totalIgnored++;
+              } else {
+                  existingFingerprints.add(f);
+                  allToInsert.push(row);
+              }
+          });
+      });
+
+      if (allToInsert.length > 0) {
+          for (let k = 0; k < allToInsert.length; k += 500) {
+              const chunk = allToInsert.slice(k, k + 500);
+              const { error } = await supabase.from('dados_vendas').insert(chunk);
+              if (error) throw error;
+              totalNewSales += chunk.length;
+              setProgress(40 + Math.round((k / allToInsert.length) * 60));
+              await yieldToMain();
+          }
+      }
+
+      setStats(prev => ({ ...prev, processedRows: totalNewSales, ignoredRows: totalIgnored }));
+      setStatus({ type: 'success', message: `Concluído! ${totalNewSales} novas vendas importadas. ${totalIgnored} duplicados ignorados.` });
       setFile(null);
+      setProgress(100);
       
-      // Clear store and trigger update
+      // Limpar cache local para forçar atualização
       totalDataStore.sales = [];
       totalDataStore.fetchedMonths.clear();
-      totalDataStore.vendasConsolidadas = [];
-      totalDataStore.vendasClientesMes = [];
-      totalDataStore.vendasCanaisMes = [];
-      totalDataStore.vendasProdutosMes = [];
-      
       window.dispatchEvent(new CustomEvent('pcn_data_update'));
+
     } catch (err: unknown) {
       const error = err as Error;
+      console.error('Erro na importação:', error);
       setStatus({ type: 'error', message: error.message || 'Erro no processamento.' });
     } finally {
       setIsProcessing(false);

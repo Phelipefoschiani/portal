@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target as TargetIcon, TrendingUp, Users, AlertCircle, Calendar, DollarSign, CheckCircle2, Award, ChevronDown, CheckSquare, Square, Filter, CalendarDays, ArrowUpRight, ArrowDownRight, LayoutDashboard } from 'lucide-react';
+import { Target as TargetIcon, TrendingUp, Users, AlertCircle, Calendar, DollarSign, CheckCircle2, ChevronDown, CheckSquare, Square, Filter, CalendarDays, ArrowUpRight, ArrowDownRight, LayoutDashboard, Crown, UserCheck, BarChart3 } from 'lucide-react';
 import { NonPositivizedModal } from './NonPositivizedModal';
 import { PositivizedModal } from './PositivizedModal';
 import { RepPerformanceModal } from './manager/RepPerformanceModal';
@@ -8,7 +8,7 @@ import { totalDataStore } from '../lib/dataStore';
 import { Sale, Target, Client } from '../types';
 
 export const Dashboard: React.FC = () => {
-  const now = new Date();
+  const now = useMemo(() => new Date(), []);
   const [showNonPositivizedModal, setShowNonPositivizedModal] = useState(false);
   const [showPositivizedModal, setShowPositivizedModal] = useState(false);
   const [showPerformanceModal, setShowPerformanceModal] = useState(false);
@@ -57,10 +57,11 @@ export const Dashboard: React.FC = () => {
             const { fetchClients, fetchSalesForMonths } = await import('../lib/dataService');
             await fetchClients();
             
-            // Fetch sales for current year and previous year (for comparison)
-            // We fetch only for the selected months
+            // Fetch all months for the current year to ensure annual metrics are fixed
+            // And fetch only selected months for the previous year for YoY comparison
+            const allMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
             await Promise.all([
-                fetchSalesForMonths(selectedYear, selectedMonths),
+                fetchSalesForMonths(selectedYear, allMonths),
                 fetchSalesForMonths(selectedYear - 1, selectedMonths)
             ]);
 
@@ -71,6 +72,7 @@ export const Dashboard: React.FC = () => {
         } catch (e) {
             console.error('Error loading dashboard data:', e);
         } finally {
+            totalDataStore.isHydrated = true;
             setIsLoading(false);
         }
     };
@@ -127,15 +129,90 @@ export const Dashboard: React.FC = () => {
     const totalPrevFaturado = prevYearSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
     const growthPercent = totalPrevFaturado > 0 ? ((totalFaturado / totalPrevFaturado) - 1) * 100 : 0;
 
+    // Annual Data
+    const annualTargets = targets.filter(t => t.usuario_id === userId && t.ano === selectedYear);
+    const totalAnnualMeta = annualTargets.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+    
+    const annualSales = sales.filter(s => {
+        const d = new Date(s.data + 'T00:00:00');
+        return s.usuario_id === userId && d.getUTCFullYear() === selectedYear;
+    });
+    const totalAnnualFaturado = annualSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+    const annualParticipation = totalAnnualMeta > 0 ? (totalAnnualFaturado / totalAnnualMeta) * 100 : 0;
+
+    // Projection based on closed months average
+    const currentMonth = now.getMonth() + 1;
+    const closedMonthsCount = currentMonth - 1;
+    
+    const closedMonthsSales = annualSales.filter(s => {
+        const d = new Date(s.data + 'T00:00:00');
+        return (d.getUTCMonth() + 1) < currentMonth;
+    });
+    const closedMonthsTotal = closedMonthsSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+    
+    let projectionTotal = 0;
+    if (closedMonthsCount > 0) {
+        const avgMonthly = closedMonthsTotal / closedMonthsCount;
+        projectionTotal = avgMonthly * 12;
+    } else {
+        // If in January, project from current month performance
+        const currentMonthSales = annualSales.filter(s => {
+            const d = new Date(s.data + 'T00:00:00');
+            return (d.getUTCMonth() + 1) === 1;
+        });
+        const currentMonthTotal = currentMonthSales.reduce((acc, curr) => acc + (Number(curr.faturamento) || 0), 0);
+        const elapsedDays = now.getDate();
+        const daysInMonth = 31; // January
+        const projectedJan = elapsedDays > 0 ? (currentMonthTotal / elapsedDays) * daysInMonth : 0;
+        projectionTotal = projectedJan * 12;
+    }
+    const projectionPercent = totalAnnualMeta > 0 ? (projectionTotal / totalAnnualMeta) * 100 : 0;
+
+    // Top 5 Clientes
+    const clientMap = new Map<string, { name: string, value: number }>();
+    filteredSales.forEach(s => {
+        const cnpj = cleanCnpj(s.cnpj);
+        const current = clientMap.get(cnpj) || { name: s.cliente_nome || 'Cliente sem nome', value: 0 };
+        clientMap.set(cnpj, { ...current, value: current.value + (Number(s.faturamento) || 0) });
+    });
+    const topClients = Array.from(clientMap.values())
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+
+    // Top 5 Produtos
+    const productMap = new Map<string, { name: string, value: number }>();
+    filteredSales.forEach(s => {
+        const prod = s.produto || 'Produto sem nome';
+        const current = productMap.get(prod) || { name: prod, value: 0 };
+        productMap.set(prod, { ...current, value: current.value + (Number(s.faturamento) || 0) });
+    });
+    const topProducts = Array.from(productMap.values())
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+
+    // Insights
+    const ticketMedio = salesCnpjs.size > 0 ? totalFaturado / salesCnpjs.size : 0;
+    const totalSkus = new Set(filteredSales.map(s => s.codigo_produto || s.produto)).size;
+    const mixMedio = salesCnpjs.size > 0 ? totalSkus / salesCnpjs.size : 0;
+
     return {
       meta: totalMeta,
       faturado: totalFaturado,
       clientesPositivados: positivadosCount,
       totalClientes: portfolio.length,
       growthPercent,
-      hasPrevData: totalPrevFaturado > 0
+      hasPrevData: totalPrevFaturado > 0,
+      annualMeta: totalAnnualMeta,
+      annualFaturado: totalAnnualFaturado,
+      annualParticipation,
+      projectionTotal,
+      projectionPercent,
+      topClients,
+      topProducts,
+      ticketMedio,
+      mixMedio
     };
-  }, [sales, selectedMonths, selectedYear, userId, clients, targets]);
+  }, [sales, selectedMonths, selectedYear, userId, clients, targets, now]);
 
   const percentualAtingido = data.meta > 0 ? (data.faturado / data.meta) * 100 : 0;
   const percentualClientes = data.totalClientes > 0 ? (data.clientesPositivados / data.totalClientes) * 100 : 0;
@@ -293,13 +370,13 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Botão de Performance Mobile - TEXTO ATUALIZADO */}
+        {/* Botão de Performance Mobile - SCORE CARD */}
         <div className="pt-2">
             <button 
               onClick={() => setShowPerformanceModal(true)} 
-              className="w-full flex items-center justify-center gap-3 text-[10px] font-black uppercase text-white bg-slate-900 h-14 rounded-2xl shadow-lg active:scale-95 transition-transform"
+              className="w-full flex items-center justify-center gap-3 text-[11px] font-black uppercase text-white bg-slate-900 h-14 rounded-2xl shadow-xl active:scale-95 transition-transform border border-white/10"
             >
-              <Award className="w-5 h-5 text-blue-400" /> Análise Comercial
+              <Crown className="w-5 h-5 text-amber-400" /> SCORE CARD
             </button>
         </div>
 
@@ -374,9 +451,9 @@ export const Dashboard: React.FC = () => {
 
             <button 
               onClick={() => setShowPerformanceModal(true)} 
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 text-[10px] font-black uppercase text-white bg-blue-600 px-6 py-3 rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 border border-blue-500"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 text-[11px] font-black uppercase text-white bg-slate-900 px-6 py-3 rounded-2xl hover:bg-black transition-all shadow-xl shadow-slate-200 border border-white/10"
             >
-              <Award className="w-4 h-4" /> Análise Comercial
+              <Crown className="w-4 h-4 text-amber-400" /> SCORE CARD
             </button>
           </div>
         </div>
@@ -385,34 +462,60 @@ export const Dashboard: React.FC = () => {
           <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none hidden md:block">
              <TrendingUp className="w-40 h-40 text-blue-600" />
           </div>
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 md:mb-10 gap-6">
-            <div className="flex items-center gap-4 md:gap-5">
-              <div className="p-3 md:p-4 bg-blue-600 text-white rounded-2xl md:rounded-3xl shadow-xl shadow-blue-100 shrink-0">
-                <TargetIcon className="w-6 h-6 md:w-8 md:w-8" />
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+            {/* Coluna 1: Objetivo do Período */}
+            <div className="flex items-center gap-5 border-r border-slate-100 pr-8">
+              <div className="p-4 bg-blue-600 text-white rounded-3xl shadow-xl shadow-blue-100 shrink-0">
+                <TargetIcon className="w-8 h-8" />
               </div>
-              <div>
-                <h3 className="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em]">Objetivo do Período</h3>
-                <p className="text-2xl md:text-4xl font-black text-slate-900 leading-none mt-1 md:mt-2">{formatCurrency(data.meta)}</p>
-                
-                {data.hasPrevData && (
-                    <div className={`mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter ${data.growthPercent >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                      {data.growthPercent >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                      {Math.abs(data.growthPercent).toFixed(1)}% vs Ano Ant.
-                    </div>
-                )}
+              <div className="flex-1">
+                <h3 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Objetivo do Período</h3>
+                <p className="text-3xl font-black text-slate-900 leading-none mt-2">{formatCurrency(data.faturado)}</p>
+                <div className="flex items-center gap-2 mt-3">
+                    <span className={`text-lg font-black tabular-nums ${percentualAtingido >= 100 ? 'text-blue-600' : 'text-red-600'}`}>
+                        {percentualAtingido.toFixed(1)}%
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest">da meta {formatCurrency(data.meta)}</span>
+                </div>
               </div>
             </div>
-            <div className="w-full md:w-auto text-center md:text-right bg-slate-50 px-6 py-4 md:px-8 md:py-4 rounded-2xl md:rounded-3xl border border-slate-100">
-              <span className={`text-3xl md:text-4xl font-black tabular-nums ${percentualAtingido >= 100 ? 'text-blue-600' : 'text-red-600'}`}>
-                {percentualAtingido.toFixed(1)}%
-              </span>
-              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mt-1">Atingimento Geral</p>
+
+            {/* Coluna 2: Objetivo Anual & Projeção */}
+            <div className="flex items-center gap-5">
+              <div className="p-4 bg-slate-900 text-white rounded-3xl shadow-xl shadow-slate-200 shrink-0">
+                <TrendingUp className="w-8 h-8" />
+              </div>
+              <div className="flex-1">
+                <div className="flex justify-between items-start">
+                    <div>
+                        <h3 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Faturamento Acumulado</h3>
+                        <p className="text-2xl font-black text-slate-900 leading-none mt-1">{formatCurrency(data.annualFaturado)}</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[8px] text-slate-400 font-black uppercase tracking-widest mb-1">Objetivo Anual</p>
+                        <p className="text-lg font-black text-blue-600 leading-none">{data.annualParticipation.toFixed(1)}%</p>
+                        <p className="text-[8px] text-slate-400 font-bold mt-1">{formatCurrency(data.annualMeta)}</p>
+                    </div>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
+                    <div>
+                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Projeção de Fechamento</p>
+                        <p className="text-lg font-black text-slate-900">{formatCurrency(data.projectionTotal)}</p>
+                    </div>
+                    <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${data.projectionPercent >= 100 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                        {data.projectionPercent.toFixed(1)}% da Meta
+                    </div>
+                </div>
+              </div>
             </div>
           </div>
+
           <div className="relative pt-2">
             <div className="flex justify-between mb-3 text-sm items-end">
               <span className="font-black text-slate-400 uppercase text-[9px] md:text-[10px] tracking-widest flex items-center gap-2">
-                <DollarSign className="w-3.5 h-3.5 text-blue-500" /> Faturamento Real Consolidado
+                <DollarSign className="w-3.5 h-3.5 text-blue-500" /> Faturamento Real Consolidado (Período)
               </span>
               <span className="font-black text-slate-900 text-lg md:text-xl">{formatCurrency(data.faturado)}</span>
             </div>
@@ -451,6 +554,63 @@ export const Dashboard: React.FC = () => {
               <Users className="w-8 h-8 md:w-10 md:h-10" />
             </div>
           </div>
+        </div>
+
+        {/* Top 5 Rankings */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Top 5 Clientes */}
+            <div className="bg-white rounded-[32px] p-8 border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-3 mb-6">
+                    <UserCheck className="w-5 h-5 text-blue-600" />
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top 5 Clientes (Faturamento)</h4>
+                </div>
+                <div className="space-y-4">
+                    {data.topClients.map((c, i) => (
+                        <div key={i} className="space-y-2">
+                            <div className="flex justify-between items-end">
+                                <span className="text-[11px] font-black text-slate-700 uppercase truncate max-w-[200px]">{c.name}</span>
+                                <span className="text-[11px] font-black text-slate-900">{formatCurrency(c.value)}</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-50 rounded-full overflow-hidden">
+                                <div 
+                                    className="h-full bg-blue-600 rounded-full" 
+                                    style={{ width: `${(c.value / (data.topClients[0]?.value || 1)) * 100}%` }}
+                                ></div>
+                            </div>
+                        </div>
+                    ))}
+                    {data.topClients.length === 0 && (
+                        <p className="text-center py-8 text-[10px] font-black text-slate-400 uppercase">Nenhum dado no período</p>
+                    )}
+                </div>
+            </div>
+
+            {/* Top 5 Produtos */}
+            <div className="bg-white rounded-[32px] p-8 border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-3 mb-6">
+                    <BarChart3 className="w-5 h-5 text-emerald-600" />
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top 5 Produtos (Faturamento)</h4>
+                </div>
+                <div className="space-y-4">
+                    {data.topProducts.map((p, i) => (
+                        <div key={i} className="space-y-2">
+                            <div className="flex justify-between items-end">
+                                <span className="text-[11px] font-black text-slate-700 uppercase truncate max-w-[200px]">{p.name}</span>
+                                <span className="text-[11px] font-black text-slate-900">{formatCurrency(p.value)}</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-50 rounded-full overflow-hidden">
+                                <div 
+                                    className="h-full bg-emerald-500 rounded-full" 
+                                    style={{ width: `${(p.value / (data.topProducts[0]?.value || 1)) * 100}%` }}
+                                ></div>
+                            </div>
+                        </div>
+                    ))}
+                    {data.topProducts.length === 0 && (
+                        <p className="text-center py-8 text-[10px] font-black text-slate-400 uppercase">Nenhum dado no período</p>
+                    )}
+                </div>
+            </div>
         </div>
       </div>
 

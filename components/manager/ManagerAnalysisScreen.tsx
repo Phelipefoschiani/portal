@@ -374,8 +374,10 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [, setForceUpdate] = useState(0);
     
-    // Agora selecionamos sempre o ano completo para a visão geral
-    const [selectedMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    // Agora o gerente pode escolher os meses
+    const [selectedMonths, setSelectedMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    const [showMonthDropdown, setShowMonthDropdown] = useState(false);
+    const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     
     useSalesData(selectedYear, selectedMonths, updateTrigger, () => setForceUpdate(prev => prev + 1));
 
@@ -530,8 +532,15 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
     return (
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
             <header className="flex flex-col md:flex-row justify-between items-end gap-6 px-4">
-                <div>
-                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise Comercial</h2>
+                <div className="flex items-center gap-4">
+                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Score Card da Regional</h2>
+                    <button 
+                        onClick={() => window.dispatchEvent(new CustomEvent('pcn_navigate', { detail: 'admin-scorecard' }))}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+                    >
+                        <Trophy className="w-3.5 h-3.5" />
+                        Score Card da Regional
+                    </button>
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -541,6 +550,56 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
                             <option value={2025}>ANO 2025</option>
                             <option value={2026}>ANO 2026</option>
                         </select>
+                    </div>
+
+                    <div className="relative">
+                        <button 
+                            onClick={() => {
+                                setTempSelectedMonths([...selectedMonths]);
+                                setShowMonthDropdown(!showMonthDropdown);
+                            }}
+                            className="bg-white border border-slate-200 rounded-xl px-6 py-2.5 text-[10px] font-black uppercase flex items-center gap-3 shadow-sm hover:bg-slate-50 min-w-[140px]"
+                        >
+                            <span>{selectedMonths.length === 12 ? 'TODOS OS MESES' : `${selectedMonths.length} MESES`}</span>
+                            <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-90' : ''}`} />
+                        </button>
+
+                        {showMonthDropdown && (
+                            <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
+                                <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-2">
+                                    <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[9px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">Todos</button>
+                                    <button onClick={() => setTempSelectedMonths([])} className="flex-1 text-[9px] font-black text-red-600 uppercase py-1.5 bg-red-50 rounded-lg hover:bg-red-100 transition-all">Limpar</button>
+                                </div>
+                                <div className="p-2 grid grid-cols-2 gap-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((m, i) => (
+                                        <button 
+                                            key={i} 
+                                            onClick={() => {
+                                                const month = i + 1;
+                                                setTempSelectedMonths(prev => prev.includes(month) ? prev.filter(x => x !== month) : [...prev, month]);
+                                            }}
+                                            className={`flex items-center gap-2 p-2 rounded-xl text-[10px] font-bold uppercase transition-colors ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                                        >
+                                            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${tempSelectedMonths.includes(i + 1) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                                                {tempSelectedMonths.includes(i + 1) && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
+                                            </div>
+                                            {m}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="p-3 border-t border-slate-100 bg-slate-50">
+                                    <button 
+                                        onClick={() => {
+                                            setSelectedMonths([...tempSelectedMonths]);
+                                            setShowMonthDropdown(false);
+                                        }}
+                                        className="w-full bg-blue-600 text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"
+                                    >
+                                        Aplicar Filtro
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </header>
@@ -618,21 +677,15 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
                 {/* Bento Grid de Destaques */}
                 {!isDataLoading && stats.repData.length > 0 && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                        {/* Líder de Faturamento */}
+                        {/* Líder em Alcance */}
                         {(() => {
-                            const bestSales = [...stats.repData].sort((a, b) => b.sales - a.sales)[0];
                             const bestPct = [...stats.repData].sort((a, b) => b.pct - a.pct)[0];
                             return (
                                 <div className="bg-blue-600 rounded-[32px] text-white shadow-xl shadow-blue-100 overflow-hidden flex flex-col">
-                                    <div className="p-6 border-b border-white/10 flex-1">
-                                        <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Líder de Faturamento (R$)</p>
-                                        <h4 className="text-lg font-black uppercase truncate">{bestSales.rep.nome}</h4>
-                                        <p className="text-2xl font-black mt-1">{formatBRL(bestSales.sales)}</p>
-                                    </div>
-                                    <div className="p-6 bg-blue-700/50 flex-1">
+                                    <div className="p-8 flex-1 flex flex-col justify-center">
                                         <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Líder em Alcance (%)</p>
-                                        <h4 className="text-lg font-black uppercase truncate">{bestPct.rep.nome}</h4>
-                                        <p className="text-2xl font-black mt-1">{bestPct.pct.toFixed(1)}%</p>
+                                        <h4 className="text-xl font-black uppercase truncate">{bestPct.rep.nome}</h4>
+                                        <p className="text-4xl font-black mt-2">{bestPct.pct.toFixed(1)}%</p>
                                     </div>
                                 </div>
                             );
@@ -640,19 +693,13 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
 
                         {/* Menor Alcance */}
                         {(() => {
-                            const worstSales = [...stats.repData].sort((a, b) => a.sales - b.sales)[0];
                             const worstPct = [...stats.repData].sort((a, b) => a.pct - b.pct)[0];
                             return (
                                 <div className="bg-white rounded-[32px] border border-red-100 shadow-sm overflow-hidden flex flex-col">
-                                    <div className="p-6 border-b border-red-50 flex-1">
-                                        <p className="text-[9px] font-black text-red-400 uppercase tracking-[0.2em] mb-2">Menor Faturamento (R$)</p>
-                                        <h4 className="text-lg font-black text-slate-900 uppercase truncate">{worstSales.rep.nome}</h4>
-                                        <p className="text-2xl font-black text-red-600 mt-1">{formatBRL(worstSales.sales)}</p>
-                                    </div>
-                                    <div className="p-6 bg-red-50/30 flex-1">
+                                    <div className="p-8 flex-1 flex flex-col justify-center">
                                         <p className="text-[9px] font-black text-red-400 uppercase tracking-[0.2em] mb-2">Menor Alcance (%)</p>
-                                        <h4 className="text-lg font-black text-slate-900 uppercase truncate">{worstPct.rep.nome}</h4>
-                                        <p className="text-2xl font-black text-red-600 mt-1">{worstPct.pct.toFixed(1)}%</p>
+                                        <h4 className="text-xl font-black text-slate-900 uppercase truncate">{worstPct.rep.nome}</h4>
+                                        <p className="text-4xl font-black text-red-600 mt-2">{worstPct.pct.toFixed(1)}%</p>
                                     </div>
                                 </div>
                             );

@@ -18,10 +18,10 @@ export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, sel
   };
 
   const list = useMemo(() => {
-    if (!totalDataStore.isHydrated) return [];
-
     const sales = totalDataStore.vendasClientesMes;
     const portfolioClients = totalDataStore.clients;
+
+    if (sales.length === 0 && portfolioClients.length === 0 && !totalDataStore.isHydrated) return [];
 
     const clientNameMap = new Map<string, string>();
     portfolioClients.forEach(c => {
@@ -75,7 +75,7 @@ export const PositivizedModal: React.FC<PositivizedModalProps> = ({ onClose, sel
         </div>
 
         <div className="overflow-y-auto flex-1 bg-white p-3 md:p-4 custom-scrollbar">
-          {!totalDataStore.isHydrated ? (
+          {totalDataStore.loading.vendasClientesMes && list.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-slate-400">
               <Loader2 className="w-8 h-8 animate-spin mb-4 text-emerald-600" />
               <p className="text-[10px] font-black uppercase tracking-widest animate-pulse text-emerald-700">Sincronizando...</p>
