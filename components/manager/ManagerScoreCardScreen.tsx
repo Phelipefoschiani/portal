@@ -135,9 +135,13 @@ export const ManagerScoreCardScreen: React.FC = () => {
     const userId = session.id;
     const isAdmin = userRole === 'admin';
 
+    const currentMonth = now.getMonth() + 1;
+    const closedMonths = Array.from({ length: currentMonth - 1 }, (_, i) => i + 1);
+    const initialMonths = closedMonths.length > 0 ? closedMonths : [1];
+
     const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
-    const [selectedMonths, setSelectedMonths] = useState<number[]>([1,2,3,4,5,6,7,8,9,10,11,12]);
-    const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>([1,2,3,4,5,6,7,8,9,10,11,12]);
+    const [selectedMonths, setSelectedMonths] = useState<number[]>(initialMonths);
+    const [tempSelectedMonths, setTempSelectedMonths] = useState<number[]>(initialMonths);
     
     // Se for rep, já começa com o ID dele. Se for admin, começa com 'all'
     const [selectedRepId, setSelectedRepId] = useState<string>(isAdmin ? 'all' : userId);

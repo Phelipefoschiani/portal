@@ -103,6 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const repMenuItems: MenuItem[] = [
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
+    { id: 'rep-scorecard', label: 'Score Card', icon: Target },
     { id: 'rep-analysis', label: 'Análises', icon: BarChart3 },
     { id: 'rep-bi-builder', label: 'Construtor de BI', icon: Table2 },
     { id: 'clients', label: 'Clientes', icon: Users },
@@ -119,6 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-clients', label: 'Clientes', icon: Users },
     { id: 'admin-campaigns', label: 'Análise Campanhas', icon: ShieldCheck, alertType: investmentAlert },
     { id: 'admin-forecast', label: 'Previsões Enviadas', icon: TrendingUp, alertType: forecastAlert },
+    { id: 'admin-scorecard', label: 'Score Card', icon: Target },
   ];
 
   const adminConfigItems: MenuItem[] = [

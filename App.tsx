@@ -260,6 +260,7 @@ const App: React.FC = () => {
                 {currentView === 'clients' && <ManagerClientsScreen repId={userId || undefined} />}
                 {currentView === 'campaigns' && <CampaignsScreen onNavigateToInvestments={() => setCurrentView('investments')} />}
                 {currentView === 'forecast' && <ForecastScreen />}
+                {currentView === 'rep-scorecard' && <ManagerScoreCardScreen />}
                 {currentView === 'investments' && <InvestmentsScreen />}
                 {currentView === 'notifications' && <NotificationsScreen onFixForecast={handleNavigateToForecastCorrection} />}
                </>

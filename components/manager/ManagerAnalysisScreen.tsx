@@ -533,14 +533,7 @@ export const ManagerAnalysisScreen: React.FC<ManagerAnalysisScreenProps> = ({ up
         <div className="w-full max-w-7xl mx-auto space-y-8 animate-fadeIn pb-12">
             <header className="flex flex-col md:flex-row justify-between items-end gap-6 px-4">
                 <div className="flex items-center gap-4">
-                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Score Card da Regional</h2>
-                    <button 
-                        onClick={() => window.dispatchEvent(new CustomEvent('pcn_navigate', { detail: 'admin-scorecard' }))}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
-                    >
-                        <Trophy className="w-3.5 h-3.5" />
-                        Score Card da Regional
-                    </button>
+                    <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Análise de Performance</h2>
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">

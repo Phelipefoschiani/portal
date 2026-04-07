@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Target as TargetIcon, TrendingUp, Users, AlertCircle, Calendar, DollarSign, CheckCircle2, ChevronDown, CheckSquare, Square, Filter, CalendarDays, ArrowUpRight, ArrowDownRight, LayoutDashboard, Crown, UserCheck, BarChart3 } from 'lucide-react';
+import { Target as TargetIcon, TrendingUp, Users, AlertCircle, Calendar, DollarSign, CheckCircle2, ChevronDown, CheckSquare, Square, Filter, CalendarDays, ArrowUpRight, ArrowDownRight, LayoutDashboard, UserCheck, BarChart3 } from 'lucide-react';
 import { NonPositivizedModal } from './NonPositivizedModal';
 import { PositivizedModal } from './PositivizedModal';
 import { RepPerformanceModal } from './manager/RepPerformanceModal';
@@ -370,16 +370,6 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Botão de Performance Mobile - SCORE CARD */}
-        <div className="pt-2">
-            <button 
-              onClick={() => setShowPerformanceModal(true)} 
-              className="w-full flex items-center justify-center gap-3 text-[11px] font-black uppercase text-white bg-slate-900 h-14 rounded-2xl shadow-xl active:scale-95 transition-transform border border-white/10"
-            >
-              <Crown className="w-5 h-5 text-amber-400" /> SCORE CARD
-            </button>
-        </div>
-
       </div>
 
 
@@ -418,8 +408,7 @@ export const Dashboard: React.FC = () => {
                       <span>{getMonthsLabel()}</span>
                       <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMonthDropdown ? 'rotate-180' : ''}`} />
                   </button>
-                  
-                  {showMonthDropdown && (
+                     {showMonthDropdown && (
                       <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[150] overflow-hidden animate-slideUp">
                           <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-2">
                               <button onClick={() => setTempSelectedMonths([1,2,3,4,5,6,7,8,9,10,11,12])} className="flex-1 text-[9px] font-black text-blue-600 uppercase py-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">Todos</button>
@@ -448,13 +437,6 @@ export const Dashboard: React.FC = () => {
                       </div>
                   )}
             </div>
-
-            <button 
-              onClick={() => setShowPerformanceModal(true)} 
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 text-[11px] font-black uppercase text-white bg-slate-900 px-6 py-3 rounded-2xl hover:bg-black transition-all shadow-xl shadow-slate-200 border border-white/10"
-            >
-              <Crown className="w-4 h-4 text-amber-400" /> SCORE CARD
-            </button>
           </div>
         </div>
 
